@@ -388,7 +388,7 @@ routing:
 
 ### 13.5 Not done in M2 / findings
 
-1. **KiCad schematic (`.kicad_sch`) generation** is not done; the schematic stays netlistsvg. The board is generated straight from the netlist, which is what fabrication needs.
+1. ~~**KiCad schematic (`.kicad_sch`) generation** is not done~~ (done in §19); the schematic stays netlistsvg. The board is generated straight from the netlist, which is what fabrication needs.
 2. ~~**Placement is naive**~~ (done in §17) (shelf packing in definition order). Connectivity-aware placement would shorten tracks; `placement:` covers hand placement meanwhile.
 3. ~~**No copper pours / ground plane** yet.~~ Done in §16.
 4. **3D render has no component bodies** because `kicad-packages3d` (several GB) is not installed.
@@ -560,6 +560,8 @@ Result (same rules and router; DRC 0 errors on all):
 
 Not done: no improvement pass after the greedy one (swaps, annealing), no rotation other than 90° steps, no awareness of board edges for connectors.
 
+`data.pcb.routing.hpwl_mm` (added 2026-10-21) reports the placement's half-perimeter wire length over all nets. It does not depend on the router, so it is what the placement test compares: Freerouting sometimes leaves one connection open on the shelf layout of `opamp_amp` (HPWL shelf 163.5 mm, connected 125.6 mm).
+
 ## 18. Transient operating points (optran) (2026-10-20)
 
 Carry-over from §12.4, which turned out to be misdiagnosed.
@@ -573,3 +575,17 @@ Carry-over from §12.4, which turned out to be misdiagnosed.
 - **Parts can ask for it**: `spice: { optran: { step: 100ns, stop: 1ms } }` (or `eda model import ... --optran 1ms`) emits `optran 0 0 0 <step> <stop> 0` — straight to the transient operating point, no stepping — and starts the settling search there. Co-simulated tests use the part's setting without the search.
 
 TLV6001 example (not committed; vendor model): the bias test now reads OUT = 3.376 V with "settled: a 10ms run gives the same net voltages within 1 mV", AC gain 59.96 dB. `tests/test_optran.py` runs it when ngspice's example models are present.
+
+## 19. KiCad schematic export (2026-10-21)
+
+Carry-over from §13.5. The netlistsvg drawing stays the quick view; `eda render` now also writes `out/kicad/<name>.kicad_sch`, a KiCad 10 schematic (format `20260306`) a person can open, edit, or print.
+
+- **S-expressions**: `eda/sexpr.py` reads and writes KiCad's format (bare atoms vs quoted strings preserved; the 2.4 MB `Device.kicad_sym` round-trips exactly).
+- **Symbols**: parts name a library symbol, `kicad: { symbol: Device:R }`; the symbol pin numbers default to the part's `pcb.pads`, which already follow KiCad numbering (LED 1 = K, Pico pin numbers = module pins); op-amps map `in+ in- v+ v- out` to `Simulation_SPICE:OPAMP` (built-in `opamp`, and vendor imports with `--opamp`, also when imported earlier). Sources use `Simulation_SPICE` VDC/VSIN/VPULSE. Symbols are copied into the file's `lib_symbols` (derived `extends` symbols flattened). Parts without a symbol get a generated rectangle with their pins.
+- **Drawing style**: no wires between parts. Every pin gets a 2.54 mm stub and a local net label; GND gets ground symbols; pins on no net get no-connect flags; stacked pins (the Pico's seven hidden GND pins at one spot) are drawn once. Reference/value fields sit where the library symbol puts them. Parts flow left to right in `circuit.yaml` order, rows wrapping on A4 → A3 → A2 → A1 as needed. UUIDs are derived from the project and item names, so the file is stable across runs.
+- **PWR_FLAG**: nets a source drives get a PWR_FLAG (KiCad's ERC otherwise reports undriven power pins), except nets where a symbol pin already is a power output (the Pico's GND pins).
+- **Verification** (when `kicad-cli` is installed): the schematic's netlist is exported by KiCad and compared with the design's nets member by member; a difference is `kicad_sch_mismatch` (a generator bug, exit 2). KiCad's ERC runs and its findings become `kicad_erc_<type>` warnings, except library-table notices (absent in a command-line run) and pin conflicts inside one symbol (the Pico's GND/AGND outputs). The schematic is plotted to SVG/PNG and shown in the viewer under the netlistsvg drawing.
+
+Result: all five example projects export, their KiCad netlists match the designs exactly, and KiCad's ERC reports 0 errors and 0 warnings.
+
+Known limits: label-based drawing (readable, not hand-drawn); references without a number (`VCC`, `RF`) are valid for eda but KiCad's netlist exporter warns about annotation; vendor symbols other than op-amps are boxes.

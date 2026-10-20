@@ -60,6 +60,8 @@ symbol:
   cell: x_pico
   ports: { "GP0": "GP0", "GP1": "GP1", "GP2": "GP2", "GP3": "GP3", "GP4": "GP4", "GP5": "GP5", "GP6": "GP6", "GP7": "GP7", "GP8": "GP8", "GP9": "GP9", "GP10": "GP10", "GP11": "GP11", "GP12": "GP12", "GP13": "GP13", "GP14": "GP14", "GP15": "GP15", "GP16": "GP16", "GP17": "GP17", "GP18": "GP18", "GP19": "GP19", "GP20": "GP20", "GP21": "GP21", "GP22": "GP22", "GP26": "GP26", "GP27": "GP27", "GP28": "GP28", "GND": "GND", "3V3": "3V3", "3V3_EN": "3V3_EN", "VSYS": "VSYS", "VBUS": "VBUS", "RUN": "RUN", "ADC_VREF": "ADC_VREF" }
   label: "RP2040"
+kicad:
+  symbol: MCU_Module:RaspberryPi_Pico
 pcb:
   footprint: Module:RaspberryPi_Pico_Common_THT
   pads: { "GP0": "1", "GP1": "2", "GP2": "4", "GP3": "5", "GP4": "6", "GP5": "7", "GP6": "9", "GP7": "10", "GP8": "11", "GP9": "12", "GP10": "14", "GP11": "15", "GP12": "16", "GP13": "17", "GP14": "19", "GP15": "20", "GP16": "21", "GP17": "22", "GP18": "24", "GP19": "25", "GP20": "26", "GP21": "27", "GP22": "29", "GP26": "31", "GP27": "32", "GP28": "34", "3V3": "36", "3V3_EN": "37", "VSYS": "39", "VBUS": "40", "RUN": "30", "ADC_VREF": "35", "GND": ["3", "8", "13", "18", "23", "28", "33", "38"] }

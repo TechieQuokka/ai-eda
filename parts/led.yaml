@@ -22,6 +22,8 @@ symbol:
   cell: d_led_v
   ports: { anode: "+", cathode: "-" }
   label: "<param:color>"
+kicad:
+  symbol: Device:LED
 pcb:
   footprint: LED_THT:LED_D5.0mm
   pads: { anode: "2", cathode: "1" }

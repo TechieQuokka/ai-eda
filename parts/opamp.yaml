@@ -27,6 +27,9 @@ symbol:
   cell: op
   ports: { in+: "+", in-: "-", out: OUT, v+: VCC, v-: VEE }
   label: "GBW <param:gbw>"
+kicad:
+  symbol: Simulation_SPICE:OPAMP
+  pins: { in+: "1", in-: "2", v+: "3", v-: "4", out: "5" }
 pcb:
   footprint: Package_SO:SOIC-8_3.9x4.9mm_P1.27mm
   pads: { in-: "2", in+: "3", v-: "4", out: "6", v+: "7" }

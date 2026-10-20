@@ -12,6 +12,8 @@ symbol:
   cell: l_v
   ports: { "1": A, "2": B }
   label: "<param:inductance>"
+kicad:
+  symbol: Device:L
 pcb:
   footprint: Inductor_THT:L_Axial_L5.3mm_D2.2mm_P10.16mm_Horizontal_Vishay_IM-1
   pads: { "1": "1", "2": "2" }

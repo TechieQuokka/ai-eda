@@ -18,6 +18,8 @@ symbol:
   cell: x_pot
   ports: { "1": "1", "2": "2", "3": "3" }
   label: "<param:resistance> @<param:position>"
+kicad:
+  symbol: Device:R_Potentiometer
 pcb:
   footprint: Potentiometer_THT:Potentiometer_Bourns_3386P_Vertical
   pads: { "1": "1", "2": "2", "3": "3" }

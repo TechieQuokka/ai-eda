@@ -98,7 +98,7 @@ Every run is written to the project's `iterations.jsonl` with the note, the chan
 | **Measures** | `voltage(N)`, `voltage(A, B)`, `current(R1)`, `current(U1.out)` inside `max min avg rms pp initial final`, `at(…, 1kHz)`, `cross(…, -3dB)`, `period(…, 3mA)`, and `db mag phase` — type-checked per analysis, with units |
 | **Parts** | One YAML file per part type: pins, typed parameters, SPICE template, schematic symbol. Built in: DC, pulse, and sine sources; R, C, L; diodes (1N4148, 1N4007); LEDs in five colors; a generic op-amp macromodel (gain, GBW, slew rate, swing) |
 | **Vendor models** | `eda model inspect` / `eda model import` turn a manufacturer `.subckt` (e.g. TI TL072, TLV9002) into a part, detecting PSpice-compatibility mode automatically |
-| **Rendering** | Schematic auto-layout via netlistsvg with a custom skin and net labels; waveform SVGs; PNG copies via CairoSVG for the agent to look at |
+| **Rendering** | Schematic auto-layout via netlistsvg with a custom skin and net labels; waveform SVGs; PNG copies via CairoSVG for the agent to look at; a **KiCad schematic** (`.kicad_sch`) with library symbols and net labels, verified by re-exporting its netlist with `kicad-cli` |
 | **Boards** | `board.yaml` (outline, rules, optional placement, ground pours) → connectivity-aware auto-placement → KiCad 10 board → Freerouting autorouting → copper fill → `kicad-cli` DRC as JSON → Gerbers, drill, positions, and BOM in one zip |
 | **Firmware** | Raspberry Pi Pico (RP2040) part with its full GPIO function table; `firmware.yaml` assigns roles per net; `eda fw` checks functions and conflicts, generates `pins.h` / `pins_init.h`, and scans C sources; `eda fw --build` compiles with the pico-sdk and reports compiler errors by file and line |
 | **Firmware in the loop** | `firmware: true` tests run the compiled firmware in an RP2040 emulator (rp2040js) in lock-step with ngspice: GPIO and PWM outputs drive the circuit, inputs and the ADC read node voltages, UART output is checked with regular expressions |
@@ -209,7 +209,7 @@ uv run eda watch projects/rc_filter  # live viewer at http://127.0.0.1:8765/
 |---|---|
 | `eda check [PROJECT]` | Validate files, run ERC, compile tests |
 | `eda sim [PROJECT] [-t TEST]` | Simulate and judge every expectation |
-| `eda render [PROJECT]` | Schematic and waveform SVG/PNG |
+| `eda render [PROJECT]` | Schematic and waveform SVG/PNG, KiCad schematic |
 | `eda fw [PROJECT] [--build]` | Firmware: check pin roles, generate `pins.h` / `pins_init.h`, scan sources; `--build` compiles |
 | `eda pcb [PROJECT]` | Board: build, autoroute, DRC, Gerbers/drill/BOM |
 | `eda run [PROJECT] [-m NOTE]` | check → sim → render (→ pcb) in one call, logged with an optional note |
@@ -242,7 +242,7 @@ Background and decisions: [`PROJECT_SUMMARY.md`](PROJECT_SUMMARY.md), [`DESIGN_D
 ```bash
 uv run ruff format --check && uv run ruff check   # style and lint
 uv run pyright                                    # strict static typing
-uv run pytest                                     # 163 tests
+uv run pytest                                     # 169 tests
 ```
 
 ---

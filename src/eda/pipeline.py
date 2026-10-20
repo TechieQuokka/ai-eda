@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import JsonValue
 
-from eda import firmware, simulate
+from eda import firmware, kicad_sch, simulate
 from eda import pcb as board
 from eda.adapters import netlistsvg, picosdk, rasterize
 from eda.design import load_design
@@ -249,4 +249,5 @@ def _render(design: Design, diag: Diagnostics) -> dict[str, JsonValue]:
                 diag.warning("rasterize_failed", f"{rel(svg)}: {exc}")
     images["png"] = pngs
     images["rasterizer"] = rasterize.available()
+    images["kicad"] = kicad_sch.export(design, diag)
     return images

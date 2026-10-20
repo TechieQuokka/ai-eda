@@ -106,3 +106,28 @@ def render_3d(pcb: Path, png: Path, side: str = "top") -> None:
         "pcb", "render", "--side", side, "--width", "1200", "--height", "800",
         "--background", "opaque", "--quality", "basic", "--output", str(png), str(pcb),
     )  # fmt: skip
+
+
+def sch_netlist(sch: Path, out: Path) -> str:
+    """The schematic's netlist as KiCad sees it (`kicadsexpr` format)."""
+    run_cli("sch", "export", "netlist", "--format", "kicadsexpr", "--output", str(out), str(sch))
+    return out.read_text(encoding="utf-8")
+
+
+def sch_erc(sch: Path, report: Path) -> dict[str, Any]:
+    proc = subprocess.run(
+        [cli(), "sch", "erc", "--format", "json", "--severity-all", "--units", "mm",
+         "--output", str(report), str(sch)],
+        capture_output=True, text=True, timeout=TIMEOUT_S, check=False,
+    )  # fmt: skip
+    if not report.is_file():
+        detail = (proc.stderr or proc.stdout).strip().splitlines()[-3:]
+        raise KicadError("kicad-cli sch erc failed: " + " | ".join(detail))
+    data: dict[str, Any] = json.loads(report.read_text(encoding="utf-8"))
+    return data
+
+
+def sch_svg(sch: Path, out_dir: Path) -> Path:
+    """Plot the schematic; kicad-cli names the file after the schematic."""
+    run_cli("sch", "export", "svg", "--output", str(out_dir), str(sch))
+    return out_dir / f"{sch.stem}.svg"

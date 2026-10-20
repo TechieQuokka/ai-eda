@@ -122,6 +122,7 @@ def build(design: Design, diag: Diagnostics) -> dict[str, JsonValue]:
             "tracks": int(stats.get("tracks", 0)),
             "vias": int(stats.get("vias", 0)),
             "track_length_mm": float(stats.get("track_length_mm", 0.0)),
+            "hpwl_mm": float(stats.get("hpwl_mm", 0.0)),
             "unrouted": unrouted,
         },
         "pours": poured,

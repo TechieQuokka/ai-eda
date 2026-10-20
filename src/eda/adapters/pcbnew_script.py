@@ -426,8 +426,20 @@ def inspect(request: Request) -> Request:
     connectivity = board.GetConnectivity()
     tracks = [t for t in board.GetTracks() if t.GetClass() == "PCB_TRACK"]
     vias = [t for t in board.GetTracks() if t.GetClass() == "PCB_VIA"]
+    spans: dict[str, list[float]] = {}
+    for footprint in board.GetFootprints():
+        for pad in footprint.Pads():
+            net = str(pad.GetNetname())
+            if not net:
+                continue
+            x, y = float(pcbnew.ToMM(pad.GetPosition().x)), float(pcbnew.ToMM(pad.GetPosition().y))
+            b = spans.setdefault(net, [x, y, x, y])
+            b[0], b[1], b[2], b[3] = min(b[0], x), min(b[1], y), max(b[2], x), max(b[3], y)
+    hpwl = sum((b[2] - b[0]) + (b[3] - b[1]) for b in spans.values())
     return {
         "footprints": _footprint_report(board),
+        # placement quality independent of routing: half-perimeter wire length of all nets
+        "hpwl_mm": round(hpwl, 3),
         "tracks": len(tracks),
         "vias": len(vias),
         "track_length_mm": round(sum(pcbnew.ToMM(t.GetLength()) for t in tracks), 3),

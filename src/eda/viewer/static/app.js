@@ -92,7 +92,15 @@ function renderSchematic(state, version) {
     box.replaceChildren(el("p", { class: "muted" }, "No schematic yet."));
     return;
   }
-  box.replaceChildren(el("img", { src: `/${path}?v=${version}`, alt: "schematic" }));
+  const parts = [el("img", { src: `/${path}?v=${version}`, alt: "schematic" })];
+  const kicad = state.render?.data?.kicad;
+  if (kicad?.svg) {
+    const check = kicad.netlist_matches ? "netlist matches the design" : "netlist NOT checked";
+    parts.push(el("details", {},
+      el("summary", {}, `KiCad schematic · ${kicad.schematic} · ${kicad.paper} · ${check}`),
+      el("img", { src: `/${kicad.svg}?v=${version}`, alt: "KiCad schematic" })));
+  }
+  box.replaceChildren(...parts);
 }
 
 function renderTests(state) {

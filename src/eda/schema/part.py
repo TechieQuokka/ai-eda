@@ -77,6 +77,14 @@ class SpiceSpec(StrictModel):
     choice_values: dict[str, dict[str, str]] = Field(default_factory=dict[str, dict[str, str]])
 
 
+class KicadSymbolSpec(StrictModel):
+    """Schematic symbol for `.kicad_sch` export: a KiCad library symbol (`Library:Name`)
+    and part pin → symbol pin number(s); pins default to the `pcb.pads` numbers."""
+
+    symbol: str
+    pins: dict[str, str | list[str]] | None = None
+
+
 class PcbSpec(StrictModel):
     """Default footprint (`Library:Name` from the KiCad libraries) and pin → pad numbers."""
 
@@ -132,6 +140,7 @@ class PartSpec(StrictModel):
     spice: SpiceSpec
     symbol: SymbolSpec
     pcb: PcbSpec | None = None
+    kicad: KicadSymbolSpec | None = None
     mcu: McuSpec | None = None
     optional_pins: list[str] = Field(default_factory=list[str])  # may stay unconnected
     dc_path: bool = True

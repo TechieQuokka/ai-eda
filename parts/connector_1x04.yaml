@@ -16,6 +16,8 @@ symbol:
   cell: x_conn4
   ports: { "1": "1", "2": "2", "3": "3", "4": "4" }
   label: "1x04"
+kicad:
+  symbol: Connector_Generic:Conn_01x04
 pcb:
   footprint: Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical
   pads: { "1": "1", "2": "2", "3": "3", "4": "4" }

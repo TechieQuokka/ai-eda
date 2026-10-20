@@ -12,6 +12,8 @@ symbol:
   cell: c_v
   ports: { "1": A, "2": B }
   label: "<param:capacitance>"
+kicad:
+  symbol: Device:C
 pcb:
   footprint: Capacitor_THT:C_Disc_D5.0mm_W2.5mm_P5.00mm
   pads: { "1": "1", "2": "2" }

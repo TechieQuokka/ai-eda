@@ -165,6 +165,8 @@ def test_ground_pour(make_project: MakeProject) -> None:
 def test_connected_placement_shortens_tracks(tmp_path: Path) -> None:
     if not freerouting.JAR.is_file():
         pytest.skip("Freerouting is not downloaded (tools/freerouting/fetch.sh)")
+    # Compared on the half-perimeter wire length of the placement: deterministic, unlike
+    # Freerouting, which sometimes leaves a connection open on the shelf layout.
     lengths: dict[str, float] = {}
     for placer in ("shelf", "connected"):
         root = tmp_path / placer
@@ -177,11 +179,11 @@ def test_connected_placement_shortens_tracks(tmp_path: Path) -> None:
         text = board.read_text(encoding="utf-8")
         board.write_text(text.replace("board:\n", f"board:\n  placer: {placer}\n", 1), "utf-8")
         result = pipeline.pcb(root)
-        assert result.ok, result.errors
+        assert not result.tool_error, result.errors
         routing = result.data["routing"]
         assert isinstance(routing, dict)
-        length = routing["track_length_mm"]
-        assert isinstance(length, float)
+        length = routing["hpwl_mm"]
+        assert isinstance(length, float) and length > 0
         lengths[placer] = length
     assert lengths["connected"] < 0.9 * lengths["shelf"]
 

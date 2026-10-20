@@ -1,6 +1,6 @@
 # Handoff — where the work stopped and how to continue
 
-> Written 2026-10-20 after M0–M3, updated the same day after M4. Read this first, then
+> Written 2026-10-20 after M0–M3; updated after M4 and on 2026-10-21 (stimulus, pours, placement, optran, KiCad schematic). Read this first, then
 > `CLAUDE.md` (working rules and design loop), then `DESIGN_DECISIONS.md` §10–§15 for detail.
 
 ## 1. Status
@@ -15,7 +15,7 @@
 
 - All six open decisions from `PROJECT_SUMMARY.md` §11 are settled (Python, YAML, no tscircuit fork, YAML is the PCB source of truth, RP2040/Pico, 2-layer boards).
 - Repository: https://github.com/TechieQuokka/ai-eda (public, `master`); M4 commits are local until the user approves a push.
-- Quality gates: `ruff format --check`, `ruff check`, `pyright` (strict), and `pytest` (163 tests) all pass; all five example projects pass `eda run`.
+- Quality gates: `ruff format --check`, `ruff check`, `pyright` (strict), and `pytest` (169 tests) all pass; all five example projects pass `eda run`.
 
 ## 2. Resuming on this machine
 
@@ -64,14 +64,14 @@ M4 is finished (`DESIGN_DECISIONS.md` §15): `pico_io` blinks its LED in the emu
 3. Tighter output→input timing (inputs currently lag one window except after pin mode changes), when a design needs it.
 4. ~~Connectivity-aware placement~~: done (§17).
 5. ~~optran~~: done (§18).
-6. KiCad schematic (`.kicad_sch`) export, and the carry-overs in the table below.
+6. ~~KiCad schematic export~~: done (§19). Remaining: the carry-overs in the table below.
 
 ## 5. Known issues and carry-overs
 
 | Area | Issue | Where noted |
 |---|---|---|
 | Boards | Auto-placement is greedy (one part at a time, no later improvement pass); rotations are 90° steps | §17 |
-| Boards | No KiCad schematic (`.kicad_sch`) export | §13.5 |
+| Schematic | KiCad export is label-based (no drawn wires between parts) and placed in a simple flow; references without a number (VCC, RF) trigger KiCad's "annotation" warning on netlist export | §19 |
 | Boards | Freerouting is nondeterministic (handled by a route cache keyed on the `.dsn` hash); one unexplained 10-min hang (now a 180 s timeout) | §13.3, adapters/freerouting.py |
 | Simulation | Transient operating points are checked for settling only in batch tests, not co-simulated ones | §18 |
 | Simulation | Old vendor macromodels (TL072 1989) do not model supply current | §12.4 |

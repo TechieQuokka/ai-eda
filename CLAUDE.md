@@ -36,7 +36,7 @@ For a design task in `projects/<name>/` (schema: `DESIGN_DECISIONS.md` §10; exa
 3. `uv run eda run projects/<name> -m "<why this change>"` — check → sim → render (→ pcb when `design/board.yaml` exists) in one call; the note and a semantic diff of the design go into the iteration log. Exit code 0 = all pass, 1 = design errors, 2 = tool failure.
 4. On failure, read `errors` in the JSON: each has `rule`, `message`, `file`, `line`, `path`, `details`. Use `data.sim.tests.<name>.operating_point` for node voltages and currents.
 5. Fix the design files and repeat from step 3 with a `-m "Fix: ..."` note. Pick real component values with `uv run eda value <target> -s E24|E96`.
-6. Look at `out/schematic.png`, `out/waves/<test>.png`, and (with a board) `out/board.png` before reporting; when everything passes, report to the user.
+6. Look at `out/schematic.png`, `out/waves/<test>.png`, and (with a board) `out/board.png` before reporting; when everything passes, report to the user. `eda render` also writes a KiCad schematic, `out/kicad/<name>.kicad_sch` (+ `.png`), checked against the design's nets.
 
 Other commands: `eda check`, `eda sim [-t TEST]`, `eda render`, `eda pcb`, `eda part list`, `eda part show ID`, `eda value TARGET [-s SERIES]`.
 The CLI never makes design decisions; it only reports.
@@ -66,6 +66,8 @@ The CLI never makes design decisions; it only reports.
 - Imported models go to `parts/vendor/`, which is git-ignored: **never commit vendor model files** (their licenses usually forbid redistribution).
 - Only test what a model claims to model (vendor files list it in their header); e.g. the old TL072 model's supply current is not realistic.
 - `op_via_transient` warning: the model's operating point did not converge directly, so ngspice found it by a transient run from power-up; `eda` lengthens that run until the net voltages stop changing and reports the time. Put it on the part (`--optran 1ms` at import, or `spice: { optran: { stop: 1ms } }`) to skip the search. `op_not_settled` means even 1 s was not enough: do not trust that operating point.
+
+- KiCad schematic symbols: each part's `kicad: { symbol: Library:Name, pins: {...} }` (pins default to the `pcb.pads` numbers); parts without one get a generated box. `kicad_sch_mismatch` (exit 2) means the exported schematic does not connect like the design; `kicad_erc_<type>` warnings are KiCad's own ERC.
 
 ## 7. Boards (`design/board.yaml`)
 
