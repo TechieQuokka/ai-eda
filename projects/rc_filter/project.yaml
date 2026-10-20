@@ -1,0 +1,2 @@
+name: rc_filter
+description: First-order RC low-pass filter driven by a 5 V step.

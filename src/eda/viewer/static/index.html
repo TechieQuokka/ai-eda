@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>eda viewer</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <h1 id="project">eda</h1>
+    <span id="status" class="badge">loading</span>
+    <span id="updated" class="muted"></span>
+    <span id="connection" class="muted"></span>
+  </header>
+  <main>
+    <section id="issues-section" class="card wide" hidden>
+      <h2>Errors and warnings</h2>
+      <ul id="issues"></ul>
+    </section>
+    <section class="card">
+      <h2>Schematic</h2>
+      <div id="schematic" class="schematic"><p class="muted">No schematic yet.</p></div>
+    </section>
+    <section class="card">
+      <h2>Tests</h2>
+      <div id="tests"><p class="muted">No simulation results yet.</p></div>
+    </section>
+    <section class="card wide">
+      <h2>Waveforms</h2>
+      <div id="waveforms"><p class="muted">No transient tests.</p></div>
+    </section>
+    <section class="card wide">
+      <h2>Iteration log</h2>
+      <ol id="log" reversed></ol>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

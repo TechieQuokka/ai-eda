@@ -38,13 +38,18 @@ def changed_files(paths: ProjectPaths) -> list[str]:
     return [n for n in names if previous.get(n) != current.get(n)]
 
 
-def record_run(paths: ProjectPaths, result: Result) -> None:
+def record_run(paths: ProjectPaths, result: Result, only_if_changed: bool = False) -> None:
+    """Append a run entry. `only_if_changed` skips runs that saw no design change
+    (used by `eda watch`, which often re-runs what an explicit command already logged)."""
+    changed = changed_files(paths)
+    if only_if_changed and not changed:
+        return
     entry: dict[str, JsonValue] = {
         "time": _now(),
         "kind": "run",
         "command": result.command,
         "ok": result.ok,
-        "changed": list(changed_files(paths)),
+        "changed": list(changed),
         "errors": [
             {"rule": e.rule, "message": e.message, "file": e.file, "line": e.line}
             for e in result.errors[:10]

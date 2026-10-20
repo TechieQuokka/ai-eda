@@ -1,0 +1,9 @@
+description: 1 kΩ / 100 nF low-pass (tau = 100 us) driven by a 0-5 V pulse.
+parts:
+  VIN: { type: pulse_voltage_source, high: 5V, delay: 0.1ms, width: 10ms, period: 20ms }
+  R1: { type: resistor, resistance: 1kohm }
+  C1: { type: capacitor, capacitance: 100nF }
+nets:
+  IN: [VIN.+, R1.1]
+  OUT: [R1.2, C1.1]
+  GND: [C1.2, VIN.-]

@@ -1,0 +1,13 @@
+tests:
+  step_response:
+    description: Output settles to the input within 1.5 ms; charging current peaks near 5 mA.
+    analysis: { type: tran, step: 5us, stop: 1.5ms }
+    expect:
+      - { measure: initial(voltage(OUT)), max: 10mV }
+      - { measure: final(voltage(OUT)), min: 4.95V }
+      - { measure: max(current(R1)), min: 4.5mA, max: 5.5mA }
+  dc_bias:
+    description: Before the step, nothing moves.
+    analysis: { type: op }
+    expect:
+      - { measure: voltage(OUT), max: 1mV }
