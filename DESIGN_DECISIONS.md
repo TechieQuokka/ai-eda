@@ -1,7 +1,7 @@
 # AI-Native EDA — Design Decisions
 
 > Companion to `PROJECT_SUMMARY.md`. Records what was discussed and decided on 2026-10-20.
-> Status: decisions settled, implementation not started. Project skeleton and `CLAUDE.md` are proposed but not yet created.
+> Status: decisions settled; project skeleton, `CLAUDE.md`, and toolchain set up (2026-10-20). M0 not started.
 
 ---
 
@@ -60,7 +60,7 @@ eda watch  ─ detect design file change → run check / sim / render
 
 Server in Python; page is lightweight static HTML. Libraries to be selected at implementation time.
 
-## 5. Proposed Project Skeleton (not yet created)
+## 5. Project Skeleton (created 2026-10-20)
 
 ```
 ai-eda/
@@ -93,9 +93,9 @@ Changes from `PROJECT_SUMMARY.md` §9:
 - Design files use `.yaml` instead of `.eda`.
 - Built-in parts live in the root `parts/`; project-specific parts live in each project's own `parts/`.
 
-Also proposed: initialize git, per core principle 1 ("text is the source of truth, version-controlled with git").
+Git is initialized, per core principle 1 ("text is the source of truth, version-controlled with git"). `result.py`, `loader.py`, and the subpackage contents are written in M0.
 
-## 6. Proposed `CLAUDE.md` Contents (not yet written)
+## 6. `CLAUDE.md` Contents (written 2026-10-20)
 
 1. **Working rules**: English for artifacts, Korean for conversation; explicit approval before substantive work; one question at a time; respect context; stay inside the project directory; use the latest library versions.
 2. **Tool development rules**: type hints required; `pyright --strict`, `ruff`, and `pytest` must all pass; external tools are called only through `adapters/`.
@@ -122,7 +122,21 @@ Not needed for M0; revisit at the listed milestone.
 | KiCad / kicad-cli | 10.0.6 (10.0 released 2026-03) | Graphical DRC rule editor, design blocks, variants. A headless `kicad-cli api-server` is mentioned in post-10 development discussion; unconfirmed whether 10.0 includes it. |
 | ngspice | 46 (distro-confirmed); 47 reported (2026-08) | Official page not yet confirmed. |
 
-Local environment: Python 3.13.12, Node 22.22.2, uv 0.12.13 present; ngspice, kicad-cli, and Bun not installed. An aborted tscircuit evaluation install sits in `eval/tscircuit/`.
+Confirmed releases: ngspice 47 (SourceForge `ng-spice-rework/47`), KiCad 10.0.7 (PPA `kicad/kicad-10.0-releases`).
+
+### Installed Environment (2026-10-20)
+
+| Tool | Version | Install method |
+|---|---|---|
+| Python | 3.13.12 | Pre-installed; kept as is (`requires-python = ">=3.13,<3.14"`) |
+| Node / uv | 22.22.2 / 0.12.13 | Pre-installed; kept as is |
+| Python deps | pydantic 2.14.1, ruamel.yaml 0.19.1; dev: pyright 1.1.414, ruff 0.17.1, pytest 9.1.1 | `uv sync` (pinned in `pyproject.toml`) |
+| ngspice | 47 | Built from source in `build/ngspice-47/` (git-ignored): two configure runs, `release/` (CLI, `--without-x --enable-openmp --with-readline=yes`) and `shared/` (`--with-ngshared`), installed to `/usr/local` |
+| libngspice | 47 (`/usr/local/lib`, takes precedence) | From the `shared/` build. Ubuntu's `libngspice0` 42 is also present as a KiCad dependency |
+| KiCad / kicad-cli | 10.0.7 | `ppa:kicad/kicad-10.0-releases`, `apt-get install --no-install-recommends kicad kicad-symbols kicad-footprints` |
+| KiCad 3D models | — | Not installed (`kicad-packages3d` is several GB and the PPA is slow); install when 3D rendering is needed (M2) |
+
+Notes: Ubuntu 24.04's own repositories only offer ngspice 42 and KiCad 7.0.11, hence the source build and PPA. Bun is not installed; the aborted tscircuit evaluation install sits in `eval/tscircuit/`.
 
 Sources:
 - https://github.com/tscircuit/tscircuit-standalone/releases
@@ -136,7 +150,8 @@ Sources:
 
 ## 9. Next Steps
 
-1. Approve and create the project skeleton and `CLAUDE.md` (§5–§6), and initialize git.
-2. Install the environment: latest ngspice and KiCad (kicad-cli); Python dependencies via uv.
-3. Implement M0: `circuit.yaml` → netlist → ngspice → JSON result → test verdict → SVG render → viewer.
-4. Run the "LED current to 10 mA" scenario and note friction points.
+1. ~~Create the project skeleton and `CLAUDE.md`, initialize git.~~ Done.
+2. ~~Install ngspice and KiCad (kicad-cli); Python dependencies via uv.~~ Done.
+3. Agree on the M0 schemas (`circuit.yaml`, `test.yaml`) and the unified JSON result format.
+4. Implement M0: `circuit.yaml` → netlist → ngspice → JSON result → test verdict → SVG render → viewer.
+5. Run the "LED current to 10 mA" scenario and note friction points.
