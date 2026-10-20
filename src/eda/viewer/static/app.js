@@ -27,6 +27,7 @@ function svg(tag, attrs = {}) {
 function fmt(value, unit) {
   if (value === null || value === undefined || !Number.isFinite(value)) return String(value);
   const symbol = unit === "ohm" ? "Ω" : unit;
+  if (unit === "dB" || unit === "deg") return `${+value.toPrecision(4)}${symbol}`;
   if (value === 0) return `0${symbol}`;
   const abs = Math.abs(value);
   for (const [scale, prefix] of PREFIXES) {
@@ -170,22 +171,57 @@ async function renderWaveforms(state, version) {
   box.replaceChildren(...charts);
 }
 
-function probeName(measure) {
-  const match = measure.match(/^[a-z]+\((voltage|current)\((.*)\)\)$/);
-  return match ? `${match[1]}(${match[2]})` : measure;
+function probeNames(measure) {
+  return [...measure.matchAll(/(voltage|current)\([^()]*\)/g)].map((m) => m[0]);
+}
+
+function unwrapDegrees(values) {
+  const out = [];
+  let offset = 0;
+  values.forEach((v, i) => {
+    if (i) {
+      const step = v + offset - out[i - 1];
+      if (step > 180) offset -= 360; else if (step < -180) offset += 360;
+    }
+    out.push(v + offset);
+  });
+  return out;
+}
+
+// AC data stores complex values; the chart shows magnitude (dB) and phase per signal.
+function bodeSignals(raw) {
+  const signals = {};
+  for (const [n, s] of Object.entries(raw)) {
+    const im = s.imag || s.values.map(() => 0);
+    signals[`db(${n})`] = {
+      unit: "dB",
+      values: s.values.map((re, i) => 20 * Math.log10(Math.max(Math.hypot(re, im[i]), 1e-300))),
+    };
+    signals[`phase(${n})`] = {
+      unit: "deg",
+      values: unwrapDegrees(s.values.map((re, i) => (Math.atan2(im[i], re) * 180) / Math.PI)),
+    };
+  }
+  return signals;
 }
 
 function buildChart(name, test, data) {
-  const signals = data.signals;
+  const freq = data.axis === "frequency";
+  const signals = freq ? bodeSignals(data.signals) : data.signals;
   const names = Object.keys(signals);
   let st = chartState.get(name);
   if (!st) {
-    const wanted = new Set(test.expectations.map((e) => probeName(e.measure)).filter((n) => n in signals));
+    const probes = test.expectations.flatMap((e) => probeNames(e.measure));
+    const shown = freq ? probes.flatMap((p) => [`db(${p})`, `phase(${p})`]) : probes;
+    const wanted = new Set(shown.filter((n) => n in signals));
     st = { enabled: wanted.size ? wanted : new Set(names.slice(0, 2)), view: null };
     chartState.set(name, st);
   }
   const container = el("div", { class: "chart" });
   const head = el("div", { class: "chart-head" }, el("strong", {}, name));
+  // Signals the test measures stay in view; the rest sit in a collapsible list.
+  const more = el("div", { class: "chart-head" });
+  const initial = new Set(st.enabled);
   names.forEach((signal, i) => {
     const box = el("input", { type: "checkbox" });
     box.checked = st.enabled.has(signal);
@@ -193,13 +229,21 @@ function buildChart(name, test, data) {
       if (box.checked) st.enabled.add(signal); else st.enabled.delete(signal);
       draw();
     });
-    head.append(el("label", { style: `color:${COLORS[i % COLORS.length]}` }, box, ` ${signal}`));
+    const label = el("label", { style: `color:${COLORS[i % COLORS.length]}` }, box, ` ${signal}`);
+    (initial.has(signal) ? head : more).append(label);
   });
   head.append(el("span", { class: "hint muted" }, "wheel: zoom · drag: pan · double-click: reset"));
+  if (more.childElementCount) {
+    head.append(el("details", { class: "more" },
+      el("summary", {}, `all signals (${names.length})`), more));
+  }
   const plot = svg("svg");
   container.append(head, plot);
 
-  const time = data.time;
+  // Internal x axis: time, or log10(frequency) for AC so zoom and pan work in decades.
+  const time = freq ? data.x.map(Math.log10) : data.x;
+  const xUnit = freq ? "Hz" : "s";
+  const xValue = (v) => (freq ? 10 ** v : v);
   const W = 900, PANEL = 200, L = 70, R = 16, T = 10, GAP = 34;
 
   function draw() {
@@ -234,11 +278,14 @@ function buildChart(name, test, data) {
         label.textContent = fmt(tick, unit);
         plot.append(label);
       }
-      for (const tick of niceTicks(view[0], view[1], 8)) {
+      const decades = [];
+      for (let k = Math.ceil(view[0]); k <= Math.floor(view[1]); k++) decades.push(k);
+      const xTicks = freq && decades.length >= 2 ? decades : niceTicks(view[0], view[1], 8);
+      for (const tick of xTicks) {
         if (tick < view[0] || tick > view[1]) continue;
         plot.append(svg("line", { x1: sx(tick), x2: sx(tick), y1: top, y2: bottom, stroke: "var(--grid)" }));
         const label = svg("text", { x: sx(tick), y: bottom + 14, "text-anchor": "middle", "font-size": 11, fill: "currentColor" });
-        label.textContent = fmt(tick, "s");
+        label.textContent = fmt(xValue(tick), xUnit);
         plot.append(label);
       }
       for (const n of inPanel) {
@@ -265,7 +312,7 @@ function buildChart(name, test, data) {
           const color = COLORS[names.indexOf(n) % COLORS.length];
           cursor.append(svg("circle", { cx: x, cy: panel.sy(signals[n].values[i]), r: 3, fill: color }));
           const label = svg("text", { x: x + 6, y: panel.top + 14 + k * 14, "font-size": 11, fill: color });
-          label.textContent = `${n} = ${fmt(signals[n].values[i], panel.unit)} @ ${fmt(time[i], "s")}`;
+          label.textContent = `${n} = ${fmt(signals[n].values[i], panel.unit)} @ ${fmt(xValue(time[i]), xUnit)}`;
           cursor.append(label);
         });
       }

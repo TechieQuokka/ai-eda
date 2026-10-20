@@ -1,8 +1,9 @@
-"""Static SVG plots of transient results, one panel per unit."""
+"""Static SVG plots: transient (linear time) and AC (log frequency), one panel per unit."""
 
 import math
 from dataclasses import dataclass
 from html import escape
+from typing import Literal
 
 from eda.units import format_quantity
 
@@ -27,6 +28,7 @@ class Bound:
     label: str
     unit: str
     value: float
+    axis: Literal["x", "y"] = "y"  # x: a time/frequency limit drawn as a vertical line
 
 
 def nice_ticks(low: float, high: float, count: int = 5) -> list[float]:
@@ -57,7 +59,35 @@ def _scale(value: float, axis: tuple[float, float, float, float]) -> float:
     return start + (value - lo) / ((hi - lo) or 1) * (end - start)
 
 
-def plot(title: str, time: list[float], traces: list[Trace], bounds: list[Bound]) -> str:
+def log_ticks(low: float, high: float) -> list[float]:
+    """Decades (1, 10, 100, ...) covering a positive range."""
+    if not low > 0 or not high > low:
+        return []
+    return [10.0**k for k in range(math.floor(math.log10(low)), math.ceil(math.log10(high)) + 1)]
+
+
+def _label(x: float, y: float, text: str, fill: str, anchor: str = "start") -> str:
+    """Text with a white halo drawn underneath, so it stays readable over traces.
+    (A separate element instead of `paint-order`, which CairoSVG does not support.)"""
+    attrs = f'x="{x:.1f}" y="{y:.1f}" text-anchor="{anchor}"'
+    body = escape(text)
+    return (
+        f'<text {attrs} fill="#fff" stroke="#fff" stroke-width="3">{body}</text>'
+        f'<text {attrs} fill="{fill}">{body}</text>'
+    )
+
+
+def plot(
+    title: str,
+    x: list[float],
+    traces: list[Trace],
+    bounds: list[Bound],
+    x_unit: str = "s",
+    log_x: bool = False,
+) -> str:
+    def tx(value: float) -> float:
+        return math.log10(value) if log_x else value
+
     units = list(dict.fromkeys(t.unit for t in traces))
     height = MARGIN_TOP + len(units) * (PANEL_HEIGHT + MARGIN_BOTTOM) + 4
     parts = [
@@ -66,22 +96,21 @@ def plot(title: str, time: list[float], traces: list[Trace], bounds: list[Bound]
         f'<rect width="{WIDTH}" height="{height}" fill="#fff"/>',
         f'<text x="{MARGIN_LEFT}" y="20" font-size="14" font-weight="bold">{escape(title)}</text>',
     ]
-    t_low, t_high = (time[0], time[-1]) if time else (0.0, 1.0)
-    t_ticks = nice_ticks(t_low, t_high)
+    x_low, x_high = (x[0], x[-1]) if x else (1.0, 10.0)
+    x_ticks = log_ticks(x_low, x_high) if log_x else nice_ticks(x_low, x_high)
+    x_bounds = [b for b in bounds if b.axis == "x"]
+    left, right = MARGIN_LEFT, WIDTH - MARGIN_RIGHT
+    x_axis = (tx(x_low), tx(x_high), left, right)
     color_index = 0
     for panel, unit in enumerate(units):
         top = MARGIN_TOP + panel * (PANEL_HEIGHT + MARGIN_BOTTOM)
+        bottom = top + PANEL_HEIGHT
         panel_traces = [t for t in traces if t.unit == unit]
-        panel_bounds = [b for b in bounds if b.unit == unit]
+        panel_bounds = [b for b in bounds if b.unit == unit and b.axis == "y"]
         values = [v for t in panel_traces for v in t.values if math.isfinite(v)]
         values += [b.value for b in panel_bounds]
         y_ticks = nice_ticks(min(values), max(values)) if values else [0.0, 1.0]
-        y_low, y_high = y_ticks[0], y_ticks[-1]
-        left, right = MARGIN_LEFT, WIDTH - MARGIN_RIGHT
-        bottom = top + PANEL_HEIGHT
-
-        x_axis = (t_low, t_high, left, right)
-        y_axis = (y_low, y_high, bottom, top)
+        y_axis = (y_ticks[0], y_ticks[-1], bottom, top)
 
         parts.append(
             f'<rect x="{left}" y="{top}" width="{right - left}" height="{PANEL_HEIGHT}" '
@@ -94,37 +123,50 @@ def plot(title: str, time: list[float], traces: list[Trace], bounds: list[Bound]
                 f'<text x="{left - 6}" y="{y + 4:.1f}" text-anchor="end">'
                 f"{escape(format_quantity(tick, unit, 3))}</text>"
             )
-        for tick in t_ticks:
-            if not t_low <= tick <= t_high:
+        for tick in x_ticks:
+            if not x_low <= tick <= x_high:
                 continue
-            x = _scale(tick, x_axis)
+            px = _scale(tx(tick), x_axis)
             parts.append(
-                f'<line x1="{x:.1f}" y1="{top}" x2="{x:.1f}" y2="{bottom}" stroke="#eee"/>'
-                f'<text x="{x:.1f}" y="{bottom + 14}" text-anchor="middle">'
-                f"{escape(format_quantity(tick, 's', 3))}</text>"
+                f'<line x1="{px:.1f}" y1="{top}" x2="{px:.1f}" y2="{bottom}" stroke="#eee"/>'
+                f'<text x="{px:.1f}" y="{bottom + 14}" text-anchor="middle">'
+                f"{escape(format_quantity(tick, x_unit, 3))}</text>"
             )
         for bound in panel_bounds:
             y = _scale(bound.value, y_axis)
             parts.append(
                 f'<line x1="{left}" y1="{y:.1f}" x2="{right}" y2="{y:.1f}" stroke="#555" '
-                f'stroke-dasharray="5 4"/><text x="{right - 4}" y="{y - 4:.1f}" '
-                f'text-anchor="end" fill="#555">{escape(bound.label)}</text>'
+                'stroke-dasharray="5 4"/>'
             )
+            if bound.label:
+                parts.append(_label(right - 4, y - 4, bound.label, "#555", "end"))
+        for bound in x_bounds:
+            if not (bound.value > 0 or not log_x):
+                continue
+            px = _scale(tx(bound.value), x_axis)
+            if not left <= px <= right:
+                continue
+            parts.append(
+                f'<line x1="{px:.1f}" y1="{top}" x2="{px:.1f}" y2="{bottom}" stroke="#555" '
+                'stroke-dasharray="5 4"/>'
+            )
+            if bound.label and panel == 0:
+                anchor = "end" if px > (left + right) / 2 else "start"
+                offset = -4 if anchor == "end" else 4
+                parts.append(_label(px + offset, top + 30, bound.label, "#555", anchor))
         legend_x = left + 8
         for trace in panel_traces:
             color = COLORS[color_index % len(COLORS)]
             color_index += 1
             points = " ".join(
-                f"{_scale(t, x_axis):.1f},{_scale(v, y_axis):.1f}"
-                for t, v in zip(time, trace.values, strict=False)
-                if math.isfinite(v)
+                f"{_scale(tx(t), x_axis):.1f},{_scale(v, y_axis):.1f}"
+                for t, v in zip(x, trace.values, strict=False)
+                if math.isfinite(v) and (t > 0 or not log_x)
             )
             parts.append(
                 f'<polyline points="{points}" fill="none" stroke="{color}" stroke-width="1.6"/>'
             )
-            parts.append(
-                f'<text x="{legend_x}" y="{top + 14}" fill="{color}">{escape(trace.name)}</text>'
-            )
+            parts.append(_label(legend_x, top + 14, trace.name, color))
             legend_x += 8 + 7 * len(trace.name)
     parts.append("</svg>")
     return "\n".join(parts) + "\n"

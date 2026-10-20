@@ -8,7 +8,6 @@ params:
 spice:
   prefix: C
   template: "<name> <pin:1> <pin:2> <param:capacitance>"
-  current: "@<name>[i]"
 symbol:
   cell: c_v
   ports: { "1": A, "2": B }

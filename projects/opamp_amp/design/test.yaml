@@ -1,0 +1,20 @@
+tests:
+  dc_bias:
+    description: No input offset at the output; quiescent current from the positive rail.
+    analysis: { type: op }
+    expect:
+      - { measure: voltage(OUT), min: -10mV, max: 10mV }
+      - { measure: current(U1.v+), min: 0.9mA, max: 1.1mA }
+  sine_gain:
+    description: A 0.5 V, 1 kHz sine comes out at about 5.5 V peak without clipping.
+    analysis: { type: tran, step: 2us, stop: 3ms }
+    expect:
+      - { measure: max(voltage(OUT)), min: 5.3V, max: 5.7V }
+      - { measure: min(voltage(OUT)), min: -5.7V, max: -5.3V }
+  frequency_response:
+    description: 20.8 dB in band; -3 dB corner near GBW / 11 ≈ 91 kHz.
+    analysis: { type: ac, start: 10Hz, stop: 10MHz, points_per_decade: 20 }
+    expect:
+      - { measure: "at(db(voltage(OUT)), 1kHz)", min: 20.6dB, max: 21dB }
+      - { measure: "cross(db(voltage(OUT)), 17.8dB)", min: 70kHz, max: 110kHz }
+      - { measure: "at(phase(voltage(OUT)), 1kHz)", min: -2deg, max: 0deg }

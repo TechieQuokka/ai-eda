@@ -4,36 +4,53 @@ import math
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, JsonValue
 
 from eda.adapters import ngspice
-from eda.model import GROUND, CompiledExpectation, CompiledTest, Design, Op
-from eda.netlist.spice import build_netlist, current_vector, voltage_vector
+from eda.model import GROUND, Ac, CompiledExpectation, CompiledTest, Design, Op, domain_of
+from eda.netlist.spice import (
+    build_netlist,
+    current_vector,
+    needs_pspice_mode,
+    pin_current_vector,
+    voltage_vector,
+)
 from eda.result import Diagnostics
 from eda.units import format_quantity
-from eda.verify.measure import Probe, reduce
+from eda.verify.measure import Probe, Trace, evaluate
+
+type Values = list[float] | list[complex]
+type Signals = dict[str, tuple[str, Values]]
 
 
 class Signal(BaseModel):
     unit: str
-    values: list[float]
+    values: list[float]  # real part
+    imag: list[float] | None = None  # imaginary part (ac only)
+
+    def data(self) -> Values:
+        if self.imag is None:
+            return self.values
+        return [complex(re, im) for re, im in zip(self.values, self.imag, strict=True)]
 
 
 class WaveformData(BaseModel):
-    """`out/sim/<test>.json` for transient tests."""
+    """`out/sim/<test>.json` for tran (x = time) and ac (x = frequency) tests."""
 
-    time: list[float]
+    axis: Literal["time", "frequency"]
+    x: list[float]
     signals: dict[str, Signal]
 
-    def as_signals(self) -> dict[str, tuple[str, list[float]]]:
-        return {name: (s.unit, s.values) for name, s in self.signals.items()}
+    def as_signals(self) -> Signals:
+        return {name: (s.unit, s.data()) for name, s in self.signals.items()}
 
 
 @dataclass(frozen=True)
 class Traces:
-    time: list[float] | None
-    vectors: dict[str, list[float]]
+    x: list[float] | None  # time or frequency; None for op
+    signals: Signals
     points: int
 
 
@@ -79,7 +96,7 @@ def _run_one(
     )
     rel_log = design.paths.rel(log_path)
     try:
-        output = ngspice.run(netlist_path, log_path)
+        output = ngspice.run(netlist_path, log_path, needs_pspice_mode(design.circuit))
     except ngspice.NgspiceNotFound as exc:
         diag.fail_tool("simulator_missing", str(exc))
         return None
@@ -109,58 +126,69 @@ def _run_one(
         diag.fail_tool("raw_parse", f"{test.name}: ngspice produced no data")
         return None
     plot = plots[-1]
-    time = plot.vectors.get("time")
-    traces = Traces(time=time, vectors=plot.vectors, points=len(next(iter(plot.vectors.values()))))
+    x = plot.vectors.get("frequency" if isinstance(test.analysis, Ac) else "time")
+    vectors: dict[str, Values] = {**plot.vectors, **plot.complex_vectors}
+    points = len(next(iter(vectors.values())))
+    traces = Traces(x=x, signals=_named_signals(design, vectors, points), points=points)
 
-    signals = _named_signals(design, traces)
     checks: list[JsonValue] = []
     all_passed = True
     for exp in test.expectations:
-        check = _judge(exp, traces, signals, test, diag)
+        check = _judge(exp, traces, test, diag)
         all_passed = all_passed and check["passed"] is True
         checks.append(check)
 
     outcome: dict[str, JsonValue] = {
-        "analysis": "op" if isinstance(test.analysis, Op) else "tran",
+        "analysis": domain_of(test.analysis),
         "passed": all_passed,
         "expectations": checks,
         "netlist": design.paths.rel(netlist_path),
     }
     if isinstance(test.analysis, Op):
         outcome["operating_point"] = {
-            name: {"value": values[-1], "display": format_quantity(values[-1], unit)}
-            for name, (unit, values) in signals.items()
+            name: {"value": _real(values[-1]), "display": format_quantity(_real(values[-1]), unit)}
+            for name, (unit, values) in traces.signals.items()
         }
     else:
         wave_path = sim_dir / f"{test.name}.json"
-        wave_path.write_text(_waveform_json(traces, signals), encoding="utf-8")
+        axis: Literal["time", "frequency"] = (
+            "frequency" if isinstance(test.analysis, Ac) else "time"
+        )
+        wave_path.write_text(_waveform_json(axis, traces), encoding="utf-8")
         outcome["waveform"] = design.paths.rel(wave_path)
     return outcome
 
 
-def _named_signals(design: Design, traces: Traces) -> dict[str, tuple[str, list[float]]]:
-    """Every net voltage and part current under the names tests use."""
-    zeros = [0.0] * traces.points
-    signals: dict[str, tuple[str, list[float]]] = {}
+def _real(value: float | complex) -> float:
+    return value.real if isinstance(value, complex) else value
+
+
+def _named_signals(design: Design, vectors: dict[str, Values], points: int) -> Signals:
+    """Every net voltage, part current, and pin current under the names tests use."""
+    signals: Signals = {}
     for net in design.circuit.nets:
         vec = voltage_vector(net)
-        values = zeros if vec is None else traces.vectors.get(vec)
+        values = vectors.get(vec) if vec is not None else None
         if values is not None and net != GROUND:
             signals[f"voltage({net})"] = ("V", values)
     for ref, part in design.circuit.parts.items():
-        values = traces.vectors.get(current_vector(part))
-        if values is not None:
+        vec = current_vector(part)
+        if vec is not None and (values := vectors.get(vec)) is not None:
             signals[f"current({ref})"] = ("A", values)
+        if part.spec.spice.pin_currents:
+            for pin in part.spec.pins:
+                found = vectors.get(pin_current_vector(part, pin))
+                if found is not None:
+                    signals[f"current({ref}.{pin})"] = ("A", found)
     return signals
 
 
-def probe_values(
-    probe: Probe, signals: dict[str, tuple[str, list[float]]], points: int
-) -> list[float] | None:
+def probe_values(probe: Probe, signals: Signals, points: int) -> Trace | None:
+    """Values of one probe; voltage differences are computed, GND reads 0 V."""
     if probe.kind == "current":
-        found = signals.get(f"current({probe.targets[0]})")
+        found = signals.get(probe.text)
         return found[1] if found else None
-    series: list[list[float]] = []
+    series: list[Values] = []
     for net in probe.targets:
         if net == GROUND:
             series.append([0.0] * points)
@@ -171,50 +199,59 @@ def probe_values(
         series.append(found[1])
     if len(series) == 1:
         return series[0]
-    return [a - b for a, b in zip(series[0], series[1], strict=True)]
+    return [complex(a) - complex(b) for a, b in zip(series[0], series[1], strict=True)]
 
 
 def _judge(
     exp: CompiledExpectation,
     traces: Traces,
-    signals: dict[str, tuple[str, list[float]]],
     test: CompiledTest,
     diag: Diagnostics,
 ) -> dict[str, JsonValue]:
     measure = exp.measure
-    unit = measure.probe.unit
-    values = probe_values(measure.probe, signals, traces.points)
-    if values is None:
-        diag.fail_tool("missing_vector", f"{test.name}: simulator did not report {measure.text}")
+    unit = measure.unit
+    try:
+        value = evaluate(
+            measure.node,
+            domain_of(test.analysis),
+            traces.x,
+            lambda probe: probe_values(probe, traces.signals, traces.points),
+        )
+    except KeyError as exc:
+        diag.fail_tool("missing_vector", f"{test.name}: simulator did not report {exc.args[0]}")
         return {"measure": measure.text, "passed": False, "value": None}
-    value = reduce(measure.reduction, traces.time, values)
     passed = (
         math.isfinite(value)
         and (exp.min is None or value >= exp.min)
         and (exp.max is None or value <= exp.max)
     )
-    display = format_quantity(value, unit)
+    display = format_quantity(value, unit) if math.isfinite(value) else "n/a"
     if not passed:
-        if exp.min is not None and value < exp.min:
+        if not math.isfinite(value):
+            hint = (
+                "the trace never crosses that level"
+                if measure.reduction == "cross"
+                else "outside the simulated range"
+            )
+        elif exp.min is not None and value < exp.min:
             hint = f"too low by {format_quantity(exp.min - value, unit)}"
-        elif exp.max is not None and value > exp.max:
-            hint = f"too high by {format_quantity(value - exp.max, unit)}"
         else:
-            hint = "not a finite number"
+            assert exp.max is not None
+            hint = f"too high by {format_quantity(value - exp.max, unit)}"
         diag.error(
             "expect",
             f"{test.name}: {measure.text} = {display}, expected {exp.range_text} ({hint})",
             exp.location,
             test=test.name,
             measure=measure.text,
-            value=value,
+            value=value if math.isfinite(value) else None,
             min=exp.min,
             max=exp.max,
             unit=unit,
         )
     return {
         "measure": measure.text,
-        "value": value,
+        "value": value if math.isfinite(value) else None,
         "display": display,
         "unit": unit,
         "min": exp.min,
@@ -225,9 +262,15 @@ def _judge(
     }
 
 
-def _waveform_json(traces: Traces, signals: dict[str, tuple[str, list[float]]]) -> str:
-    data = WaveformData(
-        time=list(traces.time or []),
-        signals={name: Signal(unit=unit, values=v) for name, (unit, v) in signals.items()},
-    )
+def _waveform_json(axis: Literal["time", "frequency"], traces: Traces) -> str:
+    signals: dict[str, Signal] = {}
+    for name, (unit, values) in traces.signals.items():
+        if axis == "frequency":
+            cvalues = [complex(v) for v in values]
+            signals[name] = Signal(
+                unit=unit, values=[v.real for v in cvalues], imag=[v.imag for v in cvalues]
+            )
+        else:
+            signals[name] = Signal(unit=unit, values=[_real(v) for v in values])
+    data = WaveformData(axis=axis, x=list(traces.x or []), signals=signals)
     return data.model_dump_json()

@@ -157,6 +157,12 @@ def validate[M: BaseModel](model: type[M], document: Document, diag: Diagnostics
 def _schema_message(kind: str, message: str, loc: DataPath) -> str:
     where = format_path(loc) or "document"
     if kind == "extra_forbidden":
+        key = str(loc[-1]) if loc else ""
+        if "(" in key or ")" in key:
+            return (
+                f"unknown field {where!r}: a comma inside {{ ... }} split the value; "
+                'quote it, e.g. measure: "at(db(voltage(OUT)), 1kHz)"'
+            )
         return f"unknown field {where!r}"
     if kind == "missing":
         return f"missing required field {where!r}"

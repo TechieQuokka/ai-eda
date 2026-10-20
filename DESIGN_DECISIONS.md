@@ -1,7 +1,7 @@
 # AI-Native EDA — Design Decisions
 
 > Companion to `PROJECT_SUMMARY.md`. Records what was discussed and decided on 2026-10-20.
-> Status: M0 complete (2026-10-20). See §10 for the M0 specification and §11 for results.
+> Status: M0 and M1 complete (2026-10-20). M0: §10–§11. M1: §12.
 
 ---
 
@@ -285,3 +285,50 @@ The JSON error and the operating-point table gave everything needed for the fix;
 | 6 | Log timestamps were UTC | Local time with offset (`2026-10-20T18:21:53+09:00`) |
 
 Remaining known limits: netlistsvg places parts automatically with no hints (fine for small circuits; KiCad-based rendering is planned for M2), and waveform bound labels can overlap traces near the right edge.
+
+## 12. M1 Specification and Result (2026-10-20)
+
+Goal (from §12 of `PROJECT_SUMMARY.md`): real ICs simulate with pass/fail tests.
+
+### 12.1 Decisions
+
+| Topic | Decision | Why |
+|---|---|---|
+| Vendor model files | Imported into `parts/vendor/` (git-ignored) with `eda model import`; never committed | The repository is public. Vendor models carry their own copyright and often forbid redistribution (e.g. Microchip's license limits use to its products) |
+| Built-in op-amp | Own macromodel `parts/models/eda_opamp.lib` (part `opamp`): dominant pole from `aol`/`gbw`, slew limit via `tanh`, soft rail clamp, `rin`, `rout`, `iq` | License-clean default that works on a fresh clone; vendor models when a specific chip matters |
+| PSpice models | `spice.compat: ps` on a part runs ngspice with `-D ngbehavior=ps`; `eda model import` detects the mode by loading the model both ways | TI TLV9002/OPA171 need it; TL072 does not |
+| Currents | Every current is measured through a 0 V sense source: `current(R1)` flows into the first pin; multi-pin parts (`pin_currents: true`) expose `current(U1.out)` per pin. `.option savecurrents` is no longer used | `savecurrents` reports no AC currents for devices inside subcircuits, which made `write all` fail; sense sources work in every analysis with one sign convention |
+| AC analysis | `analysis: { type: ac, start, stop, points_per_decade }`; sources take an `ac` magnitude; an AC test without an AC source is an error | Frequency response is the core op-amp requirement |
+| Measures | Nested functions: reductions (`max min initial final avg rms pp`), `at(trace, X)`, `cross(trace, LEVEL)`, AC transforms `db mag phase`; type-checked per analysis with the result unit | One grammar for gain, bandwidth, phase, timing (`cross` in tran gives rise/fall times) |
+| Units | Added `dB`, `deg`, `V/s` (written `V/us`), and the `T` prefix | Op-amp parameters and AC bounds |
+| YAML commas | A measure with a comma inside `{ ... }` must be quoted; the loader detects the split and says so | Found while writing the first AC test |
+
+### 12.2 Commands added
+
+| Command | Does |
+|---|---|
+| `eda model inspect FILE` | Lists `.subckt` names, nodes, default params, and the pin-description comments around them |
+| `eda model import FILE --id ID [--subckt NAME] [--opamp IN+,IN-,V+,V-,OUT]` | Copies the model into `parts/vendor/models/`, writes `parts/vendor/<id>.yaml`, detects PSpice mode, and checks that the part loads |
+
+### 12.3 Result
+
+| Project | Part | Tests |
+|---|---|---|
+| `projects/opamp_amp` | built-in `opamp` (GBW 1 MHz), gain 11 | op: offset 1.3 mV, Iq 1 mA; tran: ±5.5 V; ac: 20.83 dB at 1 kHz, −3 dB at 90.3 kHz (theory 91 kHz), −0.64° at 1 kHz — all pass |
+| `projects/tl072_amp` | TI TL072 vendor model (imported) | op: offset 0.12 mV; tran: ±11 V; ac: 20.83 dB, −3 dB at 320.7 kHz — all pass |
+| (local check) | TI TLV9002 vendor model, PSpice mode | Iq 60.4 µA (datasheet 60 µA), −3 dB at 95.2 kHz for gain 11 (GBW 1 MHz) — all pass |
+
+`tl072_amp` needs the model imported first:
+
+```bash
+uv run eda model import <path>/TL072.301 --id tl072 --opamp 1,2,3,4,5
+```
+
+(ngspice's source tarball ships TI's file as `examples/optran/models/TL072.301`.)
+
+### 12.4 Findings
+
+1. **Vendor macromodels do not model everything.** The 1989 TL072 model draws 14 mA from ±15 V through a dummy resistor (`RP 3 4 2.143k`), versus 1.4 mA in the datasheet, so a supply-current requirement cannot be tested with it. TLV9002's newer model matches its datasheet. Tests should only check what the model claims to model (TI lists those in each file's header).
+2. **TLV6001 does not reach an operating point** in ngspice without `.option optran`; not supported yet.
+3. **Quoting**: measures with commas need quotes in flow mappings; the error message now says how.
+4. **Schematics of op-amp circuits** with split supplies are readable but crowded (netlistsvg places supply sources freely). KiCad-based rendering remains the plan for M2.

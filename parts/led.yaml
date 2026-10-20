@@ -11,7 +11,6 @@ params:
 spice:
   prefix: D
   template: "<name> <pin:anode> <pin:cathode> <model>"
-  current: "@<name>[id]"
   model_param: color
   models:
     red: "D(IS=3.568e-18 N=2 RS=1 CJO=10p BV=5 IBV=10u)"

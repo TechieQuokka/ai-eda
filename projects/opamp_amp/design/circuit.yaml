@@ -1,0 +1,18 @@
+description: >
+  Generic op-amp (GBW 1 MHz) as a non-inverting amplifier, gain 1 + RF/RG = 11.
+  Input: 0.5 V, 1 kHz sine with 1 V AC magnitude for frequency-response tests.
+parts:
+  VCC: { type: dc_voltage_source, voltage: 12V }
+  VEE: { type: dc_voltage_source, voltage: 12V }
+  VIN: { type: sine_voltage_source, amplitude: 0.5V, frequency: 1kHz, ac: 1V }
+  U1: { type: opamp, gbw: 1MHz }
+  RF: { type: resistor, resistance: 10kohm }
+  RG: { type: resistor, resistance: 1kohm }
+  RL: { type: resistor, resistance: 10kohm }
+nets:
+  VP: [VCC.+, U1.v+]
+  VN: [VEE.-, U1.v-]
+  IN: [VIN.+, U1.in+]
+  FB: [U1.in-, RF.2, RG.1]
+  OUT: [U1.out, RF.1, RL.1]
+  GND: [VCC.-, VEE.+, VIN.-, RG.2, RL.2]

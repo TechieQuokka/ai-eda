@@ -24,7 +24,8 @@ class RunOutput:
 @dataclass(frozen=True)
 class Plot:
     name: str
-    vectors: dict[str, list[float]]  # lower-case vector name → values
+    vectors: dict[str, list[float]]  # lower-case vector name → real values
+    complex_vectors: dict[str, list[complex]]  # same, for complex (AC) plots
 
 
 def executable() -> str:
@@ -47,10 +48,14 @@ def version() -> str | None:
     return None
 
 
-def run(netlist: Path, log_path: Path) -> RunOutput:
-    """Run ngspice in batch mode, ignoring user init files (`-n`) for reproducibility."""
+def run(netlist: Path, log_path: Path, pspice_mode: bool = False) -> RunOutput:
+    """Run ngspice in batch mode, ignoring user init files (`-n`) for reproducibility.
+
+    `pspice_mode` sets `ngbehavior=ps`, which many vendor (PSpice) models need.
+    """
+    compat = ["-D", "ngbehavior=ps"] if pspice_mode else []
     proc = subprocess.run(
-        [executable(), "-b", "-n", netlist.name],
+        [executable(), "-b", "-n", *compat, netlist.name],
         cwd=netlist.parent,
         capture_output=True,
         text=True,
@@ -72,7 +77,7 @@ def run(netlist: Path, log_path: Path) -> RunOutput:
 
 
 def parse_raw(text: str) -> list[Plot]:
-    """Parse an ASCII raw file (`set filetype=ascii`) holding one or more real plots."""
+    """Parse an ASCII raw file (`set filetype=ascii`) holding real or complex plots."""
     plots: list[Plot] = []
     lines = text.splitlines()
     i = 0
@@ -85,8 +90,7 @@ def parse_raw(text: str) -> list[Plot]:
             key, _, value = lines[i].partition(":")
             header[key.strip()] = value.strip()
             i += 1
-        if "complex" in header.get("Flags", ""):
-            raise ValueError("complex raw data is not supported")
+        is_complex = "complex" in header.get("Flags", "")
         count = int(header["No. Variables"])
         points = int(header["No. Points"])
         names = [lines[i + 1 + k].split()[1].lower() for k in range(count)]
@@ -101,10 +105,24 @@ def parse_raw(text: str) -> list[Plot]:
             i += 1
         if len(tokens) < needed:
             raise ValueError("raw file ended early")
-        vectors: dict[str, list[float]] = {name: [] for name in names}
+        vectors: dict[str, list[float]] = {}
+        complex_vectors: dict[str, list[complex]] = {}
+        columns: dict[str, list[complex]] = {name: [] for name in names}
         for p in range(points):
             row = tokens[p * (count + 1) + 1 : (p + 1) * (count + 1)]
             for name, value in zip(names, row, strict=True):
-                vectors[name].append(float(value))
-        plots.append(Plot(name=header.get("Plotname", ""), vectors=vectors))
+                real, _, imag = value.partition(",")
+                columns[name].append(complex(float(real), float(imag or 0.0)))
+        for name, values in columns.items():
+            if is_complex and name != "frequency":
+                complex_vectors[name] = values
+            else:
+                vectors[name] = [v.real for v in values]
+        plots.append(
+            Plot(
+                name=header.get("Plotname", ""),
+                vectors=vectors,
+                complex_vectors=complex_vectors,
+            )
+        )
     return plots

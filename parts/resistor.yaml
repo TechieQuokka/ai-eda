@@ -8,7 +8,6 @@ params:
 spice:
   prefix: R
   template: "<name> <pin:1> <pin:2> <param:resistance>"
-  current: "@<name>[i]"
 symbol:
   cell: r_v
   ports: { "1": A, "2": B }

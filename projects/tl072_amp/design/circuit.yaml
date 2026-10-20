@@ -1,0 +1,16 @@
+description: TL072 (vendor macromodel), gain 1 + RF/RG = 11, 10 kΩ load, ±15 V supplies.
+parts:
+  VCC: { type: dc_voltage_source, voltage: 15V }
+  VEE: { type: dc_voltage_source, voltage: 15V }
+  VIN: { type: sine_voltage_source, amplitude: 1V, frequency: 1kHz, ac: 1V }
+  U1: { type: tl072 }
+  RF: { type: resistor, resistance: 10kohm }
+  RG: { type: resistor, resistance: 1kohm }
+  RL: { type: resistor, resistance: 10kohm }
+nets:
+  VP: [VCC.+, U1.v+]
+  VN: [VEE.-, U1.v-]
+  IN: [VIN.+, U1.in+]
+  FB: [U1.in-, RF.2, RG.1]
+  OUT: [U1.out, RF.1, RL.1]
+  GND: [VCC.-, VEE.+, VIN.-, RG.2, RL.2]

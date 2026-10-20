@@ -13,11 +13,13 @@ def test_netlist_lines(make_project: MakeProject) -> None:
     assert design is not None
     text = build_netlist("demo", design.circuit, Op(), Path("t.raw"))
     lines = text.splitlines()
-    assert "V1 vcc 0 DC 5" in lines
-    assert "R1 vcc n1 330" in lines
-    assert "D1 n1 0 led_red" in lines
+    # Every two-terminal part's first pin goes through a 0 V sense source.
+    assert "v_s_v1_0 vcc s_v1_0 DC 0" in lines
+    assert "V1 s_v1_0 0 DC 5 AC 0" in lines
+    assert "R1 s_r1_0 n1 330" in lines
+    assert "D1 s_d1_0 0 led_red" in lines
     assert any(line.startswith(".model led_red D(IS=3.568e-18") for line in lines)
-    assert ".option savecurrents" in lines
+    assert ".option savecurrents" not in lines
     assert "op" in lines
     assert "write t.raw all" in lines
 
@@ -33,9 +35,9 @@ def test_current_vectors(make_project: MakeProject) -> None:
     design = load_design(make_project(), Diagnostics())
     assert design is not None
     parts = design.circuit.parts
-    assert current_vector(parts["V1"]) == "i(v1)"
-    assert current_vector(parts["R1"]) == "i(@r1[i])"
-    assert current_vector(parts["D1"]) == "i(@d1[id])"
+    assert current_vector(parts["V1"]) == "i(v_s_v1_0)"
+    assert current_vector(parts["R1"]) == "i(v_s_r1_0)"
+    assert current_vector(parts["D1"]) == "i(v_s_d1_0)"
 
 
 RAW = """Title: * t

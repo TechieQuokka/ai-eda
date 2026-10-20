@@ -1,0 +1,4 @@
+name: tl072_amp
+description: >
+  Real-IC example: TI TL072 vendor model as a gain-of-11 non-inverting amplifier on ±15 V.
+  Needs the vendor model imported first (see README "Vendor models").

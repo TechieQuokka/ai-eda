@@ -14,3 +14,6 @@ out/
 # Tool evaluations
 eval/
 node_modules/
+
+# Imported vendor SPICE models (vendor licenses usually forbid redistribution)
+parts/vendor/

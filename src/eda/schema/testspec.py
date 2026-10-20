@@ -16,7 +16,14 @@ class TranAnalysis(StrictModel):
     start: str | None = None
 
 
-Analysis = Annotated[OpAnalysis | TranAnalysis, Field(discriminator="type")]
+class AcAnalysis(StrictModel):
+    type: Literal["ac"]
+    start: str
+    stop: str
+    points_per_decade: Annotated[int, Field(ge=1, le=1000)] = 20
+
+
+Analysis = Annotated[OpAnalysis | TranAnalysis | AcAnalysis, Field(discriminator="type")]
 
 
 class Expectation(StrictModel):

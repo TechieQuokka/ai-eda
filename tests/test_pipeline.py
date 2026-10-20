@@ -62,7 +62,8 @@ def test_rc_transient(make_project: MakeProject) -> None:
     assert result.ok, result.errors
     wave = json.loads((root / "out" / "sim" / "step.json").read_text(encoding="utf-8"))
     assert "voltage(OUT)" in wave["signals"]
-    assert len(wave["time"]) > 10
+    assert wave["axis"] == "time"
+    assert len(wave["x"]) > 10
 
 
 @requires_ngspice

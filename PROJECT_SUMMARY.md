@@ -1,6 +1,6 @@
 # AI-Native EDA — Project Summary (working title)
 
-> Status: M0 complete (2026-10-20). Settled decisions and the M0 specification are in `DESIGN_DECISIONS.md`.
+> Status: M0 and M1 complete (2026-10-20). Settled decisions and the M0 specification are in `DESIGN_DECISIONS.md`.
 > This document is the reference for all upcoming work. Facts about third-party projects are from memory and should be re-verified before relying on them.
 
 ---
@@ -198,7 +198,7 @@ Rationale for each is in `DESIGN_DECISIONS.md` §2 and §7.
 | Milestone | Scope | Done when |
 |---|---|---|
 | **M0** ✅ | Vertical slice: source + resistor + LED defined in text → `sim` → JSON verdict → `render` SVG | Claude Code, given "make LED current 10 mA," edits the file, runs check/sim, and confirms pass on its own (done 2026-10-20) |
-| **M1** | Part DB, import vendor SPICE models, waveform output, ERC | Real ICs (e.g. an op-amp circuit) simulate with pass/fail tests |
+| **M1** ✅ | Part DB, import vendor SPICE models, waveform output, ERC, AC analysis | Real ICs (e.g. an op-amp circuit) simulate with pass/fail tests (done 2026-10-20: TI TL072 / TLV9002) |
 | **M2** | KiCad format generation, `kicad-cli` DRC and Gerber export, auto-routing | A board is produced from design files with DRC results as JSON |
 | **M3** | Firmware integration: pin header generation, static cross-checks | Changing a pin in the schematic updates `pins.h` and flags conflicts |
 | **M4** | MCU emulation + SPICE mixed simulation | Firmware runs against the simulated circuit |
@@ -236,5 +236,5 @@ Because the human only watches, provide:
 
 ## 16. Immediate Next Steps
 
-1. Address the M0 friction points listed in `DESIGN_DECISIONS.md` §11.
-2. Start M1: vendor SPICE model import (`.lib` / subcircuits), an op-amp part, more analyses (AC), and a real-IC example with pass/fail tests.
+1. Start M2: KiCad schematic/board generation from the design files, `kicad-cli` ERC/DRC and Gerber export, auto-routing (decide open item #4 first).
+2. Carry-overs from M1 (`DESIGN_DECISIONS.md` §12.4): `optran` for hard-to-converge vendor models.

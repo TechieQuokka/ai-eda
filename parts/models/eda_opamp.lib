@@ -1,0 +1,31 @@
+* eda_opamp - generic voltage-feedback op-amp macromodel (part of ai-eda, see LICENSE)
+*
+* Pins: inp inn vp vn out
+* Models: open-loop gain with one dominant pole (aol_db, gbw), slew-rate limit (sr),
+* output swing limited to the rails minus `swing`, input resistance, output resistance,
+* and quiescent supply current. Single-pole: no second pole, so phase margin is ideal.
+*
+.subckt eda_opamp inp inn vp vn out
++ params: aol_db=100 gbw=1e6 sr=0.5e6 rin=1e12 rout=50 iq=1e-3 swing=0.1
+.param gm = 1e-3
+.param aol = {pwr(10, aol_db / 20)}
+.param r1 = {aol / gm}
+.param c1 = {gm / (6.283185307 * gbw)}
+.param imax = {sr * c1}
+.param kclamp = {1e3 / r1}
+Rin inp inn {rin}
+* Transconductance stage; tanh() limits the current into C1, which sets the slew rate.
+B1 0 n1 I = {imax} * tanh({gm} * v(inp, inn) / {imax})
+R1 n1 vmid {r1}
+C1 n1 vmid {c1}
+* Mid-supply reference for the internal node.
+Emid vmid 0 vp vn 0.5
+Rmid vmid 0 1e9
+* Soft clamp keeps the internal node within the output swing (no wind-up).
+B2 n1 0 I = {kclamp} * (max(v(n1) - v(vp) + {swing}, 0) - max(v(vn) + {swing} - v(n1), 0))
+* Output stage.
+Eout nout 0 n1 0 1
+Rout nout out {rout}
+* Quiescent current drawn from the supplies.
+Iq vp vn {iq}
+.ends eda_opamp

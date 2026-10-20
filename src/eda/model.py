@@ -8,7 +8,7 @@ from eda.result import Location
 from eda.schema.part import PartSpec
 from eda.schema.project import Project
 from eda.units import format_quantity
-from eda.verify.measure import Measure
+from eda.verify.measure import Domain, Measure
 
 GROUND = "GND"
 
@@ -50,6 +50,22 @@ class Tran:
 
 
 @dataclass(frozen=True)
+class Ac:
+    start: float  # Hz
+    stop: float  # Hz
+    points_per_decade: int
+
+
+type Analysis = Op | Tran | Ac
+
+
+def domain_of(analysis: Analysis) -> Domain:
+    if isinstance(analysis, Op):
+        return "op"
+    return "tran" if isinstance(analysis, Tran) else "ac"
+
+
+@dataclass(frozen=True)
 class CompiledExpectation:
     index: int
     measure: Measure
@@ -59,7 +75,7 @@ class CompiledExpectation:
 
     @property
     def range_text(self) -> str:
-        unit = self.measure.probe.unit
+        unit = self.measure.unit
         low = format_quantity(self.min, unit) if self.min is not None else None
         high = format_quantity(self.max, unit) if self.max is not None else None
         if low and high:
@@ -71,7 +87,7 @@ class CompiledExpectation:
 class CompiledTest:
     name: str
     description: str
-    analysis: Op | Tran
+    analysis: Analysis
     expectations: tuple[CompiledExpectation, ...]
     location: Location
 

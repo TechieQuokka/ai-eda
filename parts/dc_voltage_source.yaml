@@ -7,10 +7,10 @@ description: >
 pins: ["+", "-"]
 params:
   voltage: { unit: V }
+  ac: { unit: V, default: 0V, description: AC analysis magnitude }
 spice:
   prefix: V
-  template: "<name> <pin:+> <pin:-> DC <param:voltage>"
-  current: "<name>"
+  template: "<name> <pin:+> <pin:-> DC <param:voltage> AC <param:ac>"
 symbol:
   cell: v
   ports: { "+": "+", "-": "-" }

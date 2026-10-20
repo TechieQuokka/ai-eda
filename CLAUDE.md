@@ -46,6 +46,19 @@ The CLI never makes design decisions; it only reports.
 - `iterations.jsonl` in each project (tracked by git) records every `eda` run (changed files, errors) and every `eda log` note (intent and fix).
 - `uv run eda watch projects/<name>` re-runs on file changes and serves the live viewer at http://127.0.0.1:8765/ (schematic, verdicts, interactive waveforms, iteration log). The user watches it; start it when they want to observe.
 
-## 5. Adding Parts
+## 5. Writing Tests (`design/test.yaml`)
 
-Built-in parts live in `parts/<id>.yaml` (one file per type, file name = id); project-specific parts go in `projects/<name>/parts/`. Fields: pins, params (`unit` or `choices`, optional `default`), `spice` template and current probe, netlistsvg `symbol`, `dc_path`.
+- Analyses: `{ type: op }`, `{ type: tran, step, stop }`, `{ type: ac, start, stop, points_per_decade }`. AC needs a source with an `ac:` magnitude.
+- Probes: `voltage(NET)`, `voltage(A, B)`, `current(R1)` (into the first pin), `current(U1.out)` (per pin of multi-pin parts).
+- Functions: `max min initial final avg rms pp`, `at(trace, 1ms | 1kHz)`, `cross(trace, LEVEL)` (time / frequency of the first crossing), and for AC `db mag phase`. Examples: `"at(db(voltage(OUT)), 1kHz)"`, `"cross(db(voltage(OUT)), 17.8dB)"`.
+- **Quote any measure that contains a comma** inside `{ ... }`.
+- Units: `V A ohm F H s Hz dB deg V/us`, prefixes `p n u m k M G T` (case-sensitive).
+
+## 6. Parts and Vendor Models
+
+- Built-in parts: `parts/<id>.yaml` (one file per type, file name = id); project-specific parts in `projects/<name>/parts/`. Fields: pins, params (`unit` or `choices`, optional `default`), `spice` template (`include`, `compat`, `pin_currents`), netlistsvg `symbol`, `dc_path`. List them with `eda part list` / `eda part show ID`.
+- `opamp` is a generic macromodel (aol, gbw, slew, rin, rout, iq, swing) and is the default choice. For a specific chip, import the vendor model:
+  1. `uv run eda model inspect FILE` — find the `.subckt` and read its pin comments.
+  2. `uv run eda model import FILE --id <id> [--subckt NAME] [--opamp IN+,IN-,V+,V-,OUT]`.
+- Imported models go to `parts/vendor/`, which is git-ignored: **never commit vendor model files** (their licenses usually forbid redistribution).
+- Only test what a model claims to model (vendor files list it in their header); e.g. the old TL072 model's supply current is not realistic.

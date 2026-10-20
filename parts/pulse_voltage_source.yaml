@@ -13,12 +13,12 @@ params:
   fall: { unit: s, default: 1ns }
   width: { unit: s }
   period: { unit: s }
+  ac: { unit: V, default: 0V, description: AC analysis magnitude }
 spice:
   prefix: V
   template: >-
-    <name> <pin:+> <pin:-> DC <param:low>
+    <name> <pin:+> <pin:-> DC <param:low> AC <param:ac>
     PULSE(<param:low> <param:high> <param:delay> <param:rise> <param:fall> <param:width> <param:period>)
-  current: "<name>"
 symbol:
   cell: v
   ports: { "+": "+", "-": "-" }

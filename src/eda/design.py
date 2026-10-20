@@ -9,6 +9,8 @@ from pathlib import Path
 from eda.loader import Document, SourceMap, load_yaml, validate
 from eda.model import (
     GROUND,
+    Ac,
+    Analysis,
     CompiledExpectation,
     CompiledTest,
     Design,
@@ -17,16 +19,25 @@ from eda.model import (
     ResolvedCircuit,
     ResolvedPart,
     Tran,
+    domain_of,
 )
 from eda.project import ProjectPaths, load_parts
 from eda.result import Diagnostics, Location
 from eda.schema.circuit import Circuit
 from eda.schema.part import PartSpec
 from eda.schema.project import Project
-from eda.schema.testspec import Expectation, OpAnalysis, SimTestFile, TranAnalysis
+from eda.schema.testspec import AcAnalysis, Expectation, OpAnalysis, SimTestFile, TranAnalysis
 from eda.units import QuantityError, format_quantity, parse_quantity
 from eda.verify.erc import run_erc
-from eda.verify.measure import MeasureSyntaxError, parse_measure
+from eda.verify.measure import (
+    Measure,
+    MeasureSyntaxError,
+    MeasureTypeError,
+    Probe,
+    check,
+    parse_measure,
+    probes,
+)
 
 
 def load_design(root: Path, diag: Diagnostics) -> Design | None:
@@ -72,7 +83,8 @@ def _resolve_circuit(
         if spec is None:
             diag.error(
                 "unknown_part_type",
-                f"{ref}: unknown part type {inst.type!r}; available: {', '.join(sorted(parts))}",
+                f"{ref}: unknown part type {inst.type!r}; available: {', '.join(sorted(parts))}. "
+                "Vendor parts must be imported first: eda model import FILE --id ID",
                 src.at("parts", ref, "type"),
                 available=sorted(parts),
             )
@@ -211,6 +223,13 @@ def _compile_tests(
     compiled: dict[str, CompiledTest] = {}
     for name, case in raw.tests.items():
         analysis = _compile_analysis(name, case.analysis, src, diag)
+        if isinstance(analysis, Ac) and circuit is not None and not _has_ac_source(circuit):
+            diag.error(
+                "ac_no_source",
+                f"{name}: ac analysis needs a source with an `ac` magnitude, "
+                "e.g. { type: sine_voltage_source, ..., ac: 1V }",
+                _at(src, name),
+            )
         expectations: list[CompiledExpectation] = []
         for index, exp in enumerate(case.expect):
             item = _compile_expectation(name, index, exp, analysis, src, circuit, diag)
@@ -227,23 +246,38 @@ def _compile_tests(
     return compiled
 
 
+def _has_ac_source(circuit: ResolvedCircuit) -> bool:
+    return any(part.values.get("ac", 0.0) != 0.0 for part in circuit.parts.values())
+
+
 def _compile_analysis(
-    name: str, raw: OpAnalysis | TranAnalysis, src: SourceMap, diag: Diagnostics
-) -> Op | Tran | None:
+    name: str, raw: OpAnalysis | TranAnalysis | AcAnalysis, src: SourceMap, diag: Diagnostics
+) -> Analysis | None:
     if isinstance(raw, OpAnalysis):
         return Op()
-    times: dict[str, float | None] = {}
-    for field in ("step", "stop", "start"):
+    unit = "s" if isinstance(raw, TranAnalysis) else "Hz"
+    fields = ("step", "stop", "start") if isinstance(raw, TranAnalysis) else ("start", "stop")
+    values: dict[str, float | None] = {}
+    for field in fields:
         text = getattr(raw, field)
         if text is None:
-            times[field] = None
+            values[field] = None
             continue
         try:
-            times[field] = parse_quantity(text, "s")
+            values[field] = parse_quantity(text, unit)
         except QuantityError as exc:
             diag.error("invalid_value", f"{name}.analysis.{field}: {exc}", _at(src, name, field))
             return None
-    step, stop, start = times["step"], times["stop"], times["start"]
+    if isinstance(raw, AcAnalysis):
+        start, stop = values["start"], values["stop"]
+        assert start is not None and stop is not None
+        if not 0 < start < stop:
+            diag.error(
+                "invalid_analysis", f"{name}: ac needs 0 < start < stop", _at(src, name, "start")
+            )
+            return None
+        return Ac(start=start, stop=stop, points_per_decade=raw.points_per_decade)
+    step, stop, start = values["step"], values["stop"], values["start"]
     assert step is not None and stop is not None
     if step <= 0 or stop <= 0 or step >= stop:
         diag.error(
@@ -266,49 +300,41 @@ def _compile_expectation(
     name: str,
     index: int,
     raw: Expectation,
-    analysis: Op | Tran | None,
+    analysis: Analysis | None,
     src: SourceMap,
     circuit: ResolvedCircuit | None,
     diag: Diagnostics,
 ) -> CompiledExpectation | None:
     base = ("tests", name, "expect", index)
     at = src.at(*base)
+    at_measure = src.at(*base, "measure")
     try:
-        measure = parse_measure(raw.measure)
+        node = parse_measure(raw.measure)
     except MeasureSyntaxError as exc:
-        diag.error("invalid_measure", str(exc), src.at(*base, "measure"))
+        diag.error("invalid_measure", str(exc), at_measure)
         return None
 
     ok = True
-    if isinstance(analysis, Tran) and measure.reduction is None:
-        diag.error(
-            "missing_reduction",
-            f"{raw.measure}: a tran analysis gives a waveform; wrap it in "
-            "max(), min(), avg(), rms(), pp(), initial(), or final()",
-            src.at(*base, "measure"),
-        )
-        ok = False
-    if circuit is not None:
-        probe = measure.probe
-        if probe.kind == "voltage":
-            for net in probe.targets:
-                if net not in circuit.nets:
-                    diag.error(
-                        "unknown_net",
-                        f"{raw.measure}: no net named {net!r}; nets: {', '.join(circuit.nets)}",
-                        src.at(*base, "measure"),
-                    )
-                    ok = False
-        elif probe.targets[0] not in circuit.parts:
-            diag.error(
-                "unknown_part",
-                f"{raw.measure}: no part named {probe.targets[0]!r}",
-                src.at(*base, "measure"),
-            )
+    measure: Measure | None = None
+    if analysis is not None:
+        try:
+            measure = check(node, domain_of(analysis))
+        except MeasureTypeError as exc:
+            rule = "missing_reduction" if "reduce it" in str(exc) else "invalid_measure"
+            diag.error(rule, str(exc), at_measure)
             ok = False
+    if circuit is not None:
+        for probe in probes(node):
+            message = _probe_problem(probe, circuit)
+            if message is not None:
+                rule, text = message
+                diag.error(rule, f"{raw.measure}: {text}", at_measure)
+                ok = False
 
     if raw.min is None and raw.max is None:
         diag.error("missing_bound", f"{raw.measure}: give min, max, or both", at)
+        return None
+    if measure is None:
         return None
     bounds: dict[str, float | None] = {"min": None, "max": None}
     for key in ("min", "max"):
@@ -316,7 +342,7 @@ def _compile_expectation(
         if text is None:
             continue
         try:
-            bounds[key] = parse_quantity(text, measure.probe.unit)
+            bounds[key] = parse_quantity(text, measure.unit)
         except QuantityError as exc:
             diag.error("invalid_value", f"{key}: {exc}", src.at(*base, key))
             ok = False
@@ -327,3 +353,25 @@ def _compile_expectation(
     if not ok:
         return None
     return CompiledExpectation(index=index, measure=measure, min=low, max=high, location=at)
+
+
+def _probe_problem(probe: Probe, circuit: ResolvedCircuit) -> tuple[str, str] | None:
+    if probe.kind == "voltage":
+        for net in probe.targets:
+            if net not in circuit.nets:
+                return "unknown_net", f"no net named {net!r}; nets: {', '.join(circuit.nets)}"
+        return None
+    ref = probe.targets[0]
+    part = circuit.parts.get(ref)
+    if part is None:
+        return "unknown_part", f"no part named {ref!r}"
+    spice = part.spec.spice
+    if probe.pin is None and spice.pin_currents:
+        pins = ", ".join(f"current({ref}.{p})" for p in part.spec.pins)
+        return "pin_current_required", f"{ref} has no single current; measure a pin: {pins}"
+    if probe.pin is not None:
+        if not spice.pin_currents:
+            return "invalid_measure", f"{ref} is a two-terminal part; use current({ref})"
+        if probe.pin not in part.spec.pins:
+            return "unknown_pin", f"{ref} has pins {part.spec.pins}, not {probe.pin!r}"
+    return None

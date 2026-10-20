@@ -9,6 +9,9 @@ from eda.schema.part import PartSpec
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BUILTIN_PARTS_DIR = REPO_ROOT / "parts"
+# Imported vendor models (`eda model import`); git-ignored because vendor licenses
+# usually forbid redistribution.
+VENDOR_PARTS_DIR = BUILTIN_PARTS_DIR / "vendor"
 
 
 @dataclass(frozen=True)
@@ -76,6 +79,9 @@ def load_parts(
     sources: list[tuple[Path, str]] = [
         (f, f"<builtin>/parts/{f.name}") for f in sorted(BUILTIN_PARTS_DIR.glob("*.yaml"))
     ]
+    sources += [
+        (f, f"<builtin>/parts/vendor/{f.name}") for f in sorted(VENDOR_PARTS_DIR.glob("*.yaml"))
+    ]
     if project_parts is not None and project_parts.is_dir():
         for f in sorted(project_parts.glob("*.yaml")):
             shown = f.relative_to(project_root).as_posix() if project_root else f.as_posix()
@@ -93,6 +99,14 @@ def load_parts(
                 "part_id",
                 f"part id {spec.id!r} must match its file name {file.name!r}",
                 doc.source.at("id"),
+            )
+            continue
+        spec = spec.model_copy(update={"source_dir": str(file.parent.resolve())})
+        if spec.include_path() is not None and not Path(str(spec.include_path())).is_file():
+            diag.error(
+                "model_missing",
+                f"part {spec.id!r}: model file {spec.spice.include!r} not found",
+                doc.source.at("spice", "include"),
             )
             continue
         if spec.id in specs:

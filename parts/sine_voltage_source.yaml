@@ -1,0 +1,22 @@
+id: sine_voltage_source
+name: Sine Voltage Source
+category: source
+description: >
+  offset + amplitude * sin(2*pi*frequency*(t - delay)) in transient analysis; DC value is
+  `offset`; small-signal magnitude `ac` for AC analysis. Current is positive into the + pin.
+pins: ["+", "-"]
+params:
+  offset: { unit: V, default: 0V }
+  amplitude: { unit: V }
+  frequency: { unit: Hz }
+  delay: { unit: s, default: 0s }
+  ac: { unit: V, default: 0V, description: AC analysis magnitude }
+spice:
+  prefix: V
+  template: >-
+    <name> <pin:+> <pin:-> DC <param:offset> AC <param:ac>
+    SIN(<param:offset> <param:amplitude> <param:frequency> <param:delay>)
+symbol:
+  cell: v
+  ports: { "+": "+", "-": "-" }
+  label: "<param:amplitude> <param:frequency>"

@@ -1,16 +1,18 @@
 """The `check`, `sim`, `render`, and `run` commands as functions returning a `Result`."""
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic import JsonValue
 
 from eda import simulate
 from eda.adapters import netlistsvg, rasterize
 from eda.design import load_design
-from eda.model import Design, Op
+from eda.model import CompiledTest, Design, Op
 from eda.render import schematic, waveform
 from eda.result import Diagnostics, Result
 from eda.summary import summarize
+from eda.verify.measure import db_values, phase_values, probes
 
 
 def check(root: Path) -> tuple[Result, Design | None]:
@@ -77,6 +79,42 @@ def _summary(design: Design) -> dict[str, JsonValue]:
     return summarize(design).model_dump(mode="json")
 
 
+def _plot_series(
+    test: CompiledTest, data: simulate.WaveformData
+) -> tuple[list[waveform.Trace], list[waveform.Bound]]:
+    """Traces for every probe the test measures, plus its bounds as reference lines."""
+    signals = data.as_signals()
+    frequency = data.axis == "frequency"
+    x_unit = "Hz" if frequency else "s"
+    traces: list[waveform.Trace] = []
+    bounds: list[waveform.Bound] = []
+
+    def add(trace: waveform.Trace) -> None:
+        if all(t.name != trace.name for t in traces):
+            traces.append(trace)
+
+    for exp in test.expectations:
+        for probe in probes(exp.measure.node):
+            values = simulate.probe_values(probe, signals, len(data.x))
+            if values is None:
+                continue
+            if frequency:
+                add(waveform.Trace(f"db({probe.text})", "dB", db_values(values)))
+                add(waveform.Trace(f"phase({probe.text})", "deg", phase_values(values)))
+            else:
+                real = [v.real if isinstance(v, complex) else v for v in values]
+                add(waveform.Trace(probe.text, probe.unit, real))
+        unit = exp.measure.unit
+        axis: Literal["x", "y"] = "x" if unit == x_unit else "y"
+        label = f"{exp.measure.text}: {exp.range_text}"
+        # One label per expectation, on its upper bound (or its only bound).
+        if exp.min is not None:
+            bounds.append(waveform.Bound(label if exp.max is None else "", unit, exp.min, axis))
+        if exp.max is not None:
+            bounds.append(waveform.Bound(label, unit, exp.max, axis))
+    return traces, bounds
+
+
 def _render(design: Design, diag: Diagnostics) -> dict[str, JsonValue]:
     out = design.paths.out_dir
     out.mkdir(parents=True, exist_ok=True)
@@ -116,23 +154,21 @@ def _render(design: Design, diag: Diagnostics) -> dict[str, JsonValue]:
         except ValueError as exc:
             diag.warning("bad_sim_data", f"{rel(source)}: {exc}; run `eda sim` again")
             continue
-        signals = data.as_signals()
-        traces: list[waveform.Trace] = []
-        bounds: list[waveform.Bound] = []
-        for exp in test.expectations:
-            probe = exp.measure.probe
-            values = simulate.probe_values(probe, signals, len(data.time))
-            if values is not None and all(t.name != probe.text for t in traces):
-                traces.append(waveform.Trace(probe.text, probe.unit, values))
-            for key, bound in (("min", exp.min), ("max", exp.max)):
-                if bound is not None:
-                    bounds.append(waveform.Bound(f"{exp.measure.text} {key}", probe.unit, bound))
+        traces, bounds = _plot_series(test, data)
         if not traces:
             continue
         waves_dir.mkdir(exist_ok=True)
         wave_svg = waves_dir / f"{test.name}.svg"
+        frequency = data.axis == "frequency"
         wave_svg.write_text(
-            waveform.plot(f"{design.project.name} / {test.name}", data.time, traces, bounds),
+            waveform.plot(
+                f"{design.project.name} / {test.name}",
+                data.x,
+                traces,
+                bounds,
+                x_unit="Hz" if frequency else "s",
+                log_x=frequency,
+            ),
             encoding="utf-8",
         )
         waves[test.name] = rel(wave_svg)

@@ -318,7 +318,8 @@ text {
 <!-- misc -->
 <g s:type="opamp" s:width="60" s:height="40" transform="translate(20,450)">
   <s:alias val="op"/>
-  <text x="40" y="35" s:attribute="ref" class="$cell_id">X1</text>
+  <text x="40" y="38" s:attribute="ref" class="$cell_id">X1</text>
+  <text x="40" y="50" s:attribute="value" class="$cell_id">X</text>
   <path d="M10,0 V40 L50,20 Z" class="symbol $cell_id"/>
   <path d="M0,10 H10 M0,30 H10 M50,20 H60 M30,0 V10 M30,40 V30" class="connect $cell_id"/>
   <path d="m15,10 5,0 m-2.5,-2.5 0,5" class="detail $cell_id"/>

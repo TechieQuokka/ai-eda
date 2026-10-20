@@ -9,7 +9,7 @@ You describe the goal. The agent writes the circuit as YAML, simulates it, reads
 ![Python](https://img.shields.io/badge/python-3.13-3776AB?logo=python&logoColor=white)
 ![ngspice](https://img.shields.io/badge/simulator-ngspice%2047-555)
 ![pyright](https://img.shields.io/badge/types-pyright%20strict-2563eb)
-![tests](https://img.shields.io/badge/tests-89%20passing-15803d)
+![tests](https://img.shields.io/badge/tests-127%20passing-15803d)
 ![license](https://img.shields.io/badge/license-free%20for%20learning%20%7C%20paid%20commercial-b45309)
 
 </div>
@@ -94,11 +94,39 @@ Every run is written to the project's `iterations.jsonl` with the note, the chan
 |---|---|
 | **Design files** | Strict YAML 1.2 (no `no` → `false` surprises, duplicate keys are errors), validated with pydantic; every error has file, line, column, and path |
 | **ERC** | Unconnected pins, single-pin nets, missing ground, nets with no DC path, shorts between nets, shorted sources, names that collide in case-insensitive SPICE |
-| **Simulation** | ngspice batch runs: operating point (`op`) and transient (`tran`); measures `voltage(N)`, `voltage(A, B)`, `current(REF)` with `max min avg rms pp initial final` |
-| **Parts** | One YAML file per part type: pins, typed parameters, SPICE template, schematic symbol. Built in: DC and pulse sources, R, C, L, diodes (1N4148, 1N4007), LEDs in five colors |
+| **Simulation** | ngspice batch runs: operating point (`op`), transient (`tran`), and frequency response (`ac`) |
+| **Measures** | `voltage(N)`, `voltage(A, B)`, `current(R1)`, `current(U1.out)` inside `max min avg rms pp initial final`, `at(…, 1kHz)`, `cross(…, -3dB)`, and `db mag phase` — type-checked per analysis, with units |
+| **Parts** | One YAML file per part type: pins, typed parameters, SPICE template, schematic symbol. Built in: DC, pulse, and sine sources; R, C, L; diodes (1N4148, 1N4007); LEDs in five colors; a generic op-amp macromodel (gain, GBW, slew rate, swing) |
+| **Vendor models** | `eda model inspect` / `eda model import` turn a manufacturer `.subckt` (e.g. TI TL072, TLV9002) into a part, detecting PSpice-compatibility mode automatically |
 | **Rendering** | Schematic auto-layout via netlistsvg with a custom skin and net labels; waveform SVGs; PNG copies via CairoSVG for the agent to look at |
 | **Live viewer** | `eda watch` re-runs on every save and pushes updates to a local page: schematic, verdicts, operating point, zoomable waveforms, iteration log |
 | **Helpers** | `eda value` for E3 … E192 standard values, `eda part list/show`, `eda log` notes |
+
+### Frequency response, too
+
+```yaml
+  frequency_response:
+    analysis: { type: ac, start: 10Hz, stop: 10MHz }
+    expect:
+      - { measure: "at(db(voltage(OUT)), 1kHz)", min: 20.6dB, max: 21dB }
+      - { measure: "cross(db(voltage(OUT)), 17.8dB)", min: 70kHz, max: 110kHz }   # -3 dB corner
+```
+
+<p align="center">
+  <img src="docs/images/opamp_frequency_response.png" alt="Bode plot of a gain-of-11 amplifier with test bounds" width="720">
+</p>
+
+### Vendor models
+
+Manufacturer SPICE models are imported locally and are **not** part of this repository, because their licenses usually forbid redistribution:
+
+```bash
+uv run eda model inspect TL072.301                       # find the .subckt and its pin comments
+uv run eda model import TL072.301 --id tl072 --opamp 1,2,3,4,5
+uv run eda run projects/tl072_amp                         # real-IC example
+```
+
+Imported parts land in `parts/vendor/` (git-ignored). ngspice's source tarball includes several TI models under `examples/` if you want something to try.
 
 ## Quick start
 
@@ -123,6 +151,7 @@ uv run eda watch projects/rc_filter  # live viewer at http://127.0.0.1:8765/
 | `eda watch [PROJECT]` | Re-run on change and serve the live viewer |
 | `eda value TARGET [-s E24]` | Nearest standard component values |
 | `eda part list` / `eda part show ID` | Inspect the part database |
+| `eda model inspect FILE` / `eda model import FILE --id ID` | Bring in a vendor SPICE model |
 | `eda log [PROJECT] -m TEXT` | Add a note to the iteration log |
 
 Exit codes: `0` all checks pass, `1` the design has errors, `2` a tool or the environment failed.
@@ -136,8 +165,8 @@ The repository's [`CLAUDE.md`](CLAUDE.md) is the working contract for an agent s
 | Milestone | Scope | Status |
 |---|---|---|
 | **M0** | Text design → ngspice → JSON verdict → schematic and waveforms → live viewer | ✅ Done |
-| **M1** | Vendor SPICE models (`.lib` subcircuits), op-amps, AC analysis | Next |
-| **M2** | KiCad board generation, `kicad-cli` DRC and Gerber export, auto-routing | Planned |
+| **M1** | Vendor SPICE models (`.lib` subcircuits), op-amps, AC analysis | ✅ Done |
+| **M2** | KiCad board generation, `kicad-cli` DRC and Gerber export, auto-routing | Next |
 | **M3** | Firmware integration: generated `pins.h`, schematic/firmware cross-checks | Planned |
 | **M4** | MCU emulation co-simulated with the analog circuit | Planned |
 
@@ -148,7 +177,7 @@ Background and decisions: [`PROJECT_SUMMARY.md`](PROJECT_SUMMARY.md), [`DESIGN_D
 ```bash
 uv run ruff format --check && uv run ruff check   # style and lint
 uv run pyright                                    # strict static typing
-uv run pytest                                     # 89 tests
+uv run pytest                                     # 127 tests
 ```
 
 ---
@@ -191,8 +220,9 @@ ai-eda relies on, but does not relicense, the following projects. Each keeps its
 | [ngspice](https://ngspice.sourceforge.io/) | BSD-3-Clause (mostly) | External simulator, not bundled |
 | [pydantic](https://github.com/pydantic/pydantic), [ruamel.yaml](https://sourceforge.net/projects/ruamel-yaml/), [watchfiles](https://github.com/samuelcolvin/watchfiles) | MIT | Python dependencies |
 | [CairoSVG](https://github.com/Kozea/CairoSVG) | LGPL-3.0-or-later | Python dependency (dynamically imported, unmodified) |
+| Vendor SPICE models (TI, ADI, …) | Each vendor's own terms | **Not included.** Imported locally into the git-ignored `parts/vendor/` |
 
-Built-in SPICE model parameters for the 1N4148 and 1N4007 follow widely published manufacturer-style models; the LED models are fitted by this project.
+Built-in SPICE model parameters for the 1N4148 and 1N4007 follow widely published manufacturer-style models; the LED models and the generic op-amp macromodel (`parts/models/eda_opamp.lib`) are written by this project.
 
 ### Disclaimer
 

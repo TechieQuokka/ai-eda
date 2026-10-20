@@ -1,0 +1,29 @@
+id: opamp
+name: Generic Op-Amp
+category: opamp
+description: >
+  Generic voltage-feedback op-amp (own macromodel, parts/models/eda_opamp.lib): open-loop
+  gain with one dominant pole, slew-rate limit, output swing to the rails minus `swing`,
+  input/output resistance, and quiescent supply current. Use a vendor model
+  (`eda model import`) when a specific chip matters. Pin currents: current(U1.out) etc.
+pins: [in+, in-, v+, v-, out]
+params:
+  aol: { unit: dB, default: 100dB, description: open-loop DC gain }
+  gbw: { unit: Hz, default: 1MHz, description: gain-bandwidth product }
+  slew: { unit: V/s, default: 0.5V/us, description: slew rate }
+  rin: { unit: ohm, default: 1Tohm, description: differential input resistance }
+  rout: { unit: ohm, default: 50ohm, description: open-loop output resistance }
+  iq: { unit: A, default: 1mA, description: quiescent supply current }
+  swing: { unit: V, default: 100mV, description: output headroom to each rail }
+spice:
+  prefix: X
+  template: >-
+    <name> <pin:in+> <pin:in-> <pin:v+> <pin:v-> <pin:out> eda_opamp
+    aol_db=<param:aol> gbw=<param:gbw> sr=<param:slew> rin=<param:rin>
+    rout=<param:rout> iq=<param:iq> swing=<param:swing>
+  pin_currents: true
+  include: models/eda_opamp.lib
+symbol:
+  cell: op
+  ports: { in+: "+", in-: "-", out: OUT, v+: VCC, v-: VEE }
+  label: "GBW <param:gbw>"

@@ -1,0 +1,18 @@
+tests:
+  dc_offset:
+    description: Output stays near 0 V with no input (input offset × 11).
+    analysis: { type: op }
+    expect:
+      - { measure: voltage(OUT), min: -50mV, max: 50mV }
+  sine_gain:
+    description: 1 V peak in, 11 V peak out at 1 kHz.
+    analysis: { type: tran, step: 2us, stop: 3ms }
+    expect:
+      - { measure: max(voltage(OUT)), min: 10.7V, max: 11.3V }
+      - { measure: "at(voltage(OUT), 2.75ms)", min: -11.3V, max: -10.7V }
+  bandwidth:
+    description: Closed-loop -3 dB corner near GBW / 11 (TL072 GBW ≈ 3 MHz).
+    analysis: { type: ac, start: 10Hz, stop: 10MHz, points_per_decade: 20 }
+    expect:
+      - { measure: "at(db(voltage(OUT)), 1kHz)", min: 20.6dB, max: 21dB }
+      - { measure: "cross(db(voltage(OUT)), 17.8dB)", min: 200kHz, max: 400kHz }

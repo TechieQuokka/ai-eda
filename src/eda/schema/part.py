@@ -1,9 +1,10 @@
-from typing import Annotated, Self
+from pathlib import Path
+from typing import Annotated, Literal, Self
 
 from pydantic import Field, StringConstraints, model_validator
 
 from eda.schema.common import Ident, StrictModel
-from eda.units import UNITS
+from eda.units import CANONICAL
 
 
 class ParamSpec(StrictModel):
@@ -18,7 +19,7 @@ class ParamSpec(StrictModel):
     def _unit_xor_choices(self) -> Self:
         if (self.unit is None) == (self.choices is None):
             raise ValueError("exactly one of 'unit' or 'choices' is required")
-        if self.unit is not None and self.unit not in UNITS.values():
+        if self.unit is not None and self.unit not in CANONICAL:
             raise ValueError(f"unknown unit {self.unit!r}")
         if (
             self.choices is not None
@@ -35,14 +36,20 @@ class SpiceSpec(StrictModel):
     `template` placeholders: `<name>` element name, `<pin:P>` node of pin P,
     `<param:X>` parameter value, `<model>` model name.
     `models` maps a value of `model_param` to a `.model` body such as `D(IS=1e-14)`.
-    `current` is the raw-file probe for the part's current, using `<name>`.
+    Currents are measured with 0 V sense sources: a two-terminal part's `current(R1)` flows
+    into its first pin; multi-pin parts (subcircuits) set `pin_currents: true` so every pin
+    is measured and tests use `current(U1.out)`.
+    `include` is a model file relative to the part definition, `.include`d once per netlist.
+    `compat: ps` runs ngspice in PSpice-compatibility mode (needed by many vendor models).
     """
 
     prefix: Annotated[str, StringConstraints(pattern=r"^[A-Z]$")]
     template: str
-    current: str
+    pin_currents: bool = False
     model_param: str | None = None
     models: dict[str, str] = Field(default_factory=dict[str, str])
+    include: str | None = None
+    compat: Literal["ps"] | None = None
 
 
 class SymbolSpec(StrictModel):
@@ -66,6 +73,16 @@ class PartSpec(StrictModel):
     symbol: SymbolSpec
     dc_path: bool = True
     datasheet: str | None = None
+    source_dir: str | None = Field(
+        default=None, description="Directory of the definition file; set by the loader."
+    )
+
+    def include_path(self) -> str | None:
+        """Absolute path of `spice.include`, resolved against the definition's directory."""
+        if self.spice.include is None:
+            return None
+        base = Path(self.source_dir) if self.source_dir else Path()
+        return str((base / self.spice.include).resolve())
 
     @model_validator(mode="after")
     def _consistent(self) -> Self:

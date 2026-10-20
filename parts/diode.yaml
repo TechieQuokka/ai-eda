@@ -8,7 +8,6 @@ params:
 spice:
   prefix: D
   template: "<name> <pin:anode> <pin:cathode> <model>"
-  current: "@<name>[id]"
   model_param: model
   models:
     1N4148: "D(IS=2.52n RS=0.568 N=1.752 CJO=4p M=0.4 TT=20n BV=100 IBV=100u)"
