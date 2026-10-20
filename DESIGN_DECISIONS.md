@@ -390,7 +390,7 @@ routing:
 
 1. **KiCad schematic (`.kicad_sch`) generation** is not done; the schematic stays netlistsvg. The board is generated straight from the netlist, which is what fabrication needs.
 2. **Placement is naive** (shelf packing in definition order). Connectivity-aware placement would shorten tracks; `placement:` covers hand placement meanwhile.
-3. **No copper pours / ground plane** yet.
+3. ~~**No copper pours / ground plane** yet.~~ Done in §16.
 4. **3D render has no component bodies** because `kicad-packages3d` (several GB) is not installed.
 5. Dual-channel parts: an imported single-channel model on a dual package leaves the other channel floating; the `unused_pads` warning says so, but tying it off is still a manual design step.
 
@@ -530,3 +530,12 @@ Tests could only hold inputs fixed for a whole run, so firmware behaviour over t
 | `firmware_command` (`rate 100` at 300 ms, `speed up` at 400 ms) | period 200.3 ms from 700 ms; `rate=100`; one `error: speed up` |
 
 The 1 ms polling loop makes the firmware wake 1000 times per simulated second; all nine `pico_io` tests take about 5 s.
+
+## 16. Copper pours (2026-10-20)
+
+Carry-over from §13.5: boards had no ground plane.
+
+- **`board.yaml`**: `pours: [{ net: GND, layer: bottom }]`; `layer` is `top`, `bottom`, or `both`; `clearance` (default 0.3 mm) and `min_width` (0.25 mm) are optional. One pour per layer. Rules: `pour_net` (the net has no pads on the board), `pour_overlap`.
+- **Flow**: route first, then pour. The router sees the same `.dsn` as before (route cache unaffected) and connects every net with tracks; the fill is added afterwards by the `pour` command of `pcbnew_script.py`: a zone over the board outline inset 0.5 mm, thermal reliefs on pads (gap and spoke width at least 0.5 mm), islands not connected to a pad removed, filled with `ZONE_FILLER`. Gerbers and the board images include it; `data.pcb.pours` lists net, layer, and filled area.
+- **DRC**: `starved_thermal` (a pad's thermal spokes reach only a fill island cut off by tracks) is reported as a **warning**: connectivity is already guaranteed by the tracks and checked as `unconnected` items, so it is a soldering/quality note, not a broken board.
+- Examples: `opamp_amp`, `tl072_amp`, and `pico_io` now have a bottom GND pour (861, 980, and 4257 mm² of copper). The first two pass DRC with 0 errors and 0 warnings; `pico_io` has one `starved_thermal` warning at D1's cathode, whose pad sits in a strip enclosed by bottom tracks. `led_demo` stays without a pour.

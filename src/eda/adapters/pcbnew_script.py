@@ -7,6 +7,7 @@ reads one JSON object from stdout. Commands:
               then export a Specctra .dsn for the autorouter
   import_ses  load the board, import the autorouter's .ses session, save
   remove_stubs  delete dangling track stubs once (repeat until it removes nothing)
+  pour        add copper fills (zones) over the board for given nets and fill them
   inspect     report footprint positions, sizes, and routed/unrouted connection counts
 
 Keep this file free of eda imports and third-party packages.
@@ -194,6 +195,56 @@ def remove_stubs(request: Request) -> Request:
     return {"removed": len(stubs)}
 
 
+EDGE_INSET_MM = 0.5  # keep copper fills this far inside the board edge
+
+
+def pour(request: Request) -> Request:
+    """Board-sized zones, one per (net, layer), with thermal reliefs; islands removed."""
+    board = pcbnew.LoadBoard(request["pcb"])
+    box = board.GetBoardEdgesBoundingBox()
+    inset = MM(EDGE_INSET_MM)
+    corners = [
+        (box.GetX() + inset, box.GetY() + inset),
+        (box.GetRight() - inset, box.GetY() + inset),
+        (box.GetRight() - inset, box.GetBottom() - inset),
+        (box.GetX() + inset, box.GetBottom() - inset),
+    ]
+    layer_ids = {"top": pcbnew.F_Cu, "bottom": pcbnew.B_Cu}
+    zones: list[tuple[Request, str, Any]] = []
+    for item in request["pours"]:
+        net = board.FindNet(item["net"])
+        if net is None:
+            raise ValueError("no net " + item["net"] + " on the board")
+        for layer in item["layers"]:
+            zone = pcbnew.ZONE(board)
+            zone.SetLayer(layer_ids[layer])
+            zone.SetNet(net)
+            zone.Outline().NewOutline()
+            for x, y in corners:
+                zone.Outline().Append(int(x), int(y))
+            zone.SetLocalClearance(MM(item["clearance"]))
+            zone.SetMinThickness(MM(item["min_width"]))
+            zone.SetThermalReliefGap(MM(max(item["clearance"], 0.5)))
+            zone.SetThermalReliefSpokeWidth(MM(max(item["min_width"], 0.5)))
+            zone.SetPadConnection(pcbnew.ZONE_CONNECTION_THERMAL)
+            zone.SetIslandRemovalMode(pcbnew.ISLAND_REMOVAL_MODE_ALWAYS)
+            board.Add(zone)
+            zones.append((item, layer, zone))
+    if not pcbnew.ZONE_FILLER(board).Fill(board.Zones()):
+        raise ValueError("zone fill failed")
+    board.Save(request["pcb"])
+    return {
+        "pours": [
+            {
+                "net": item["net"],
+                "layer": layer,
+                "area_mm2": round(pcbnew.ToMM(pcbnew.ToMM(zone.GetFilledArea())), 1),
+            }
+            for item, layer, zone in zones
+        ]
+    }
+
+
 def inspect(request: Request) -> Request:
     board = pcbnew.LoadBoard(request["pcb"])
     board.BuildConnectivity()
@@ -230,6 +281,7 @@ def main() -> None:
         "build": build,
         "import_ses": import_ses,
         "remove_stubs": remove_stubs,
+        "pour": pour,
         "inspect": inspect,
     }
     result: Request

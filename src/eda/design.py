@@ -17,6 +17,7 @@ from eda.model import (
     Analysis,
     BoardPart,
     BoardPlacement,
+    BoardPour,
     BoardRules,
     CompiledEvent,
     CompiledExpectation,
@@ -413,6 +414,38 @@ def _resolve_board(
             BoardPart(ref, part.label() or part.spec.id, footprint, pad_nets, placements.get(ref))
         )
 
+    board_nets = {net for part in parts for net in part.pads.values()}
+    pours: list[BoardPour] = []
+    used: set[str] = set()  # layers that already have a pour
+    for index, pour in enumerate(raw.pours):
+        at = src.at("pours", index)
+        if pour.net not in board_nets:
+            diag.error(
+                "pour_net",
+                f"pours[{index}]: net {pour.net!r} has no pads on the board; nets: "
+                + ", ".join(sorted(board_nets)),
+                src.at("pours", index, "net"),
+            )
+            ok = False
+            continue
+        layers = ("top", "bottom") if pour.layer == "both" else (pour.layer,)
+        clash = [layer for layer in layers if layer in used]
+        if clash:
+            diag.error(
+                "pour_overlap",
+                f"pours[{index}]: the {clash[0]} layer already has a pour; one pour per layer",
+                at,
+            )
+            ok = False
+            continue
+        used.update(layers)
+        pour_clearance = _mm(pour.clearance, src.at("pours", index, "clearance"), "clearance", diag)
+        min_width = _mm(pour.min_width, src.at("pours", index, "min_width"), "min_width", diag)
+        if pour_clearance is None or min_width is None:
+            ok = False
+            continue
+        pours.append(BoardPour(pour.net, layers, pour_clearance, min_width))
+
     if not ok or margin is None or spacing is None or any(r is None for r in rules):
         return None
     clearance, track, via_d, via_drill = (float(r or 0) for r in rules)
@@ -426,6 +459,7 @@ def _resolve_board(
         parts=tuple(parts),
         passes=raw.routing.passes,
         source=src,
+        pours=tuple(pours),
     )
 
 

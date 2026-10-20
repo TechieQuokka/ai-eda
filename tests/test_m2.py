@@ -13,8 +13,10 @@ from tests.conftest import LED_CIRCUIT, MakeProject, requires_kicad, requires_ng
 TESTS = "tests: {}\n"
 
 
-def _board(make_project: MakeProject, board: str, circuit: str = LED_CIRCUIT) -> Path:
-    root = make_project(circuit, TESTS)
+def _board(
+    make_project: MakeProject, board: str, circuit: str = LED_CIRCUIT, name: str = "demo"
+) -> Path:
+    root = make_project(circuit, TESTS, name=name)
     (root / "design" / "board.yaml").write_text(board, encoding="utf-8")
     return root
 
@@ -125,3 +127,33 @@ def test_pcb_end_to_end(make_project: MakeProject) -> None:
 def test_pcb_without_board_file(make_project: MakeProject) -> None:
     result = pipeline.pcb(make_project())
     assert [e.rule for e in result.errors] == ["no_board"]
+
+
+def test_pour_rules(make_project: MakeProject) -> None:
+    root = _board(
+        make_project,
+        "board: {}\npours:\n  - { net: NOPE }\n  - { net: GND, layer: both }\n"
+        "  - { net: VCC, layer: top }\n  - { net: N1, min_width: 1V }\n",
+    )
+    errors, _ = _issues(root)
+    assert sorted(errors) == ["pour_net", "pour_overlap", "pour_overlap"]
+    root = _board(make_project, "pours:\n  - { net: GND, min_width: 1V }\n", name="other")
+    errors, _ = _issues(root)
+    assert errors == ["invalid_value"]
+
+
+@requires_kicad
+def test_ground_pour(make_project: MakeProject) -> None:
+    if not freerouting.JAR.is_file():
+        pytest.skip("Freerouting is not downloaded (tools/freerouting/fetch.sh)")
+    root = _board(make_project, "board: {}\npours:\n  - { net: GND, layer: both }\n")
+    result = pipeline.pcb(root)
+    assert result.ok, result.errors
+    pours = result.data["pours"]
+    assert isinstance(pours, list) and len(pours) == 2
+    for pour in pours:
+        assert isinstance(pour, dict) and pour["net"] == "GND"
+        area = pour["area_mm2"]
+        assert isinstance(area, float) and area > 50
+    drc = result.data["drc"]
+    assert isinstance(drc, dict) and drc["errors"] == 0

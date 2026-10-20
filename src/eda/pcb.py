@@ -21,6 +21,9 @@ from eda.result import Diagnostics, Location
 
 # DRC checks that only concern KiCad's library bookkeeping, not the board itself.
 _IGNORED_DRC = frozenset({"lib_footprint_issues", "lib_footprint_mismatch"})
+# Reported as warnings whatever KiCad says: a thermal relief that reaches only a fill island
+# is a soldering/quality concern; missing connections are caught as `unconnected` items.
+_WARNING_DRC = frozenset({"starved_thermal"})
 _REF_IN_TEXT = re.compile(r"\bof ([A-Za-z_][A-Za-z0-9_]*)\b")
 
 
@@ -55,6 +58,10 @@ def build(design: Design, diag: Diagnostics) -> dict[str, JsonValue]:
             removed += step
             if step == 0:
                 break
+        poured: JsonValue = []
+        if board.pours:
+            request = {"command": "pour", "pcb": str(pcb), "pours": _pour_request(board)}
+            poured = _json(kicad.pcbnew(request)["pours"])
         stats = kicad.pcbnew({"command": "inspect", "pcb": str(pcb)})
         stats["removed_stubs"] = removed
     except (freerouting.FreeroutingUnavailable, kicad.KicadError, RuntimeError) as exc:
@@ -117,6 +124,7 @@ def build(design: Design, diag: Diagnostics) -> dict[str, JsonValue]:
             "track_length_mm": float(stats.get("track_length_mm", 0.0)),
             "unrouted": unrouted,
         },
+        "pours": poured,
         "drc": drc_summary,
         "outputs": outputs,
     }
@@ -138,6 +146,18 @@ def _route_cached(dsn: Path, ses: Path, passes: int, out: Path) -> bool:
     cache.parent.mkdir(exist_ok=True)
     shutil.copyfile(ses, cache)
     return False
+
+
+def _pour_request(board: ResolvedBoard) -> list[dict[str, Any]]:
+    return [
+        {
+            "net": pour.net,
+            "layers": list(pour.layers),
+            "clearance": pour.clearance,
+            "min_width": pour.min_width,
+        }
+        for pour in board.pours
+    ]
 
 
 def _build_request(board: ResolvedBoard, pcb: Path, dsn: Path) -> dict[str, Any]:
@@ -202,7 +222,7 @@ def _drc_issues(report: dict[str, Any], design: Design, diag: Diagnostics) -> di
             if texts:
                 message += " — " + "; ".join(texts)
             at = _locate(texts, design)
-            severity = str(item.get("severity", "error"))
+            severity = "warning" if rule in _WARNING_DRC else str(item.get("severity", "error"))
             if kind == "unconnected":
                 counts["unconnected"] += 1
             if severity == "error" or kind == "unconnected":

@@ -15,7 +15,7 @@
 
 - All six open decisions from `PROJECT_SUMMARY.md` §11 are settled (Python, YAML, no tscircuit fork, YAML is the PCB source of truth, RP2040/Pico, 2-layer boards).
 - Repository: https://github.com/TechieQuokka/ai-eda (public, `master`); M4 commits are local until the user approves a push.
-- Quality gates: `ruff format --check`, `ruff check`, `pyright` (strict), and `pytest` (155 tests) all pass; all five example projects pass `eda run`.
+- Quality gates: `ruff format --check`, `ruff check`, `pyright` (strict), and `pytest` (157 tests) all pass; all five example projects pass `eda run`.
 
 ## 2. Resuming on this machine
 
@@ -60,7 +60,7 @@ Local-only, git-ignored state worth knowing about:
 M4 is finished (`DESIGN_DECISIONS.md` §15): `pico_io` blinks its LED in the emulator, the `tran` tests see the LED current toggle with a 1 s period (200 ms with the button held), and the pot reading reaches the firmware through the ADC (`pot=2047` / `pot=1024` on the UART). Candidates for what comes next, none started or agreed:
 
 1. ~~Firmware stimulus~~: done (`events:`, §15.6).
-2. Ground plane / copper pours on boards (agreed as the next step after stimulus).
+2. ~~Ground plane / copper pours~~: done (`pours:`, §16).
 3. Tighter output→input timing (inputs currently lag one window except after pin mode changes), when a design needs it.
 4. Other carry-overs from earlier milestones (table below).
 
@@ -69,7 +69,7 @@ M4 is finished (`DESIGN_DECISIONS.md` §15): `pico_io` blinks its LED in the emu
 | Area | Issue | Where noted |
 |---|---|---|
 | Boards | Auto-placement is naive shelf packing; MCU modules need hand placement | §13.5, §14.6 |
-| Boards | No copper pours / ground plane; no KiCad schematic (`.kicad_sch`) export | §13.5 |
+| Boards | No KiCad schematic (`.kicad_sch`) export | §13.5 |
 | Boards | Freerouting is nondeterministic (handled by a route cache keyed on the `.dsn` hash); one unexplained 10-min hang (now a 180 s timeout) | §13.3, adapters/freerouting.py |
 | Simulation | TLV6001-style vendor models need `.option optran` to converge; not supported | §12.4 |
 | Simulation | Old vendor macromodels (TL072 1989) do not model supply current | §12.4 |

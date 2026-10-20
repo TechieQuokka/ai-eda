@@ -5,3 +5,5 @@ rules:
   track_width: 0.3mm
 placement:
   U1: { x: 40mm, y: 15mm, rotation: 90deg }
+pours:
+  - { net: GND, layer: bottom }   # ground plane on the bottom copper

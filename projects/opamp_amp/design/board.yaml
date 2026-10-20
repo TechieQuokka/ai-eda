@@ -4,3 +4,5 @@ board:
 rules:
   clearance: 0.2mm
   track_width: 0.3mm
+pours:
+  - { net: GND, layer: bottom }   # ground plane on the bottom copper

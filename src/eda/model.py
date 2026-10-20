@@ -200,6 +200,14 @@ class BoardRules:
 
 
 @dataclass(frozen=True)
+class BoardPour:
+    net: str
+    layers: tuple[str, ...]  # "top" / "bottom"
+    clearance: float  # mm
+    min_width: float  # mm
+
+
+@dataclass(frozen=True)
 class ResolvedBoard:
     width: float | None  # mm; None = fit to parts
     height: float | None
@@ -210,6 +218,7 @@ class ResolvedBoard:
     parts: tuple[BoardPart, ...]
     passes: int
     source: SourceMap
+    pours: tuple[BoardPour, ...] = ()
 
 
 @dataclass(frozen=True)
