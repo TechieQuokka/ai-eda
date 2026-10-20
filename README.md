@@ -242,7 +242,7 @@ Background and decisions: [`PROJECT_SUMMARY.md`](PROJECT_SUMMARY.md), [`DESIGN_D
 ```bash
 uv run ruff format --check && uv run ruff check   # style and lint
 uv run pyright                                    # strict static typing
-uv run pytest                                     # 159 tests
+uv run pytest                                     # 163 tests
 ```
 
 ---

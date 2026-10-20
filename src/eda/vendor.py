@@ -172,9 +172,16 @@ def detect_compat(file: Path, subckt: Subckt) -> str | None:
 
 
 def write_part(
-    plan: ImportPlan, source: Path, name: str | None, dest: Path = VENDOR_PARTS_DIR
+    plan: ImportPlan,
+    source: Path,
+    name: str | None,
+    dest: Path = VENDOR_PARTS_DIR,
+    optran: str | None = None,
 ) -> Path:
-    """Copy the model into <dest>/models/ and write <dest>/<id>.yaml (dest: parts/vendor)."""
+    """Copy the model into <dest>/models/ and write <dest>/<id>.yaml (dest: parts/vendor).
+
+    `optran` (a time such as 1ms) makes the part find its operating point by a transient
+    run (spice.optran)."""
     models = dest / "models"
     models.mkdir(parents=True, exist_ok=True)
     target = models / source.name
@@ -202,6 +209,7 @@ def write_part(
             "pin_currents": True,
             "include": f"models/{source.name}",
             **({"compat": plan.compat} if plan.compat else {}),
+            **({"optran": {"stop": optran}} if optran else {}),
         },
         "symbol": {"cell": cell, "ports": ports, "label": sub.name},
     }

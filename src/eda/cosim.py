@@ -32,6 +32,7 @@ from eda.netlist.spice import (
     build_netlist,
     fw_driver,
     needs_pspice_mode,
+    optran_command,
     voltage_vector,
 )
 from eda.schema.part import McuSpec
@@ -55,6 +56,7 @@ class CosimResult:
     uart: dict[int, str]  # UART index → everything the firmware sent
     halted: int | None
     warnings: list[str] = field(default_factory=lambda: list[str]())
+    op_via_transient: bool = False
 
 
 @dataclass(frozen=True)
@@ -142,6 +144,9 @@ def run(design: Design, test: CompiledTest, image: Path | None, raw_path: Path) 
                 for pin in pins.values():
                     apply(pin, *thevenin.state("pulldown"))  # GPIO reset state
             first = events[0].time if events and events[0].time > 0 else settle
+            optran = optran_command(circuit)
+            if optran:
+                sim.command(optran)
             now = sim.start(command, min(settle, first))
             fire_due(now)
             while now < analysis.stop * (1 - 1e-9):
@@ -180,9 +185,16 @@ def run(design: Design, test: CompiledTest, image: Path | None, raw_path: Path) 
                 fire_due(now)
             sim.write_raw(raw_path)
             warnings = sim.warnings()
+            via_transient = sim.op_via_transient
     except (ngspice_shared.SharedSpiceError, rp2040.EmulatorError, ValueError) as exc:
         raise CosimError(str(exc)) from exc
-    return CosimResult(windows=count, uart=uart, halted=halted, warnings=warnings)
+    return CosimResult(
+        windows=count,
+        uart=uart,
+        halted=halted,
+        warnings=warnings,
+        op_via_transient=via_transient,
+    )
 
 
 type _McuSetup = tuple[str | None, dict[str, str], dict[str, _Pin], dict[int, str], list[int]]

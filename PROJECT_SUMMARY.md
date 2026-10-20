@@ -237,4 +237,4 @@ Because the human only watches, provide:
 ## 16. Immediate Next Steps
 
 1. M4 is done (`DESIGN_DECISIONS.md` §15). Next candidates: UART RX / stimulus input to the firmware, finer output→input timing, a second MCU family.
-2. Carry-overs: `optran` for hard-to-converge vendor models (§12.4); KiCad schematic export (§13.5). Connectivity-aware placement is done (§17).
+2. Carry-overs: KiCad schematic export (§13.5). Connectivity-aware placement (§17) and transient operating points (§18) are done.

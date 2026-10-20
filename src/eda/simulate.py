@@ -26,12 +26,17 @@ from eda.netlist.spice import (
     build_netlist,
     current_vector,
     needs_pspice_mode,
+    optran_stop,
     pin_current_vector,
     voltage_vector,
 )
 from eda.result import Diagnostics
 from eda.units import format_quantity
 from eda.verify.measure import Probe, Trace, evaluate
+
+# ngspice's own fallback (`optran 1 1 1 100n 10u 0` set in cp_init) runs for 10 us.
+DEFAULT_OPTRAN_STOP = 10e-6
+OPTRAN_STOP_LIMIT = 1.0  # longest transient operating point tried while settling
 
 type Values = list[float] | list[complex]
 type Signals = dict[str, tuple[str, Values]]
@@ -115,25 +120,37 @@ def _run_one(
     raw_path.unlink(missing_ok=True)
     if test.interactive:
         return _run_cosim(design, test, sim_dir, diag, image)
-    netlist_path.write_text(
-        build_netlist(
+    circuit = test.circuit(design.circuit)
+    rel_log = design.paths.rel(log_path)
+
+    def simulate(optran: float | None) -> ngspice.RunOutput | None:
+        netlist = build_netlist(
             f"{design.project.name} / {test.name}",
-            test.circuit(design.circuit),
+            circuit,
             test.analysis,
             Path(raw_path.name),
             _drives(design, test),
-        ),
-        encoding="utf-8",
-    )
-    rel_log = design.paths.rel(log_path)
-    try:
-        output = ngspice.run(netlist_path, log_path, needs_pspice_mode(design.circuit))
-    except ngspice.NgspiceNotFound as exc:
-        diag.fail_tool("simulator_missing", str(exc))
+            optran=optran,
+        )
+        netlist_path.write_text(netlist, encoding="utf-8")
+        try:
+            return ngspice.run(netlist_path, log_path, needs_pspice_mode(circuit))
+        except ngspice.NgspiceNotFound as exc:
+            diag.fail_tool("simulator_missing", str(exc))
+        except subprocess.TimeoutExpired:
+            diag.fail_tool("simulator_timeout", f"{test.name}: ngspice timed out", log=rel_log)
         return None
-    except subprocess.TimeoutExpired:
-        diag.fail_tool("simulator_timeout", f"{test.name}: ngspice timed out", log=rel_log)
+
+    output = simulate(None)
+    if output is None:
         return None
+    settled: Settling | None = None
+    if output.op_via_transient and not output.errors:
+        settled = _settle(design, test, sim_dir)
+        if settled.stop != (optran_stop(circuit) or DEFAULT_OPTRAN_STOP):
+            output = simulate(settled.stop)
+            if output is None:
+                return None
 
     if output.errors or not raw_path.is_file():
         messages = output.errors or [f"ngspice exited with {output.returncode} and no results"]
@@ -147,8 +164,77 @@ def _run_one(
         return None
     for warning in output.warnings[:5]:
         diag.warning("simulator_warning", f"{test.name}: {warning}", test.location, log=rel_log)
+    if output.op_via_transient:
+        _warn_transient_op(design, test, diag, settled)
 
     return _evaluate(design, test, sim_dir, raw_path, diag, netlist_path)
+
+
+@dataclass(frozen=True)
+class Settling:
+    stop: float  # transient operating-point run time that gives a settled result
+    settled: bool  # False: still changing at the longest run tried
+    tried: tuple[float, ...]
+
+
+def _settle(design: Design, test: CompiledTest, sim_dir: Path) -> Settling:
+    """Find a transient operating-point run time after which the result stops changing.
+
+    Runs the operating point with 10x longer transients (starting at what the parts ask
+    for, else ngspice's 10 us) until two runs agree on every net voltage within 1 mV
+    (+0.1 %); the shorter of the two is the answer."""
+    circuit = test.circuit(design.circuit)
+    first = optran_stop(circuit) or DEFAULT_OPTRAN_STOP
+    stops = [first * 10**k for k in range(6) if first * 10**k <= OPTRAN_STOP_LIMIT * 1.001]
+    netlist_path = sim_dir / f"{test.name}.settle.cir"
+    raw_path = sim_dir / f"{test.name}.settle.raw"
+    nets = [(net, vec) for net in circuit.nets if (vec := voltage_vector(net)) is not None]
+    key = build_netlist("settling", circuit, Op(), Path("x"), _drives(design, test))
+    if key in _settled:
+        return _settled[key]
+    previous: dict[str, float] | None = None
+    tried: list[float] = []
+    result = Settling(stop=first, settled=False, tried=())
+    for stop in stops:
+        raw_path.unlink(missing_ok=True)
+        netlist_path.write_text(
+            build_netlist(
+                f"{design.project.name} / {test.name} (settling {stop:g} s)",
+                circuit,
+                Op(),
+                Path(raw_path.name),
+                _drives(design, test),
+                optran=stop,
+            ),
+            encoding="utf-8",
+        )
+        try:
+            output = ngspice.run(
+                netlist_path, sim_dir / f"{test.name}.settle.log", needs_pspice_mode(circuit)
+            )
+            plots = ngspice.parse_raw(raw_path.read_text(encoding="utf-8"))
+        except (ngspice.NgspiceNotFound, subprocess.TimeoutExpired, OSError, ValueError):
+            break
+        if output.errors or not plots:
+            break
+        tried.append(stop)
+        vectors = plots[-1].vectors
+        current = {net: vectors[vec][-1] for net, vec in nets if vec in vectors}
+        if previous is not None and all(
+            abs(current[net] - value) <= 1e-3 + 1e-3 * abs(value)
+            for net, value in previous.items()
+            if net in current
+        ):
+            result = Settling(stop=tried[-2], settled=True, tried=tuple(tried))
+            break
+        previous = current
+        result = Settling(stop=stop, settled=False, tried=tuple(tried))
+    _settled[key] = result
+    return result
+
+
+# Settling results by circuit netlist: tests on the same circuit search once per process.
+_settled: dict[str, Settling] = {}
 
 
 def _run_cosim(
@@ -174,6 +260,8 @@ def _run_cosim(
         return None
     for warning in result.warnings[:5]:
         diag.warning("simulator_warning", f"{test.name}: {warning}", test.location)
+    if result.op_via_transient:
+        _warn_transient_op(design, test, diag, None)
     outcome = _evaluate(design, test, sim_dir, raw_path, diag, raw_path.with_suffix(".cir"))
     if outcome is None:
         return None
@@ -201,6 +289,42 @@ def _run_cosim(
         "serial_file": design.paths.rel(uart_path),
     }
     return outcome
+
+
+def _warn_transient_op(
+    design: Design, test: CompiledTest, diag: Diagnostics, settled: Settling | None
+) -> None:
+    circuit = test.circuit(design.circuit)
+    asked = [ref for ref, p in circuit.parts.items() if p.spec.spice.optran is not None]
+    stop = settled.stop if settled else optran_stop(circuit) or DEFAULT_OPTRAN_STOP
+    why = (
+        f"as {', '.join(asked)} asks (spice.optran)"
+        if asked
+        else "because Newton iteration, gmin stepping, and source stepping did not converge"
+    )
+    shown = format_quantity(stop, "s")
+    if settled is None:
+        check = "not checked for settling"
+    elif settled.settled:
+        longer = format_quantity(stop * 10, "s")
+        check = f"settled: a {longer} run gives the same net voltages within 1 mV"
+    else:
+        tried = ", ".join(format_quantity(t, "s") for t in settled.tried)
+        check = f"NOT settled: net voltages still change between runs of {tried}"
+    hint = (
+        f"set `spice: {{ optran: {{ stop: {shown} }} }}` on the vendor part to skip the search"
+        if settled and settled.settled and not asked
+        else ""
+    )
+    rule = "op_not_settled" if settled is not None and not settled.settled else "op_via_transient"
+    diag.warning(
+        rule,
+        f"{test.name}: the DC operating point comes from a {shown} transient run from "
+        f"power-up ({why}); {check}" + (f"; {hint}" if hint else ""),
+        test.location,
+        parts=asked,
+        optran_stop=stop,
+    )
 
 
 def _event_json(event: CompiledEvent) -> dict[str, JsonValue]:

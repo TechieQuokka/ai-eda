@@ -173,6 +173,33 @@ def needs_pspice_mode(circuit: ResolvedCircuit) -> bool:
     return any(part.spec.spice.compat == "ps" for part in circuit.parts.values())
 
 
+DEFAULT_OPTRAN_STEP = 100e-9
+
+
+def optran_stop(circuit: ResolvedCircuit) -> float | None:
+    """The transient operating-point run time parts ask for (`spice.optran`), if any."""
+    specs = [p.spec.spice.optran for p in circuit.parts.values() if p.spec.spice.optran]
+    return max(spec.seconds[1] for spec in specs) if specs else None
+
+
+def optran_command(circuit: ResolvedCircuit, stop: float | None = None) -> str | None:
+    """`optran` control command for a transient operating point of `stop` seconds
+    (default: what the parts ask for; None when nothing asks).
+
+    Without it ngspice still falls back to a short (10 us) transient operating point after
+    gmin and source stepping fail; parts set `spice.optran` to go there directly and to
+    give their own settling time. With several, the smallest step and longest stop win.
+    """
+    specs = [p.spec.spice.optran for p in circuit.parts.values() if p.spec.spice.optran]
+    stop = stop if stop is not None else optran_stop(circuit)
+    if stop is None:
+        return None
+    step = min([spec.seconds[0] for spec in specs] or [DEFAULT_OPTRAN_STEP])
+    step = min(step, stop / 100)
+    # no initial Newton iteration, no gmin or source stepping, no supply ramp
+    return f"optran 0 0 0 {step:.12g} {stop:.12g} 0"
+
+
 def build_netlist(
     title: str,
     circuit: ResolvedCircuit,
@@ -180,10 +207,12 @@ def build_netlist(
     raw_path: Path,
     drives: dict[str, dict[str, Drive]] | None = None,
     batch: bool = True,
+    optran: float | None = None,
 ) -> str:
     """`drives` maps an MCU part reference to its pin drives (from firmware.yaml).
 
     `batch=False` leaves out the `.control` block, for interactive (co-simulation) runs.
+    `optran` forces a transient operating point of that many seconds.
     """
     lines = [f"* {title}"]
     includes: list[str] = []
@@ -208,9 +237,11 @@ def build_netlist(
         if analysis.start is not None:
             command += f" {analysis.start:.12g}"
     if batch:
+        optran_line = optran_command(circuit, optran)
         lines += [
             ".control",
             "set filetype=ascii",
+            *([optran_line] if optran_line else []),
             command,
             f"write {raw_path.as_posix()} all",
             "quit",

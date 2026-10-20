@@ -16,6 +16,8 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 
+from eda.adapters import ngspice
+
 _SEARCH = (
     "/usr/local/lib/libngspice.so",
     "/usr/lib/libngspice.so",
@@ -128,12 +130,12 @@ class Session:
         return found
 
     def warnings(self) -> list[str]:
-        found: list[str] = []
-        for line in self._lib.output:
-            text = line.removeprefix("stderr ").strip()
-            if text.lower().startswith("warning"):
-                found.append(text)
-        return found
+        return ngspice.classify_log("\n".join(self._lib.output))[1]
+
+    @property
+    def op_via_transient(self) -> bool:
+        """The operating point came from a transient run (ngspice optran)."""
+        return ngspice.classify_log("\n".join(self._lib.output))[2]
 
     @property
     def log(self) -> str:

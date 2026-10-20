@@ -15,7 +15,7 @@
 
 - All six open decisions from `PROJECT_SUMMARY.md` §11 are settled (Python, YAML, no tscircuit fork, YAML is the PCB source of truth, RP2040/Pico, 2-layer boards).
 - Repository: https://github.com/TechieQuokka/ai-eda (public, `master`); M4 commits are local until the user approves a push.
-- Quality gates: `ruff format --check`, `ruff check`, `pyright` (strict), and `pytest` (159 tests) all pass; all five example projects pass `eda run`.
+- Quality gates: `ruff format --check`, `ruff check`, `pyright` (strict), and `pytest` (163 tests) all pass; all five example projects pass `eda run`.
 
 ## 2. Resuming on this machine
 
@@ -51,7 +51,7 @@ Example projects: `led_demo` (op, board), `rc_filter` (tran + op), `opamp_amp` (
 
 Local-only, git-ignored state worth knowing about:
 
-- `parts/vendor/` holds the imported TI models (`tl072`, `tlv9002`). `projects/tl072_amp` needs `tl072`: `uv run eda model import build/ngspice-47/examples/optran/models/TL072.301 --id tl072 --opamp 1,2,3,4,5`. **Never commit vendor models** (public repo; vendor licenses).
+- `parts/vendor/` holds the imported TI models (`tl072`, `tlv9002`, `tlv6001`). `projects/tl072_amp` needs `tl072`: `uv run eda model import build/ngspice-47/examples/optran/models/TL072.301 --id tl072 --opamp 1,2,3,4,5`. **Never commit vendor models** (public repo; vendor licenses).
 - `build/` (278 MB: ngspice source/build), `tools/freerouting/dl/` (64 MB jar), `tools/freerouting/data/` (router settings/logs, kept inside the repo on purpose), every project's `out/` (regenerated, includes the route cache).
 - KiCad 3D models (`kicad-packages3d`, several GB) are not installed, so 3D renders show bare boards.
 
@@ -63,7 +63,8 @@ M4 is finished (`DESIGN_DECISIONS.md` §15): `pico_io` blinks its LED in the emu
 2. ~~Ground plane / copper pours~~: done (`pours:`, §16).
 3. Tighter output→input timing (inputs currently lag one window except after pin mode changes), when a design needs it.
 4. ~~Connectivity-aware placement~~: done (§17).
-5. Other carry-overs from earlier milestones (table below).
+5. ~~optran~~: done (§18).
+6. KiCad schematic (`.kicad_sch`) export, and the carry-overs in the table below.
 
 ## 5. Known issues and carry-overs
 
@@ -72,7 +73,7 @@ M4 is finished (`DESIGN_DECISIONS.md` §15): `pico_io` blinks its LED in the emu
 | Boards | Auto-placement is greedy (one part at a time, no later improvement pass); rotations are 90° steps | §17 |
 | Boards | No KiCad schematic (`.kicad_sch`) export | §13.5 |
 | Boards | Freerouting is nondeterministic (handled by a route cache keyed on the `.dsn` hash); one unexplained 10-min hang (now a 180 s timeout) | §13.3, adapters/freerouting.py |
-| Simulation | TLV6001-style vendor models need `.option optran` to converge; not supported | §12.4 |
+| Simulation | Transient operating points are checked for settling only in batch tests, not co-simulated ones | §18 |
 | Simulation | Old vendor macromodels (TL072 1989) do not model supply current | §12.4 |
 | Firmware | Co-simulation exchanges values once per `step`; output→input paths lag one window | §15.5 |
 | Firmware | Only core 0 emulated; ADC reference = `vio` | §15.5 |

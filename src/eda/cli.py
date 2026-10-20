@@ -120,6 +120,12 @@ def _parser() -> argparse.ArgumentParser:
         help="subckt node names for the op-amp roles; gives pins in+ in- v+ v- out",
     )
     imp.add_argument("--name", help="display name")
+    imp.add_argument(
+        "--optran",
+        metavar="TIME",
+        help="find the operating point by a transient run of TIME (e.g. 1ms) for models "
+        "that do not converge otherwise",
+    )
     imp.add_argument("--category", help="category (default: opamp with --opamp, else ic)")
 
     part = sub.add_parser("part", help="inspect the part database")
@@ -207,7 +213,7 @@ def _model(args: argparse.Namespace) -> int:
         except ValueError as exc:
             diag.error("import_failed", str(exc))
         else:
-            written = vendor.write_part(plan, file, args.name)
+            written = vendor.write_part(plan, file, args.name, optran=args.optran)
             data = {
                 "part": plan.part_id,
                 "file": str(written),

@@ -19,6 +19,11 @@ class RunOutput:
     log: str
     errors: list[str]
     warnings: list[str]
+    op_via_transient: bool = False  # the operating point came from ngspice's optran
+
+
+# Noise from the convergence aids ngspice tries before a transient operating point.
+_STEPPING = ("gmin stepping failed", "source stepping failed")
 
 
 @dataclass(frozen=True)
@@ -64,16 +69,33 @@ def run(netlist: Path, log_path: Path, pspice_mode: bool = False) -> RunOutput:
     )
     log = proc.stdout + ("\n" + proc.stderr if proc.stderr else "")
     log_path.write_text(log, encoding="utf-8")
+    errors, warnings, via_transient = classify_log(log)
+    return RunOutput(
+        returncode=proc.returncode,
+        log=log,
+        errors=errors,
+        warnings=warnings,
+        op_via_transient=via_transient,
+    )
+
+
+def classify_log(log: str) -> tuple[list[str], list[str], bool]:
+    """(errors, warnings, operating point found by transient) from ngspice output."""
     errors: list[str] = []
     warnings: list[str] = []
+    via_transient = False
     for raw in log.splitlines():
-        line = raw.strip()
+        line = raw.removeprefix("stderr ").removeprefix("stdout ").strip()
         lowered = line.lower()
-        if lowered.startswith("error") or " error:" in lowered or "fatal" in lowered:
+        if lowered.startswith("note: transient op finished successfully"):
+            via_transient = True
+        elif lowered.startswith("error") or " error:" in lowered or "fatal" in lowered:
             errors.append(line)
         elif lowered.startswith("warning"):
             warnings.append(line)
-    return RunOutput(returncode=proc.returncode, log=log, errors=errors, warnings=warnings)
+    if via_transient:
+        warnings = [w for w in warnings if not any(s in w.lower() for s in _STEPPING)]
+    return errors, warnings, via_transient
 
 
 def parse_raw(text: str) -> list[Plot]:

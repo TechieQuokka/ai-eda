@@ -327,7 +327,7 @@ uv run eda model import <path>/TL072.301 --id tl072 --opamp 1,2,3,4,5
 ### 12.4 Findings
 
 1. **Vendor macromodels do not model everything.** The 1989 TL072 model draws 14 mA from ±15 V through a dummy resistor (`RP 3 4 2.143k`), versus 1.4 mA in the datasheet, so a supply-current requirement cannot be tested with it. TLV9002's newer model matches its datasheet. Tests should only check what the model claims to model (TI lists those in each file's header).
-2. **TLV6001 does not reach an operating point** in ngspice without `.option optran`; not supported yet.
+2. ~~**TLV6001 does not reach an operating point** in ngspice without `.option optran`~~ — corrected in §18: ngspice 47 already falls back to a 10 µs transient operating point, which for TLV6001 is wrong (unsettled).
 3. **Quoting**: measures with commas need quotes in flow mappings; the error message now says how.
 4. **Schematics of op-amp circuits** with split supplies are readable but crowded (netlistsvg places supply sources freely). KiCad-based rendering remains the plan for M2.
 
@@ -559,3 +559,17 @@ Result (same rules and router; DRC 0 errors on all):
 | `pico_io` | 585.2 → 369.4 mm, 1 → 0 vias | 93.7 × 54.0 → 72.5 × 42.3; the `starved_thermal` warning is gone |
 
 Not done: no improvement pass after the greedy one (swaps, annealing), no rotation other than 90° steps, no awareness of board edges for connectors.
+
+## 18. Transient operating points (optran) (2026-10-20)
+
+Carry-over from §12.4, which turned out to be misdiagnosed.
+
+**Finding.** ngspice 47 enables `optran 1 1 1 100n 10u 0` at start-up: when Newton iteration, gmin stepping, and source stepping all fail, it computes the operating point by a 10 µs transient from power-up ("Note: Transient op finished successfully"). So TLV6001 *does* get an operating point — but in a gain −1000 amplifier (ngspice's own `examples/optran` circuit) the 10 µs result is OUT = 0.58 V, while longer runs settle at 3.38 V (100 µs: 2.04 V, 1 ms: 3.376 V, 10 ms – 1 s: 3.377 V). The only trace was three "stepping failed" warnings: a silently wrong operating point.
+
+**What eda does now**
+
+- `adapters/ngspice.classify_log` recognises the transient operating point, drops the stepping noise, and keeps real warnings; "Transient op failed" is an error. The same applies to the shared-library (co-simulation) runs.
+- **Settling search** (`simulate._settle`): when a test's operating point came from a transient, the operating point is recomputed with 10x longer runs (from the part's request or 10 µs, up to 1 s) until two runs agree on every net voltage within 1 mV + 0.1 %; the test is then simulated again with the shorter of the two. Results are cached per circuit within a run. Warning `op_via_transient` reports the time and that it is settled; `op_not_settled` says the voltages were still changing at 1 s.
+- **Parts can ask for it**: `spice: { optran: { step: 100ns, stop: 1ms } }` (or `eda model import ... --optran 1ms`) emits `optran 0 0 0 <step> <stop> 0` — straight to the transient operating point, no stepping — and starts the settling search there. Co-simulated tests use the part's setting without the search.
+
+TLV6001 example (not committed; vendor model): the bias test now reads OUT = 3.376 V with "settled: a 10ms run gives the same net voltages within 1 mV", AC gain 59.96 dB. `tests/test_optran.py` runs it when ngspice's example models are present.

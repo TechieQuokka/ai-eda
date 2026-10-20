@@ -4,7 +4,7 @@ from typing import Annotated, Literal, Self
 from pydantic import Field, StringConstraints, model_validator
 
 from eda.schema.common import Ident, StrictModel
-from eda.units import CANONICAL
+from eda.units import CANONICAL, parse_quantity
 
 
 class ParamSpec(StrictModel):
@@ -30,6 +30,25 @@ class ParamSpec(StrictModel):
         return self
 
 
+class OptranSpec(StrictModel):
+    """Find the DC operating point by a transient run from power-up (ngspice `optran`)
+    instead of Newton iteration, for models that do not converge otherwise."""
+
+    step: str = "100ns"
+    stop: str = "10us"  # long enough for the part to settle after power-up
+
+    @model_validator(mode="after")
+    def _times(self) -> Self:
+        step, stop = parse_quantity(self.step, "s"), parse_quantity(self.stop, "s")
+        if not 0 < step < stop:
+            raise ValueError("optran needs 0 < step < stop")
+        return self
+
+    @property
+    def seconds(self) -> tuple[float, float]:
+        return parse_quantity(self.step, "s"), parse_quantity(self.stop, "s")
+
+
 class SpiceSpec(StrictModel):
     """How a part becomes SPICE.
 
@@ -41,6 +60,7 @@ class SpiceSpec(StrictModel):
     is measured and tests use `current(U1.out)`.
     `include` is a model file relative to the part definition, `.include`d once per netlist.
     `compat: ps` runs ngspice in PSpice-compatibility mode (needed by many vendor models).
+    `optran` finds the operating point by a transient run (see OptranSpec).
     """
 
     prefix: Annotated[str, StringConstraints(pattern=r"^[A-Z]$")]
@@ -50,6 +70,7 @@ class SpiceSpec(StrictModel):
     models: dict[str, str] = Field(default_factory=dict[str, str])
     include: str | None = None
     compat: Literal["ps"] | None = None
+    optran: OptranSpec | None = None
     generator: Literal["mcu"] | None = None  # netlist written by code, not by `template`
     # `<choice:P>` in the template becomes choice_values[P][value of P], e.g. a switch's
     # resistance for state open / pressed.
