@@ -17,3 +17,6 @@ node_modules/
 
 # Imported vendor SPICE models (vendor licenses usually forbid redistribution)
 parts/vendor/
+
+# Raspberry Pi pico-sdk checkout (large; fetched locally)
+tools/pico-sdk/
