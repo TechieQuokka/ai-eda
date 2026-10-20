@@ -85,6 +85,9 @@ class McuSpec(StrictModel):
     pull_ohm: float = 50e3  # internal pull-up / pull-down resistance
     pins_pulled_up: list[str] = Field(default_factory=list[str])  # e.g. RUN, 3V3_EN
     loads: dict[str, float] = Field(default_factory=dict[str, float])  # pin → ohms to ground
+    sdk_board: str | None = None  # pico-sdk PICO_BOARD for firmware builds
+    flash_bytes: int | None = None  # program memory, for size reports
+    ram_bytes: int | None = None
     gpio: dict[str, GpioSpec]
 
 

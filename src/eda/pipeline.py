@@ -7,7 +7,7 @@ from pydantic import JsonValue
 
 from eda import firmware, simulate
 from eda import pcb as board
-from eda.adapters import netlistsvg, rasterize
+from eda.adapters import netlistsvg, picosdk, rasterize
 from eda.design import load_design
 from eda.model import CompiledTest, Design, Op
 from eda.render import schematic, waveform
@@ -43,12 +43,14 @@ def render(root: Path) -> Result:
     return _finish(root, "render", diag, data)
 
 
-def fw(root: Path) -> Result:
+def fw(root: Path, build: bool = False) -> Result:
     diag = Diagnostics()
     design = load_design(root, diag)
     data: dict[str, JsonValue] = {}
     if design is not None:
         data = firmware.generate(design, diag)
+        if build and diag.ok:
+            data["build"] = firmware.build(design, diag)
     return _finish(root, "fw", diag, data)
 
 
@@ -62,7 +64,7 @@ def pcb(root: Path) -> Result:
 
 
 def run(root: Path) -> Result:
-    """check (→ fw) → sim → render (→ pcb) in one call; fw and pcb run when
+    """check (→ fw + build) → sim → render (→ pcb) in one call; fw and pcb run when
     design/firmware.yaml and design/board.yaml exist.
 
     Stops after check if the design has errors."""
@@ -74,8 +76,11 @@ def run(root: Path) -> Result:
         _write(root, "check", diag.to_result("check", root.name, data["check"]))
         if design.firmware is not None:
             fw_diag = Diagnostics()
-            data["fw"] = firmware.generate(design, fw_diag)
-            _write(root, "fw", fw_diag.to_result("fw", root.name, data["fw"]))
+            fw_data = firmware.generate(design, fw_diag)
+            if fw_diag.ok:
+                fw_data["build"] = _build_if_possible(design, fw_diag)
+            data["fw"] = fw_data
+            _write(root, "fw", fw_diag.to_result("fw", root.name, fw_data))
             diag.extend(fw_diag)
         sim_diag = Diagnostics()
         data["sim"] = simulate.run_tests(design, sim_diag)
@@ -93,6 +98,16 @@ def run(root: Path) -> Result:
     else:
         _write(root, "check", diag.to_result("check", root.name, {}))
     return _finish(root, "run", diag, data)
+
+
+def _build_if_possible(design: Design, diag: Diagnostics) -> dict[str, JsonValue]:
+    """`run` builds the firmware when the pico-sdk is installed and skips it otherwise."""
+    try:
+        picosdk.sdk_path()
+    except picosdk.PicoSdkError as exc:
+        diag.warning("fw_build_skipped", f"firmware not compiled: {exc}")
+        return {}
+    return firmware.build(design, diag)
 
 
 def _finish(root: Path, command: str, diag: Diagnostics, data: dict[str, JsonValue]) -> Result:

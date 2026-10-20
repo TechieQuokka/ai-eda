@@ -1,8 +1,9 @@
-"""Hardware-firmware integration (level 1, static): pin roles, pins.h, cross-checks.
+"""Hardware-firmware integration: pin roles, pins.h, cross-checks, and the firmware build.
 
 The schematic decides which GPIO a net reaches; `design/firmware.yaml` says how firmware
 uses that net. From both we check the pin can do the job, find conflicts, generate
 `firmware/pins.h` (+ an init helper), and scan firmware sources for pin misuse.
+`build` compiles the firmware with the pico-sdk and maps compiler output to issues.
 """
 
 import re
@@ -11,6 +12,7 @@ from pathlib import Path
 
 from pydantic import JsonValue
 
+from eda.adapters import picosdk
 from eda.loader import SourceMap
 from eda.model import Design, FirmwareSignal, ResolvedCircuit, ResolvedFirmware
 from eda.result import Diagnostics, Location
@@ -23,6 +25,16 @@ _RAW_GPIO = re.compile(
     r"\b(gpio_[a-z_]+|adc_gpio_init|pwm_gpio_to_slice_num|pwm_gpio_to_channel)\s*\(\s*(\d+)\s*[,)]"
 )
 _SOURCE_SUFFIXES = (".c", ".h", ".cpp", ".hpp")
+_EXECUTABLE = re.compile(r"add_executable\(\s*([A-Za-z0-9_.+-]+)")
+BUILD_DIR = "fw-build"
+_RULES = {
+    ("compile", "error"): "fw_compile_error",
+    ("compile", "warning"): "fw_compile_warning",
+    ("link", "error"): "fw_link_error",
+    ("cmake", "error"): "fw_cmake_error",
+    ("cmake", "warning"): "fw_cmake_warning",
+    ("build", "error"): "fw_build_failed",
+}
 
 
 def resolve(
@@ -308,3 +320,85 @@ def _scan_file(
                 f"{match.group(1)}({gpio}, ...) hard-codes a GPIO number; {hint}",
                 Location(file=shown, line=number, column=match.start() + 1),
             )
+
+
+# --- build -------------------------------------------------------------------------------
+
+
+def build(design: Design, diag: Diagnostics) -> dict[str, JsonValue]:
+    """Compile the firmware (CMakeLists.txt in the first source dir) into out/fw-build/."""
+    firmware = design.firmware
+    if firmware is None:
+        diag.error("no_firmware", "no design/firmware.yaml; it declares the MCU and pin roles")
+        return {}
+    paths = design.paths
+    source = paths.root / firmware.sources[0]
+    cmakelists = source / "CMakeLists.txt"
+    if not cmakelists.is_file():
+        diag.error(
+            "fw_no_cmakelists",
+            f"{paths.rel(cmakelists)} not found; the firmware build needs a pico-sdk project",
+        )
+        return {}
+    match = _EXECUTABLE.search(cmakelists.read_text(encoding="utf-8"))
+    target = match.group(1) if match else design.project.name
+    mcu = design.circuit.parts[firmware.mcu].spec.mcu
+    board = (mcu.sdk_board if mcu else None) or "pico"
+    build_dir = paths.out_dir / BUILD_DIR
+    try:
+        sdk = picosdk.sdk_path()
+        output = picosdk.build(source, build_dir, target, board)
+        sizes = picosdk.size(output.elf) if output.elf else None
+    except picosdk.PicoSdkError as exc:
+        diag.fail_tool("fw_toolchain", str(exc))
+        return {}
+    (paths.out_dir / "fw-build.log").write_text(output.log, encoding="utf-8")
+    hidden = sum(not _report(m, paths.root, build_dir, diag) for m in output.messages)
+    data: dict[str, JsonValue] = {
+        "target": target,
+        "sdk_warnings_hidden": hidden,
+        "board": board,
+        "sdk": picosdk.sdk_version(sdk),
+        "log": paths.rel(paths.out_dir / "fw-build.log"),
+        "built": output.ok,
+    }
+    if output.elf is not None and sizes is not None:
+        uf2 = output.elf.with_suffix(".uf2")
+        data["elf"] = paths.rel(output.elf)
+        data["uf2"] = paths.rel(uf2) if uf2.is_file() else None
+        flash = sizes["text"] + sizes["data"]
+        ram = sizes["data"] + sizes["bss"]
+        data["size"] = {"flash": flash, "ram": ram, **sizes}
+        if mcu is not None and mcu.flash_bytes and mcu.ram_bytes:
+            data["size_percent"] = {
+                "flash": round(100 * flash / mcu.flash_bytes, 1),
+                "ram": round(100 * ram / mcu.ram_bytes, 1),
+            }
+            for what, used, total in (
+                ("flash", flash, mcu.flash_bytes),
+                ("ram", ram, mcu.ram_bytes),
+            ):
+                if used > total:
+                    diag.error(
+                        "fw_too_big", f"firmware uses {used} B of {what}; {total} B available"
+                    )
+    return data
+
+
+def _report(message: picosdk.Message, root: Path, build_dir: Path, diag: Diagnostics) -> bool:
+    """Add one build message as an issue. Warnings from outside the project (the SDK's own
+    CMake and sources) are not actionable and are only counted; returns False for those."""
+    rule = _RULES[(message.stage, message.kind)]
+    shown: str | None = None
+    if message.file is not None:
+        file = message.file if message.file.is_absolute() else build_dir / message.file
+        inside = file.resolve().is_relative_to(root.resolve())
+        if message.kind == "warning" and not inside:
+            return False
+        shown = file.relative_to(root).as_posix() if inside else file.as_posix()
+    at = Location(file=shown, line=message.line, column=message.column)
+    if message.kind == "error":
+        diag.error(rule, message.message, at)
+    else:
+        diag.warning(rule, message.message, at)
+    return True

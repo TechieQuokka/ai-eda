@@ -78,4 +78,5 @@ The CLI never makes design decisions; it only reports.
 - `firmware.yaml` declares each GPIO net's role: `mode: input|output` (+ `pull`, `initial`) or `function:` (e.g. `UART0_TX`, `ADC0`, `PWM7_B`, `I2C0_SDA`). `eda part show raspberry_pi_pico` lists which functions each pin has.
 - `uv run eda fw projects/<name>` validates roles against the pinout, finds conflicts, writes `firmware/pins.h` and `firmware/pins_init.h` (never edit those by hand), and scans firmware sources.
 - Firmware code uses only `PIN_` macros and `pins_init()`; hard-coded GPIO numbers are warnings, unknown macros are errors.
+- `uv run eda fw projects/<name> --build` also compiles `firmware/` with the pico-sdk into `out/fw-build/` (`eda run` does it whenever the SDK is installed). Compiler and linker messages come back as `fw_compile_error` / `fw_compile_warning` / `fw_link_error` with file and line; `data.build.size` gives flash/RAM use. SDK setup: `tools/fetch-pico-sdk.sh` plus `gcc-arm-none-eabi`.
 - Simulation follows firmware.yaml (outputs drive, pulls pull, others are high-Z). Test each output state with `pins: { LED: high }` in a test.

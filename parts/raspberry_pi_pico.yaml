@@ -26,6 +26,9 @@ mcu:
   pull_ohm: 50000  # internal pull-up/down 50-80 kΩ
   pins_pulled_up: [RUN, 3V3_EN]
   loads: { VSYS: 250, VBUS: 1000000 }  # VSYS: about 20 mA at 5 V for a running Pico
+  sdk_board: pico
+  flash_bytes: 2097152  # 2 MB QSPI flash on the Pico
+  ram_bytes: 270336  # 264 KB SRAM
   gpio:
     GP0: { number: 0, functions: [SPI0_RX, UART0_TX, I2C0_SDA, PWM0_A, PIO0, PIO1] }
     GP1: { number: 1, functions: [SPI0_CSN, UART0_RX, I2C0_SCL, PWM0_B, PIO0, PIO1] }

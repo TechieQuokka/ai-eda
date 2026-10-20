@@ -453,3 +453,16 @@ signals:                      # net name → role; macro is PIN_<NET>
 3. **Auto-placement around a 51 mm module is poor**; hand placement of the MCU (as in `pico_io/design/board.yaml`) is needed for a sensible board.
 4. Another flow-mapping comma trap (`description: LED, active high`) hit while writing firmware.yaml; the loader's hint now covers any split value, not just measures.
 5. Pico's internal nets (GP23–GP25, GP29, the on-board LED) are not modelled.
+
+## 15. M4 Specification and Result (2026-10-20)
+
+Goal (`PROJECT_SUMMARY.md` §12): the firmware runs against the simulated circuit.
+
+### 15.1 Firmware build (`eda fw --build`)
+
+- **Toolchain**: Ubuntu's `gcc-arm-none-eabi` 13.2 + newlib (system packages) and pico-sdk **2.3.1** in `tools/pico-sdk/` (git-ignored, `tools/fetch-pico-sdk.sh`; `PICO_SDK_PATH` overrides). The SDK builds its own `picotool` into the build directory on the first build (~20 s); later builds are incremental.
+- **Adapter** `adapters/picosdk.py`: configures `firmware/CMakeLists.txt` into `out/fw-build/` with `PICO_BOARD` from the MCU part (`mcu.sdk_board`), builds the `add_executable` target, and parses the log into messages: gcc `file:line:col: error|warning:`, ld `file:line:(section): undefined reference`, and `CMake Error|Warning at file:line`.
+- **Issues**: `fw_compile_error`, `fw_compile_warning`, `fw_link_error`, `fw_cmake_error`, `fw_cmake_warning`, `fw_build_failed` (no parsable message), `fw_too_big` (flash/RAM over `mcu.flash_bytes`/`ram_bytes`), `fw_toolchain` (missing SDK/compiler; exit code 2). Warnings from files outside the project (the SDK's own CMake and sources) are counted in `sdk_warnings_hidden`, not reported.
+- **Warnings on every build**: the objects of the project's own sources are deleted before each build, so their warnings are reported every time, not only when the file changed; SDK objects stay cached.
+- `eda run` builds when the SDK is present and warns `fw_build_skipped` otherwise. The example firmware is compiled with `-Wall -Wextra`.
+- Result: `pico_io` builds cleanly: 21 KB flash (1.0 %), 1.2 KB RAM.
