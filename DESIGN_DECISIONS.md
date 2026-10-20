@@ -155,3 +155,94 @@ Sources:
 3. Agree on the M0 schemas (`circuit.yaml`, `test.yaml`) and the unified JSON result format.
 4. Implement M0: `circuit.yaml` → netlist → ngspice → JSON result → test verdict → SVG render → viewer.
 5. Run the "LED current to 10 mA" scenario and note friction points.
+
+## 10. M0 Specification (decided 2026-10-20)
+
+The user approved the recommended defaults and delegated implementation-level choices; they are recorded here.
+
+### 10.1 `circuit.yaml` — net-centric
+
+```yaml
+parts:
+  V1: { type: dc_voltage_source, voltage: 5V }
+  R1: { type: resistor, resistance: 330ohm }
+  D1: { type: led, color: red }
+nets:
+  VCC: [V1.+, R1.1]
+  N1:  [R1.2, D1.anode]
+  GND: [D1.cathode, V1.-]
+```
+
+- `parts`: reference → `{type, <params>...}`. Params are flat keys checked against the part definition.
+- `nets`: net name → list of `REF.PIN`. A net named `GND` is required and is the simulation ground (SPICE node `0`).
+- References and net names match `[A-Za-z_][A-Za-z0-9_]*` and must be unique ignoring case (SPICE is case-insensitive).
+- Every pin connects to exactly one net; every net has at least two pins; every net needs a DC path to `GND`.
+
+### 10.2 Values
+
+- Format: number + optional SI prefix + **mandatory unit**: `4.7kohm`, `100nF`, `10mA`, `1Mohm`, `5ms`.
+- Prefixes are case-sensitive: `p n u µ m k M G` (`m` = milli, `M` = mega).
+- Units are checked per field: `ohm`/`Ω`, `F`, `H`, `V`, `A`, `s`, `Hz`.
+- Values are converted to SI floats on load and written to SPICE in exponent form (`4.7e+03`), avoiding SPICE's own prefix rules (`M` = milli there).
+
+### 10.3 `test.yaml`
+
+```yaml
+tests:
+  led_current:
+    analysis: { type: op }
+    expect:
+      - { measure: current(D1), min: 9.5mA, max: 10.5mA }
+      - { measure: voltage(N1), max: 3V }
+  step_response:
+    analysis: { type: tran, step: 10us, stop: 5ms }
+    expect:
+      - { measure: final(voltage(OUT)), min: 4.9V }
+```
+
+- Probes: `voltage(NET)`, `voltage(NET_A, NET_B)` (difference), `current(REF)`.
+- Current sign: positive when flowing into the part's first pin and through the part (`R.1 → R.2`, `anode → cathode`, into `+` for sources; a source delivering power reads negative).
+- Reductions: `max`, `min`, `avg`, `rms`, `pp` (peak-to-peak), `initial`, `final`. Required for `tran`; optional for `op`.
+- Each expectation needs `min`, `max`, or both (inclusive).
+
+### 10.4 Part definitions (`parts/<id>.yaml`)
+
+One YAML file per part type: pins, params (`unit` or `choices`, optional `default`), SPICE template, current probe, schematic symbol, `dc_path` (false for capacitors). M0 parts: `dc_voltage_source`, `pulse_voltage_source`, `resistor`, `capacitor`, `inductor`, `diode`, `led`. LED colors use Shockley models fitted to typical forward voltage at 10 mA (red 1.85 V, yellow 2.0 V, green 2.1 V, blue/white 3.0 V). Project-local `parts/` may add types; duplicates are errors.
+
+### 10.5 Results and exit codes
+
+Every command prints one JSON object to stdout and writes it to `out/<command>.json`:
+
+```json
+{"ok": false, "command": "sim", "project": "led_demo",
+ "errors": [{"rule": "expect", "message": "current(D1) = 9.31mA, expected 9.5mA..10.5mA",
+             "file": "design/test.yaml", "line": 5, "column": 9,
+             "path": "tests.led_current.expect[0]", "details": {"value": 0.00931}}],
+ "warnings": [], "data": {}}
+```
+
+Exit codes: `0` all passed, `1` design errors (fix the files), `2` tool or environment failure.
+
+### 10.6 Commands
+
+| Command | Does |
+|---|---|
+| `eda check [PROJECT]` | Load, schema and value validation, ERC, test compilation |
+| `eda sim [PROJECT] [--test NAME]` | `check`, then one ngspice batch run per test, verdicts |
+| `eda render [PROJECT]` | Schematic SVG (netlistsvg auto-layout) + waveform SVGs from the last sim; PNG copies when a rasterizer is available |
+| `eda run [PROJECT]` | `check` → `sim` → `render` in one call |
+| `eda part list` / `eda part show ID` | Inspect the part database |
+| `eda log [PROJECT] -m TEXT` | Append a note (intent / fix) to the iteration log |
+| `eda watch [PROJECT]` | Re-run `run` on file change; serve the local viewer |
+
+### 10.7 Engines and generated files
+
+- ngspice: `ngspice -b -n` with a `.control` block, `.option savecurrents`, ASCII raw output, parsed in Python.
+- netlistsvg 1.0.2 (analog skin), pinned in `tools/netlistsvg/` and run with Node.
+- Rasterizing for AI inspection: `rsvg-convert` if present, otherwise headless Chrome/Chromium.
+- Generated: `out/check.json`, `out/sim.json`, `out/render.json`, `out/sim/<test>.{cir,raw,log,json}`, `out/schematic.svg`, `out/waves/<test>.svg`.
+- Iteration log: `iterations.jsonl` in the project root (tracked by git, not regenerated). Each command appends its outcome and which design files changed; `eda log` adds free-text notes.
+
+### 10.8 Viewer
+
+`eda watch` runs a stdlib HTTP server (`127.0.0.1`), pushes updates with Server-Sent Events, and watches files with watchfiles. The page shows the schematic, verdict table, interactive waveforms (zoom and hover), and the iteration log. No external CDN.

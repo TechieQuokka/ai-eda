@@ -1,0 +1,8 @@
+{
+  "name": "eda-tools-netlistsvg",
+  "private": true,
+  "description": "Pinned netlistsvg used by eda render for schematic auto-layout",
+  "dependencies": {
+    "netlistsvg": "1.0.2"
+  }
+}

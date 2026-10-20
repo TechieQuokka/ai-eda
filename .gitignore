@@ -13,3 +13,4 @@ out/
 
 # Tool evaluations
 eval/
+node_modules/
