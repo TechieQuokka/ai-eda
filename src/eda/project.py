@@ -35,6 +35,10 @@ class ProjectPaths:
         return self.root / "design" / "test.yaml"
 
     @property
+    def board_file(self) -> Path:
+        return self.root / "design" / "board.yaml"
+
+    @property
     def parts_dir(self) -> Path:
         return self.root / "parts"
 
@@ -55,7 +59,7 @@ class ProjectPaths:
 
     def design_files(self) -> list[Path]:
         """Files whose changes define a design iteration."""
-        files = [self.project_file, self.circuit_file, self.test_file]
+        files = [self.project_file, self.circuit_file, self.test_file, self.board_file]
         if self.parts_dir.is_dir():
             files.extend(sorted(self.parts_dir.glob("*.yaml")))
         return [f for f in files if f.is_file()]

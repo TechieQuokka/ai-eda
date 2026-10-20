@@ -12,4 +12,7 @@ symbol:
   cell: c_v
   ports: { "1": A, "2": B }
   label: "<param:capacitance>"
+pcb:
+  footprint: Capacitor_THT:C_Disc_D5.0mm_W2.5mm_P5.00mm
+  pads: { "1": "1", "2": "2" }
 dc_path: false

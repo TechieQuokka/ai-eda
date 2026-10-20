@@ -52,6 +52,14 @@ class SpiceSpec(StrictModel):
     compat: Literal["ps"] | None = None
 
 
+class PcbSpec(StrictModel):
+    """Default footprint (`Library:Name` from the KiCad libraries) and pin → pad numbers."""
+
+    footprint: str
+    pads: dict[str, str]
+    nc: list[str] = Field(default_factory=list[str])  # pads that are meant to stay open
+
+
 class SymbolSpec(StrictModel):
     """netlistsvg cell type, part pin → skin port mapping, and label template."""
 
@@ -71,6 +79,7 @@ class PartSpec(StrictModel):
     params: dict[Ident, ParamSpec] = Field(default_factory=dict[Ident, ParamSpec])
     spice: SpiceSpec
     symbol: SymbolSpec
+    pcb: PcbSpec | None = None
     dc_path: bool = True
     datasheet: str | None = None
     source_dir: str | None = Field(
@@ -90,6 +99,8 @@ class PartSpec(StrictModel):
             raise ValueError("pin names must be unique")
         if set(self.symbol.ports) != set(self.pins):
             raise ValueError("symbol.ports must map every pin exactly once")
+        if self.pcb is not None and set(self.pcb.pads) != set(self.pins):
+            raise ValueError("pcb.pads must map every pin exactly once")
         if self.spice.model_param is not None:
             spec = self.params.get(self.spice.model_param)
             if spec is None or spec.choices is None:

@@ -6,9 +6,8 @@ from pathlib import Path
 
 from pydantic import JsonValue
 
-from eda.model import GROUND, ResolvedCircuit, ResolvedPart
+from eda.model import GROUND, ResolvedCircuit
 
-_LABEL = re.compile(r"<param:([^>]+)>")
 _PAD = {"left": 10, "top": 10, "right": 60, "bottom": 10}
 _LINE = re.compile(
     r'<line x1="([-\d.]+)" x2="([-\d.]+)" y1="([-\d.]+)" y2="([-\d.]+)" class="net_(\d+)"/>'
@@ -35,10 +34,6 @@ def supply_nets(circuit: ResolvedCircuit) -> list[str]:
     return found
 
 
-def label(part: ResolvedPart) -> str:
-    return _LABEL.sub(lambda m: part.labels.get(m[1], "?"), part.spec.symbol.label)
-
-
 def to_netlistsvg(name: str, circuit: ResolvedCircuit) -> dict[str, JsonValue]:
     bits = net_bits(circuit)
     cells: dict[str, JsonValue] = {}
@@ -59,7 +54,7 @@ def to_netlistsvg(name: str, circuit: ResolvedCircuit) -> dict[str, JsonValue]:
             "type": part.spec.symbol.cell,
             "port_directions": directions,
             "connections": connections,
-            "attributes": {"value": label(part)},
+            "attributes": {"value": part.label()},
         }
 
     if GROUND in bits:

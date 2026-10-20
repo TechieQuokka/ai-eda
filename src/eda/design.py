@@ -6,16 +6,21 @@ units, pin references, and test expressions. ERC lives in `eda.verify.erc`.
 
 from pathlib import Path
 
+from eda.footprints import pad_numbers
 from eda.loader import Document, SourceMap, load_yaml, validate
 from eda.model import (
     GROUND,
     Ac,
     Analysis,
+    BoardPart,
+    BoardPlacement,
+    BoardRules,
     CompiledExpectation,
     CompiledTest,
     Design,
     Op,
     PinKey,
+    ResolvedBoard,
     ResolvedCircuit,
     ResolvedPart,
     Tran,
@@ -23,6 +28,7 @@ from eda.model import (
 )
 from eda.project import ProjectPaths, load_parts
 from eda.result import Diagnostics, Location
+from eda.schema.board import BoardFile
 from eda.schema.circuit import Circuit
 from eda.schema.part import PartSpec
 from eda.schema.project import Project
@@ -48,6 +54,7 @@ def load_design(root: Path, diag: Diagnostics) -> Design | None:
     parts = load_parts(diag, paths.parts_dir, paths.root)
 
     circuit: ResolvedCircuit | None = None
+    raw_circuit: Circuit | None = None
     circuit_doc = load_yaml(paths.circuit_file, paths.rel(paths.circuit_file), diag)
     if circuit_doc is not None:
         raw_circuit = validate(Circuit, circuit_doc, diag)
@@ -62,9 +69,18 @@ def load_design(root: Path, diag: Diagnostics) -> Design | None:
         if raw_tests is not None:
             tests = _compile_tests(raw_tests, test_doc.source, circuit, diag)
 
+    board: ResolvedBoard | None = None
+    if paths.board_file.is_file() and circuit is not None and circuit_doc is not None:
+        board_doc = load_yaml(paths.board_file, paths.rel(paths.board_file), diag)
+        raw_board = validate(BoardFile, board_doc, diag) if board_doc is not None else None
+        if raw_board is not None and board_doc is not None and raw_circuit is not None:
+            board = _resolve_board(raw_board, board_doc.source, raw_circuit, circuit, diag)
+
     if not diag.ok or project is None or circuit is None:
         return None
-    return Design(paths=paths, project=project, circuit=circuit, tests=tests, parts=parts)
+    return Design(
+        paths=paths, project=project, circuit=circuit, tests=tests, parts=parts, board=board
+    )
 
 
 # --- circuit -----------------------------------------------------------------------------
@@ -209,6 +225,165 @@ def _check_case_collisions(
             )
         else:
             first[key] = name
+
+
+# --- board -------------------------------------------------------------------------------
+
+
+def _mm(text: str, where: Location, label: str, diag: Diagnostics) -> float | None:
+    try:
+        return parse_quantity(text, "m") * 1000.0
+    except QuantityError as exc:
+        diag.error("invalid_value", f"{label}: {exc}", where)
+        return None
+
+
+def _pad_order(pad: str) -> tuple[int, str]:
+    return (int(pad), "") if pad.isdigit() else (1 << 30, pad)
+
+
+def _resolve_board(
+    raw: BoardFile,
+    src: SourceMap,
+    raw_circuit: Circuit,
+    circuit: ResolvedCircuit,
+    diag: Diagnostics,
+) -> ResolvedBoard | None:
+    csrc = circuit.source
+    ok = True
+
+    def mm(text: str | None, *path: str) -> float | None:
+        nonlocal ok
+        if text is None:
+            return None
+        value = _mm(text, src.at(*path), ".".join(path), diag)
+        if value is None:
+            ok = False
+        elif value <= 0 and path[-1] not in ("x", "y"):
+            diag.error("invalid_value", f"{'.'.join(path)} must be positive", src.at(*path))
+            ok = False
+        return value
+
+    width = mm(raw.board.width, "board", "width")
+    height = mm(raw.board.height, "board", "height")
+    if (width is None) != (height is None):
+        diag.error(
+            "invalid_board", "give both board.width and board.height, or neither", src.at("board")
+        )
+        ok = False
+    margin = mm(raw.board.margin, "board", "margin")
+    spacing = mm(raw.board.spacing, "board", "spacing")
+    rules = [
+        mm(getattr(raw.rules, f), "rules", f)
+        for f in ("clearance", "track_width", "via_diameter", "via_drill")
+    ]
+
+    placements: dict[str, BoardPlacement] = {}
+    for ref, place in raw.placement.items():
+        if ref not in circuit.parts:
+            diag.error(
+                "unknown_part",
+                f"placement for {ref!r}, which is not in the circuit",
+                src.at("placement", ref),
+            )
+            ok = False
+            continue
+        x = mm(place.x, "placement", ref, "x")
+        y = mm(place.y, "placement", ref, "y")
+        try:
+            rotation = parse_quantity(place.rotation, "deg")
+        except QuantityError as exc:
+            diag.error(
+                "invalid_value",
+                f"placement.{ref}.rotation: {exc}",
+                src.at("placement", ref, "rotation"),
+            )
+            ok = False
+            continue
+        if x is not None and y is not None:
+            placements[ref] = BoardPlacement(x, y, rotation, place.side)
+
+    parts: list[BoardPart] = []
+    for ref, part in circuit.parts.items():
+        inst = raw_circuit.parts[ref]
+        default = part.spec.pcb
+        footprint = inst.footprint or (default.footprint if default else None)
+        pads = (
+            {pin: str(pad) for pin, pad in inst.pads.items()}
+            if inst.pads is not None
+            else (dict(default.pads) if default else None)
+        )
+        at = csrc.at("parts", ref)
+        if footprint is None or pads is None:
+            diag.error(
+                "no_footprint",
+                f"{ref}: {part.spec.id} has no default footprint; set `footprint:` "
+                "(KiCad Library:Name) and `pads:` (pin → pad number) on the part",
+                at,
+            )
+            ok = False
+            continue
+        available = pad_numbers(footprint)
+        if available is None:
+            diag.error(
+                "unknown_footprint",
+                f"{ref}: footprint {footprint!r} not found in the KiCad libraries",
+                csrc.at("parts", ref, "footprint") if inst.footprint else at,
+            )
+            ok = False
+            continue
+        missing = [pin for pin in part.spec.pins if pin not in pads]
+        bad = sorted({p for p in pads.values() if p not in available})
+        extra = [pin for pin in pads if pin not in part.spec.pins]
+        if missing or bad or extra:
+            problems: list[str] = []
+            if missing:
+                problems.append(f"no pad for pin(s) {', '.join(missing)}")
+            if extra:
+                problems.append(f"unknown pin(s) {', '.join(extra)}")
+            if bad:
+                problems.append(f"pad(s) {', '.join(bad)} not in {footprint}")
+            diag.error(
+                "invalid_pads",
+                f"{ref}: " + "; ".join(problems),
+                at,
+                footprint_pads=sorted(available),
+            )
+            ok = False
+            continue
+        intended = set(default.nc) if default and inst.footprint is None else set[str]()
+        unused = sorted(available - set(pads.values()) - intended, key=_pad_order)
+        if unused and part.spec.category not in ("passive", "source"):
+            diag.warning(
+                "unused_pads",
+                f"{ref}: pads {', '.join(unused)} of {footprint} are not connected; "
+                "check the datasheet (e.g. tie unused amplifier channels off)",
+                at,
+                pads=unused,
+            )
+        pad_nets = {
+            pads[pin]: net
+            for pin in part.spec.pins
+            if (net := circuit.net_of(ref, pin)) is not None
+        }
+        parts.append(
+            BoardPart(ref, part.label() or part.spec.id, footprint, pad_nets, placements.get(ref))
+        )
+
+    if not ok or margin is None or spacing is None or any(r is None for r in rules):
+        return None
+    clearance, track, via_d, via_drill = (float(r or 0) for r in rules)
+    return ResolvedBoard(
+        width=width,
+        height=height,
+        margin=margin,
+        spacing=spacing,
+        layers=raw.board.layers,
+        rules=BoardRules(clearance, track, via_d, via_drill),
+        parts=tuple(parts),
+        passes=raw.routing.passes,
+        source=src,
+    )
 
 
 # --- tests -------------------------------------------------------------------------------

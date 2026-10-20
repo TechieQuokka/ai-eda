@@ -1,6 +1,6 @@
 # AI-Native EDA — Project Summary (working title)
 
-> Status: M0 and M1 complete (2026-10-20). Settled decisions and the M0 specification are in `DESIGN_DECISIONS.md`.
+> Status: M0, M1, and M2 complete (2026-10-20). Settled decisions and the M0 specification are in `DESIGN_DECISIONS.md`.
 > This document is the reference for all upcoming work. Facts about third-party projects are from memory and should be re-verified before relying on them.
 
 ---
@@ -187,9 +187,9 @@ Start with Level 1, aim for Level 2. Generated artifacts such as `pins.h` and pe
 | 1 | Implementation language | **Python** (strict typing + pydantic) — decided |
 | 2 | Design file format | **YAML** (strict parsing) — decided |
 | 3 | Fork tscircuit or build from scratch | **Build**; tscircuit not forked — decided |
-| 4 | PCB source of truth | Open; leaning: our format is the source, KiCad files are build outputs (M2) |
+| 4 | PCB source of truth | **Our YAML is the source; KiCad files are build outputs** — decided (M2) |
 | 5 | Primary target MCU | Open (M3) |
-| 6 | Board complexity | Open; start with 2-layer (M2) |
+| 6 | Board complexity | 2-layer for now (M2); multi-layer later if needed |
 
 Rationale for each is in `DESIGN_DECISIONS.md` §2 and §7.
 
@@ -199,7 +199,7 @@ Rationale for each is in `DESIGN_DECISIONS.md` §2 and §7.
 |---|---|---|
 | **M0** ✅ | Vertical slice: source + resistor + LED defined in text → `sim` → JSON verdict → `render` SVG | Claude Code, given "make LED current 10 mA," edits the file, runs check/sim, and confirms pass on its own (done 2026-10-20) |
 | **M1** ✅ | Part DB, import vendor SPICE models, waveform output, ERC, AC analysis | Real ICs (e.g. an op-amp circuit) simulate with pass/fail tests (done 2026-10-20: TI TL072 / TLV9002) |
-| **M2** | KiCad format generation, `kicad-cli` DRC and Gerber export, auto-routing | A board is produced from design files with DRC results as JSON |
+| **M2** ✅ | KiCad format generation, `kicad-cli` DRC and Gerber export, auto-routing | A board is produced from design files with DRC results as JSON (done 2026-10-20) |
 | **M3** | Firmware integration: pin header generation, static cross-checks | Changing a pin in the schematic updates `pins.h` and flags conflicts |
 | **M4** | MCU emulation + SPICE mixed simulation | Firmware runs against the simulated circuit |
 | **Later** | Decide whether to build a custom PCB editor | Only if KiCad-based flow proves limiting |
@@ -236,5 +236,5 @@ Because the human only watches, provide:
 
 ## 16. Immediate Next Steps
 
-1. Start M2: KiCad schematic/board generation from the design files, `kicad-cli` ERC/DRC and Gerber export, auto-routing (decide open item #4 first).
-2. Carry-overs from M1 (`DESIGN_DECISIONS.md` §12.4): `optran` for hard-to-converge vendor models.
+1. Start M3: firmware integration — choose the target MCU (open item #5), generate `pins.h` from the schematic, and cross-check firmware pins against connectivity.
+2. Carry-overs: `optran` for hard-to-converge vendor models (§12.4); connectivity-aware placement, ground pours, KiCad schematic export (§13.5).

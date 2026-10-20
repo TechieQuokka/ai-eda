@@ -36,17 +36,20 @@ def available() -> str | None:
     return None
 
 
-def svg_to_png(svg: Path, png: Path, profile_dir: Path) -> str:
-    """Rasterize `svg` at 2x scale on a white background. Returns the tool used."""
+def svg_to_png(svg: Path, png: Path, profile_dir: Path, width: int | None = None) -> str:
+    """Rasterize `svg` on a white background, at 2x scale or at `width` pixels.
+
+    Returns the tool used."""
     tool = available()
     if tool is None:
         raise RuntimeError("no rasterizer found (install cairo, librsvg2-bin, or Chrome)")
     png.unlink(missing_ok=True)
     if tool == "cairosvg":
-        _cairosvg().svg2png(url=str(svg), write_to=str(png), scale=SCALE, background_color="white")
+        size = {"output_width": width} if width else {"scale": SCALE}
+        _cairosvg().svg2png(url=str(svg), write_to=str(png), background_color="white", **size)
     else:
         subprocess.run(
-            _command(tool, svg, png, profile_dir),
+            _command(tool, svg, png, profile_dir, width),
             capture_output=True,
             timeout=TIMEOUT_S,
             check=False,
@@ -56,10 +59,12 @@ def svg_to_png(svg: Path, png: Path, profile_dir: Path) -> str:
     return tool
 
 
-def _command(tool: str, svg: Path, png: Path, profile_dir: Path) -> list[str]:
+def _command(tool: str, svg: Path, png: Path, profile_dir: Path, target: int | None) -> list[str]:
     if tool == "rsvg-convert":
-        return ["rsvg-convert", "-z", str(SCALE), "-b", "white", "-o", str(png), str(svg)]
+        size = ["-w", str(target)] if target else ["-z", str(SCALE)]
+        return ["rsvg-convert", *size, "-b", "white", "-o", str(png), str(svg)]
     width, height = _size(svg.read_text(encoding="utf-8"))
+    scale = target / width if target and width else SCALE
     return [
         tool,
         "--headless=new",
@@ -67,7 +72,7 @@ def _command(tool: str, svg: Path, png: Path, profile_dir: Path) -> list[str]:
         "--no-first-run",
         "--hide-scrollbars",
         f"--user-data-dir={profile_dir}",
-        f"--force-device-scale-factor={SCALE}",
+        f"--force-device-scale-factor={scale:g}",
         "--default-background-color=ffffffff",
         f"--window-size={width},{height}",
         f"--screenshot={png}",

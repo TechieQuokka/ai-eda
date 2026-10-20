@@ -16,3 +16,6 @@ symbol:
   cell: d_v
   ports: { anode: "+", cathode: "-" }
   label: "<param:model>"
+pcb:
+  footprint: Diode_THT:D_DO-35_SOD27_P7.62mm_Horizontal
+  pads: { anode: "2", cathode: "1" }

@@ -5,6 +5,7 @@ from typing import Literal
 
 from pydantic import JsonValue
 
+from eda import pcb as board
 from eda import simulate
 from eda.adapters import netlistsvg, rasterize
 from eda.design import load_design
@@ -42,8 +43,19 @@ def render(root: Path) -> Result:
     return _finish(root, "render", diag, data)
 
 
+def pcb(root: Path) -> Result:
+    diag = Diagnostics()
+    design = load_design(root, diag)
+    data: dict[str, JsonValue] = {}
+    if design is not None:
+        data = board.build(design, diag)
+    return _finish(root, "pcb", diag, data)
+
+
 def run(root: Path) -> Result:
-    """check → sim → render in one call. Stops after check if the design has errors."""
+    """check → sim → render (→ pcb when design/board.yaml exists) in one call.
+
+    Stops after check if the design has errors."""
     diag = Diagnostics()
     design = load_design(root, diag)
     data: dict[str, JsonValue] = {}
@@ -58,6 +70,11 @@ def run(root: Path) -> Result:
         _write(root, "render", render_diag.to_result("render", root.name, data["render"]))
         diag.extend(sim_diag)
         diag.extend(render_diag)
+        if design.board is not None:
+            pcb_diag = Diagnostics()
+            data["pcb"] = board.build(design, pcb_diag)
+            _write(root, "pcb", pcb_diag.to_result("pcb", root.name, data["pcb"]))
+            diag.extend(pcb_diag)
     else:
         _write(root, "check", diag.to_result("check", root.name, {}))
     return _finish(root, "run", diag, data)

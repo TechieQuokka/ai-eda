@@ -54,6 +54,8 @@ select = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["ANN"]
+# Runs under KiCad's Python with the untyped pcbnew module.
+"src/eda/adapters/pcbnew_script.py" = ["ANN401", "BLE001"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -9,7 +9,7 @@ You describe the goal. The agent writes the circuit as YAML, simulates it, reads
 ![Python](https://img.shields.io/badge/python-3.13-3776AB?logo=python&logoColor=white)
 ![ngspice](https://img.shields.io/badge/simulator-ngspice%2047-555)
 ![pyright](https://img.shields.io/badge/types-pyright%20strict-2563eb)
-![tests](https://img.shields.io/badge/tests-127%20passing-15803d)
+![tests](https://img.shields.io/badge/tests-137%20passing-15803d)
 ![license](https://img.shields.io/badge/license-free%20for%20learning%20%7C%20paid%20commercial-b45309)
 
 </div>
@@ -99,7 +99,8 @@ Every run is written to the project's `iterations.jsonl` with the note, the chan
 | **Parts** | One YAML file per part type: pins, typed parameters, SPICE template, schematic symbol. Built in: DC, pulse, and sine sources; R, C, L; diodes (1N4148, 1N4007); LEDs in five colors; a generic op-amp macromodel (gain, GBW, slew rate, swing) |
 | **Vendor models** | `eda model inspect` / `eda model import` turn a manufacturer `.subckt` (e.g. TI TL072, TLV9002) into a part, detecting PSpice-compatibility mode automatically |
 | **Rendering** | Schematic auto-layout via netlistsvg with a custom skin and net labels; waveform SVGs; PNG copies via CairoSVG for the agent to look at |
-| **Live viewer** | `eda watch` re-runs on every save and pushes updates to a local page: schematic, verdicts, operating point, zoomable waveforms, iteration log |
+| **Boards** | `board.yaml` (outline, rules, optional placement) → KiCad 10 board → Freerouting autorouting → `kicad-cli` DRC as JSON → Gerbers, drill, positions, and BOM in one zip |
+| **Live viewer** | `eda watch` re-runs on every save and pushes updates to a local page: schematic, verdicts, operating point, zoomable waveforms, board layout and 3D view, iteration log |
 | **Helpers** | `eda value` for E3 … E192 standard values, `eda part list/show`, `eda log` notes |
 
 ### Frequency response, too
@@ -116,6 +117,31 @@ Every run is written to the project's `iterations.jsonl` with the note, the chan
   <img src="docs/images/opamp_frequency_response.png" alt="Bode plot of a gain-of-11 amplifier with test bounds" width="720">
 </p>
 
+### From netlist to board
+
+```yaml
+# design/board.yaml — everything is optional; parts without a placement are packed
+board: { spacing: 4mm }
+rules: { clearance: 0.2mm, track_width: 0.4mm }
+```
+
+```console
+$ eda pcb projects/tl072_amp
+{ "ok": true, "data": { "size_mm": [38.55, 30.81],
+  "routing": { "tracks": 27, "vias": 0, "unrouted": 0 },
+  "drc": { "errors": 0, "warnings": 0 },
+  "outputs": { "fabrication": "out/pcb/tl072_amp-fab.zip", ... } } }
+```
+
+<table>
+<tr>
+<td align="center"><img src="docs/images/tl072_board.png" alt="Routed board, top and bottom copper" height="260"><br><sub>Autorouted two-layer board</sub></td>
+<td align="center"><img src="docs/images/tl072_board_3d.png" alt="3D render of the board" height="260"><br><sub>KiCad 3D render</sub></td>
+</tr>
+</table>
+
+The YAML stays the source of truth: the KiCad board, routes, and Gerbers are regenerated on every run, and identical designs give identical boards.
+
 ### Vendor models
 
 Manufacturer SPICE models are imported locally and are **not** part of this repository, because their licenses usually forbid redistribution:
@@ -130,13 +156,14 @@ Imported parts land in `parts/vendor/` (git-ignored). ngspice's source tarball i
 
 ## Quick start
 
-Requirements: Python 3.13 with [uv](https://docs.astral.sh/uv/), [ngspice](https://ngspice.sourceforge.io/) on `PATH`, Node.js (for schematic layout), and the system cairo library (present on most Linux desktops).
+Requirements: Python 3.13 with [uv](https://docs.astral.sh/uv/), [ngspice](https://ngspice.sourceforge.io/) on `PATH`, Node.js (for schematic layout), and the system cairo library (present on most Linux desktops). For boards: [KiCad 10](https://www.kicad.org/) (`kicad-cli` and its Python `pcbnew` module) and Java 21.
 
 ```bash
 git clone https://github.com/TechieQuokka/ai-eda.git
 cd ai-eda
 uv sync                              # Python dependencies
 npm --prefix tools/netlistsvg ci     # schematic auto-layout engine
+tools/freerouting/fetch.sh           # autorouter (only needed for boards)
 
 uv run eda run projects/led_demo     # check → simulate → render
 uv run eda watch projects/rc_filter  # live viewer at http://127.0.0.1:8765/
@@ -147,7 +174,8 @@ uv run eda watch projects/rc_filter  # live viewer at http://127.0.0.1:8765/
 | `eda check [PROJECT]` | Validate files, run ERC, compile tests |
 | `eda sim [PROJECT] [-t TEST]` | Simulate and judge every expectation |
 | `eda render [PROJECT]` | Schematic and waveform SVG/PNG |
-| `eda run [PROJECT] [-m NOTE]` | All three in one call, logged with an optional note |
+| `eda pcb [PROJECT]` | Board: build, autoroute, DRC, Gerbers/drill/BOM |
+| `eda run [PROJECT] [-m NOTE]` | check → sim → render (→ pcb) in one call, logged with an optional note |
 | `eda watch [PROJECT]` | Re-run on change and serve the live viewer |
 | `eda value TARGET [-s E24]` | Nearest standard component values |
 | `eda part list` / `eda part show ID` | Inspect the part database |
@@ -166,8 +194,8 @@ The repository's [`CLAUDE.md`](CLAUDE.md) is the working contract for an agent s
 |---|---|---|
 | **M0** | Text design → ngspice → JSON verdict → schematic and waveforms → live viewer | ✅ Done |
 | **M1** | Vendor SPICE models (`.lib` subcircuits), op-amps, AC analysis | ✅ Done |
-| **M2** | KiCad board generation, `kicad-cli` DRC and Gerber export, auto-routing | Next |
-| **M3** | Firmware integration: generated `pins.h`, schematic/firmware cross-checks | Planned |
+| **M2** | KiCad board generation, `kicad-cli` DRC and Gerber export, auto-routing | ✅ Done |
+| **M3** | Firmware integration: generated `pins.h`, schematic/firmware cross-checks | Next |
 | **M4** | MCU emulation co-simulated with the analog circuit | Planned |
 
 Background and decisions: [`PROJECT_SUMMARY.md`](PROJECT_SUMMARY.md), [`DESIGN_DECISIONS.md`](DESIGN_DECISIONS.md).
@@ -177,7 +205,7 @@ Background and decisions: [`PROJECT_SUMMARY.md`](PROJECT_SUMMARY.md), [`DESIGN_D
 ```bash
 uv run ruff format --check && uv run ruff check   # style and lint
 uv run pyright                                    # strict static typing
-uv run pytest                                     # 127 tests
+uv run pytest                                     # 137 tests
 ```
 
 ---
@@ -218,6 +246,8 @@ ai-eda relies on, but does not relicense, the following projects. Each keeps its
 |---|---|---|
 | [netlistsvg](https://github.com/nturley/netlistsvg) | MIT, © 2016 Neil Turley | Schematic layout (installed via npm). `src/eda/render/skin.svg` is a modified copy of its analog skin and stays under the MIT license |
 | [ngspice](https://ngspice.sourceforge.io/) | BSD-3-Clause (mostly) | External simulator, not bundled |
+| [KiCad](https://www.kicad.org/) and its libraries | GPL-3.0; libraries CC-BY-SA 4.0 with a design exception | External tool, not bundled; generated boards may use its footprints freely |
+| [Freerouting](https://github.com/freerouting/freerouting) | GPL-3.0 | External autorouter, downloaded by `tools/freerouting/fetch.sh`, not bundled |
 | [pydantic](https://github.com/pydantic/pydantic), [ruamel.yaml](https://sourceforge.net/projects/ruamel-yaml/), [watchfiles](https://github.com/samuelcolvin/watchfiles) | MIT | Python dependencies |
 | [CairoSVG](https://github.com/Kozea/CairoSVG) | LGPL-3.0-or-later | Python dependency (dynamically imported, unmodified) |
 | Vendor SPICE models (TI, ADI, …) | Each vendor's own terms | **Not included.** Imported locally into the git-ignored `parts/vendor/` |

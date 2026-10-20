@@ -33,12 +33,12 @@ For a design task in `projects/<name>/` (schema: `DESIGN_DECISIONS.md` §10; exa
 
 1. Record the goal: `uv run eda log projects/<name> -m "Goal: ..."`.
 2. Edit the design YAML (`design/circuit.yaml`, `design/test.yaml`). Every requirement becomes an expectation in `test.yaml`.
-3. `uv run eda run projects/<name> -m "<why this change>"` — check → sim → render in one call; the note and a semantic diff of the design go into the iteration log. Exit code 0 = all pass, 1 = design errors, 2 = tool failure.
+3. `uv run eda run projects/<name> -m "<why this change>"` — check → sim → render (→ pcb when `design/board.yaml` exists) in one call; the note and a semantic diff of the design go into the iteration log. Exit code 0 = all pass, 1 = design errors, 2 = tool failure.
 4. On failure, read `errors` in the JSON: each has `rule`, `message`, `file`, `line`, `path`, `details`. Use `data.sim.tests.<name>.operating_point` for node voltages and currents.
 5. Fix the design files and repeat from step 3 with a `-m "Fix: ..."` note. Pick real component values with `uv run eda value <target> -s E24|E96`.
-6. Look at `out/schematic.png` and `out/waves/<test>.png` before reporting; when everything passes, report to the user.
+6. Look at `out/schematic.png`, `out/waves/<test>.png`, and (with a board) `out/board.png` before reporting; when everything passes, report to the user.
 
-Other commands: `eda check`, `eda sim [-t TEST]`, `eda render`, `eda part list`, `eda part show ID`, `eda value TARGET [-s SERIES]`.
+Other commands: `eda check`, `eda sim [-t TEST]`, `eda render`, `eda pcb`, `eda part list`, `eda part show ID`, `eda value TARGET [-s SERIES]`.
 The CLI never makes design decisions; it only reports.
 
 ## 4. Iteration Log and Viewer
@@ -62,3 +62,12 @@ The CLI never makes design decisions; it only reports.
   2. `uv run eda model import FILE --id <id> [--subckt NAME] [--opamp IN+,IN-,V+,V-,OUT]`.
 - Imported models go to `parts/vendor/`, which is git-ignored: **never commit vendor model files** (their licenses usually forbid redistribution).
 - Only test what a model claims to model (vendor files list it in their header); e.g. the old TL072 model's supply current is not realistic.
+
+## 7. Boards (`design/board.yaml`)
+
+- Our YAML is the source of truth; never edit files under `out/pcb/` (they are regenerated).
+- `board.yaml` sets outline, rules, optional hand placement, and routing passes (`DESIGN_DECISIONS.md` §13.2). An empty `board: {}` is enough to get a board.
+- Footprints come from each part's `pcb:` default; override per part with `footprint:` (KiCad `Library:Name`) and `pads:` (pin → pad) in `circuit.yaml`. Sources become 2-pin headers.
+- `uv run eda pcb projects/<name>` builds, autoroutes (Freerouting), runs DRC, and exports Gerbers/drill/BOM. DRC issues come back as `drc_<type>` errors pointing at the part; `unrouted` means the router gave up: move parts apart (placement), enlarge the board, or raise `routing.passes`.
+- Read `unused_pads` warnings: unused IC channels usually need tying off.
+- Freerouting must be installed once: `tools/freerouting/fetch.sh`.

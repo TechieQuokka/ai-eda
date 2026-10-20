@@ -1,0 +1,6 @@
+# Two-layer board for the gain-of-11 amplifier; all parts placed automatically.
+board:
+  spacing: 4mm
+rules:
+  clearance: 0.2mm
+  track_width: 0.3mm

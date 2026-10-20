@@ -15,3 +15,7 @@ symbol:
   cell: v
   ports: { "+": "+", "-": "-" }
   label: "<param:voltage>"
+# On a board, a source is the connector where the supply or signal comes in.
+pcb:
+  footprint: Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical
+  pads: { "+": "1", "-": "2" }

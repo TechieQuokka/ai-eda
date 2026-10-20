@@ -52,7 +52,7 @@ function niceTicks(lo, hi, count = 5) {
 function renderIssues(state) {
   const seen = new Set();
   const items = [];
-  for (const key of ["check", "sim", "render"]) {
+  for (const key of ["check", "sim", "render", "pcb"]) {
     const result = state[key];
     if (!result) continue;
     for (const [kind, list] of [["error", result.errors], ["warning", result.warnings]]) {
@@ -74,7 +74,7 @@ function renderIssues(state) {
 
 function renderStatus(state) {
   const badge = $("status");
-  const results = ["check", "sim", "render"].map((k) => state[k]).filter(Boolean);
+  const results = ["check", "sim", "render", "pcb"].map((k) => state[k]).filter(Boolean);
   if (results.length === 0) {
     badge.textContent = "no results";
     badge.className = "badge";
@@ -125,6 +125,31 @@ function renderTests(state) {
     }
   }
   box.replaceChildren(...blocks);
+}
+
+function renderBoard(state, version) {
+  const data = state.pcb?.data;
+  const section = $("board-section");
+  if (!data || !data.outputs) {
+    section.hidden = true;
+    return;
+  }
+  section.hidden = false;
+  const r = data.routing || {};
+  const d = data.drc || {};
+  const facts = el("table", {}, el("tbody", {},
+    el("tr", {}, el("td", {}, "size"), el("td", {}, `${data.size_mm[0]} × ${data.size_mm[1]} mm, 2 layers`)),
+    el("tr", {}, el("td", {}, "routing"), el("td", {},
+      `${r.tracks} tracks, ${r.vias} vias, ${r.track_length_mm} mm`,
+      r.unrouted ? el("span", { class: "bad" }, ` · ${r.unrouted} unrouted`) : el("span", { class: "ok" }, " · fully routed"))),
+    el("tr", {}, el("td", {}, "DRC"), el("td", { class: d.errors ? "bad" : "ok" },
+      `${d.errors} errors, ${d.warnings} warnings`)),
+    el("tr", {}, el("td", {}, "fabrication"), el("td", {},
+      el("a", { href: `/${data.outputs.fabrication}` }, "Gerbers + drill + BOM (.zip)")))));
+  const images = el("div", { class: "board-images" });
+  if (data.outputs.svg) images.append(el("div", { class: "schematic" }, el("img", { src: `/${data.outputs.svg}?v=${version}`, alt: "board layout" })));
+  if (data.outputs.render_3d) images.append(el("img", { class: "render", src: `/${data.outputs.render_3d}?v=${version}`, alt: "3D render" }));
+  $("board").replaceChildren(images, facts);
 }
 
 function renderLog(state) {
@@ -377,6 +402,7 @@ async function refresh() {
   renderIssues(state);
   renderSchematic(state, state.version);
   renderTests(state);
+  renderBoard(state, state.version);
   renderLog(state);
   await renderWaveforms(state, state.version);
   $("updated").textContent = `updated ${new Date().toLocaleTimeString()}`;

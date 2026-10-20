@@ -61,6 +61,7 @@ def state(paths: ProjectPaths, version: int) -> dict[str, JsonValue]:
         "check": _read_json(out / "check.json"),
         "sim": _read_json(out / "sim.json"),
         "render": _read_json(out / "render.json"),
+        "pcb": _read_json(out / "pcb.json"),
         "log": history.read_log(paths),
     }
 

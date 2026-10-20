@@ -95,3 +95,5 @@ summary { cursor: pointer; color: var(--muted); }
 #log .note { font-style: italic; }
 #log .changes { margin: 2px 0 6px; padding-left: 18px; color: var(--muted); }
 code { font-family: ui-monospace, monospace; font-size: 12px; }
+.board-images { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; margin-bottom: 10px; }
+.board-images img.render { width: 100%; border-radius: 6px; }

@@ -42,3 +42,7 @@ def make_project(tmp_path: Path) -> MakeProject:
 
 requires_ngspice = pytest.mark.skipif(shutil.which("ngspice") is None, reason="needs ngspice")
 requires_node = pytest.mark.skipif(shutil.which("node") is None, reason="needs node")
+requires_kicad = pytest.mark.skipif(
+    shutil.which("kicad-cli") is None or shutil.which("java") is None,
+    reason="needs kicad-cli, KiCad's Python, and Java",
+)

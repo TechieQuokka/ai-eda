@@ -1,5 +1,6 @@
 """Resolved, checked design objects produced by `eda.design`."""
 
+import re
 from dataclasses import dataclass
 
 from eda.loader import SourceMap
@@ -15,6 +16,9 @@ GROUND = "GND"
 type PinKey = tuple[str, str]  # (part reference, pin name)
 
 
+_LABEL = re.compile(r"<param:([^>]+)>")
+
+
 @dataclass(frozen=True)
 class ResolvedPart:
     ref: str
@@ -22,6 +26,10 @@ class ResolvedPart:
     values: dict[str, float | str]  # SI floats for quantities, strings for choices
     labels: dict[str, str]  # human-readable parameter values
     spice_name: str
+
+    def label(self) -> str:
+        """The symbol label with parameter values filled in, e.g. `330Ω`."""
+        return _LABEL.sub(lambda m: self.labels.get(m[1], "?"), self.spec.symbol.label)
 
 
 @dataclass(frozen=True)
@@ -93,9 +101,48 @@ class CompiledTest:
 
 
 @dataclass(frozen=True)
+class BoardPlacement:
+    x: float  # mm
+    y: float  # mm
+    rotation: float  # degrees
+    side: str  # top | bottom
+
+
+@dataclass(frozen=True)
+class BoardPart:
+    ref: str
+    value: str
+    footprint: str  # KiCad `Library:Name`
+    pads: dict[str, str]  # pad number → net
+    placement: BoardPlacement | None
+
+
+@dataclass(frozen=True)
+class BoardRules:
+    clearance: float  # mm
+    track_width: float
+    via_diameter: float
+    via_drill: float
+
+
+@dataclass(frozen=True)
+class ResolvedBoard:
+    width: float | None  # mm; None = fit to parts
+    height: float | None
+    margin: float
+    spacing: float
+    layers: int
+    rules: BoardRules
+    parts: tuple[BoardPart, ...]
+    passes: int
+    source: SourceMap
+
+
+@dataclass(frozen=True)
 class Design:
     paths: ProjectPaths
     project: Project
     circuit: ResolvedCircuit
     tests: dict[str, CompiledTest]
     parts: dict[str, PartSpec]
+    board: ResolvedBoard | None = None

@@ -12,3 +12,6 @@ symbol:
   cell: r_v
   ports: { "1": A, "2": B }
   label: "<param:resistance>"
+pcb:
+  footprint: Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal
+  pads: { "1": "1", "2": "2" }

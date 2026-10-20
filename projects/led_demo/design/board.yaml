@@ -1,0 +1,8 @@
+# Board for the LED demo. Parts without a placement are packed automatically.
+board:
+  margin: 3mm
+rules:
+  clearance: 0.25mm
+  track_width: 0.5mm
+placement:
+  V1: { x: 5mm, y: 6mm, rotation: 0deg }

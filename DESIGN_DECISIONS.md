@@ -1,7 +1,7 @@
 # AI-Native EDA — Design Decisions
 
 > Companion to `PROJECT_SUMMARY.md`. Records what was discussed and decided on 2026-10-20.
-> Status: M0 and M1 complete (2026-10-20). M0: §10–§11. M1: §12.
+> Status: M0, M1, M2 complete (2026-10-20). M0: §10–§11. M1: §12. M2: §13.
 
 ---
 
@@ -108,9 +108,8 @@ Not needed for M0; revisit at the listed milestone.
 
 | # | Topic | Default leaning | Revisit at |
 |---|---|---|---|
-| 4 | PCB source of truth | Our format is the source; KiCad files are build outputs | M2 |
 | 5 | Primary target MCU | Undecided | M3 |
-| 6 | Board complexity | Start with 2-layer | M2 |
+| 6 | Board complexity | 2-layer (decided in M2, §13); multi-layer later if needed | — |
 
 ## 8. Research Snapshot (2026-10)
 
@@ -332,3 +331,66 @@ uv run eda model import <path>/TL072.301 --id tl072 --opamp 1,2,3,4,5
 2. **TLV6001 does not reach an operating point** in ngspice without `.option optran`; not supported yet.
 3. **Quoting**: measures with commas need quotes in flow mappings; the error message now says how.
 4. **Schematics of op-amp circuits** with split supplies are readable but crowded (netlistsvg places supply sources freely). KiCad-based rendering remains the plan for M2.
+
+## 13. M2 Specification and Result (2026-10-20)
+
+Goal (`PROJECT_SUMMARY.md` §12): a board is produced from design files with DRC results as JSON.
+
+### 13.1 Decision #4 — PCB source of truth
+
+**Our YAML is the source of truth; KiCad files are build outputs** (decided with the user). Everything under `out/pcb/` is regenerated on each run, so the agent only ever edits `circuit.yaml` and `board.yaml`.
+
+### 13.2 `design/board.yaml`
+
+```yaml
+board:                 # all optional
+  width: 50mm          # with height; omit both to fit the board to the parts
+  height: 30mm
+  margin: 3mm          # around parts when fitting
+  spacing: 3mm         # gap between auto-placed parts
+rules:
+  clearance: 0.2mm
+  track_width: 0.4mm
+  via_diameter: 0.8mm
+  via_drill: 0.4mm
+placement:             # parts not listed are packed automatically
+  V1: { x: 5mm, y: 6mm, rotation: 90deg, side: top }
+routing:
+  passes: 20
+```
+
+- Footprints: each part type has a default `pcb: { footprint, pads, nc }` (KiCad `Library:Name`, pin → pad number, pads meant to stay open). A part instance can override with `footprint:` and `pads:` in `circuit.yaml` (e.g. one channel of a dual op-amp in DIP-8).
+- Sources become 2-pin headers: on a board, a supply or signal source is the connector where it enters.
+- `eda check` validates the board: the footprint exists, every pin has a pad, every pad exists, placements name real parts; IC pads left unconnected produce a `unused_pads` warning.
+- Length unit `m` was added (`5mm`, `0.25mm`).
+
+### 13.3 Toolchain
+
+| Step | Tool | Notes |
+|---|---|---|
+| Board creation, placement, nets, rules, outline | KiCad 10 `pcbnew` Python API, run under KiCad's Python (`/usr/bin/python3`, 3.12) by `src/eda/adapters/pcbnew_script.py` | Separate interpreter from eda's 3.13; JSON in/out over a pipe |
+| Autorouting | Freerouting **2.1.0** jar on the existing Java 21, via Specctra DSN/SES | 2.2+ jars need Java 25; the 2.5.0 native CLI hangs (GraalVM serialization error). Pinned with SHA-256 in `tools/freerouting/fetch.sh`; analytics disabled, settings kept in `tools/freerouting/data/` |
+| Stub cleanup | pcbnew connectivity | Track ends left dangling by the router are removed after import |
+| DRC | `kicad-cli pcb drc --format json` | Each violation becomes an `Issue` (`drc_<type>`), pointing at the part's placement or definition; positions in mm |
+| Fabrication | `kicad-cli pcb export gerbers/drill/pos` + our BOM | Two-layer layer set only; zipped as `out/pcb/<name>-fab.zip` |
+| Images | `kicad-cli pcb export svg` (+ PNG) and `kicad-cli pcb render` (3D, no 3D models installed) | Shown in the viewer's Board panel |
+
+**Determinism.** Freerouting gives different tracks on repeated runs of the same `.dsn`; the generated `.dsn` itself is deterministic. Sessions are therefore cached by the hash of the `.dsn` (plus passes and router version) in `out/pcb/route-cache/`, so the same design always yields the same board on a machine. A fresh clone routes once and then stays stable.
+
+### 13.4 Result
+
+| Project | Board | Routing | DRC |
+|---|---|---|---|
+| `led_demo` | 28 × 22 mm, V1 placed by hand, rest packed | fully routed, 0 vias | 0 errors, 0 warnings |
+| `opamp_amp` | 36 × 26 mm, SOIC-8 + THT parts | fully routed | 0 errors, 0 warnings |
+| `tl072_amp` | 39 × 31 mm, DIP-8 TL072 (channel A) | fully routed, 0 vias | 0 errors, 0 warnings; `unused_pads` warning for channel B (pads 5–7) |
+
+`eda pcb` takes about 6 s for these boards (most of it Freerouting's JVM start). `eda run` includes `pcb` whenever `design/board.yaml` exists.
+
+### 13.5 Not done in M2 / findings
+
+1. **KiCad schematic (`.kicad_sch`) generation** is not done; the schematic stays netlistsvg. The board is generated straight from the netlist, which is what fabrication needs.
+2. **Placement is naive** (shelf packing in definition order). Connectivity-aware placement would shorten tracks; `placement:` covers hand placement meanwhile.
+3. **No copper pours / ground plane** yet.
+4. **3D render has no component bodies** because `kicad-packages3d` (several GB) is not installed.
+5. Dual-channel parts: an imported single-channel model on a dual package leaves the other channel floating; the `unused_pads` warning says so, but tying it off is still a manual design step.
