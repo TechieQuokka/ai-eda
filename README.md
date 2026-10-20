@@ -171,6 +171,8 @@ signals:
 
 The firmware reads the button through the switch and the pull-up it enabled itself, reads the potentiometer through the ADC, and drives the LED that ngspice simulates; change the delay in `main.c` and the test fails with the new period.
 
+Things can also happen during a run: `events: [{ at: 1.1s, part: SW1, set: { state: pressed } }, { at: 300ms, serial: UART_RX, send: "rate 100\n" }]`, with measures limited to part of it (`from: 1.6s`).
+
 ### Vendor models
 
 Manufacturer SPICE models are imported locally and are **not** part of this repository, because their licenses usually forbid redistribution:
@@ -239,7 +241,7 @@ Background and decisions: [`PROJECT_SUMMARY.md`](PROJECT_SUMMARY.md), [`DESIGN_D
 ```bash
 uv run ruff format --check && uv run ruff check   # style and lint
 uv run pyright                                    # strict static typing
-uv run pytest                                     # 152 tests
+uv run pytest                                     # 155 tests
 ```
 
 ---

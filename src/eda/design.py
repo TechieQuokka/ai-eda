@@ -5,6 +5,7 @@ units, pin references, and test expressions. ERC lives in `eda.verify.erc`.
 """
 
 import re
+from dataclasses import replace
 from pathlib import Path
 
 from eda import firmware as fw
@@ -17,6 +18,7 @@ from eda.model import (
     BoardPart,
     BoardPlacement,
     BoardRules,
+    CompiledEvent,
     CompiledExpectation,
     CompiledTest,
     Design,
@@ -30,10 +32,12 @@ from eda.model import (
     Tran,
     domain_of,
 )
+from eda.netlist.spice import alter_commands
 from eda.project import ProjectPaths, load_parts
 from eda.result import Diagnostics, Location
 from eda.schema.board import BoardFile
 from eda.schema.circuit import Circuit
+from eda.schema.common import Scalar
 from eda.schema.firmware import FirmwareFile
 from eda.schema.part import ParamSpec, PartSpec
 from eda.schema.project import Project
@@ -41,6 +45,7 @@ from eda.schema.testspec import (
     AcAnalysis,
     Expectation,
     OpAnalysis,
+    SimEvent,
     SimTest,
     SimTestFile,
     TranAnalysis,
@@ -456,7 +461,8 @@ def _compile_tests(
         if case.firmware:
             ok = _check_firmware_test(name, case, analysis, src, firmware, diag)
         overrides = _compile_overrides(name, case, src, circuit, diag)
-        ok = ok and overrides is not None
+        events = _compile_events(name, case, analysis, src, circuit, firmware, diag)
+        ok = ok and overrides is not None and events is not None
         expectations: list[CompiledExpectation] = []
         serial: list[SerialExpectation] = []
         for index, exp in enumerate(case.expect):
@@ -479,8 +485,130 @@ def _compile_tests(
                 firmware=case.firmware,
                 serial=tuple(serial),
                 parts=overrides or {},
+                events=tuple(events or ()),
             )
     return compiled
+
+
+def _compile_events(
+    name: str,
+    case: SimTest,
+    analysis: Analysis | None,
+    src: SourceMap,
+    circuit: ResolvedCircuit | None,
+    firmware: ResolvedFirmware | None,
+    diag: Diagnostics,
+) -> list[CompiledEvent] | None:
+    """`events:` of a tran test: part parameter changes and UART input, sorted by time."""
+    if not case.events:
+        return []
+    if analysis is not None and not isinstance(analysis, Tran):
+        diag.error(
+            "events_need_tran",
+            f"{name}: events need a tran analysis",
+            src.at("tests", name, "events"),
+        )
+        return None
+    found: list[CompiledEvent] = []
+    ok = True
+    for index, raw in enumerate(case.events):
+        base = ("tests", name, "events", index)
+        try:
+            time = parse_quantity(raw.at, "s")
+        except QuantityError as exc:
+            diag.error("invalid_value", f"at: {exc}", src.at(*base, "at"))
+            ok = False
+            continue
+        if isinstance(analysis, Tran) and not 0 <= time < analysis.stop:
+            diag.error(
+                "event_time", f"{name}: event at {raw.at} is outside the run", src.at(*base, "at")
+            )
+            ok = False
+            continue
+        if raw.part is not None:
+            event = _part_event(name, raw.part, raw.set or {}, time, base, src, circuit, diag)
+        else:
+            event = _serial_event(name, raw, time, case.firmware, base, src, firmware, diag)
+        if event is None:
+            ok = False
+        else:
+            found.append(event)
+    found.sort(key=lambda e: e.time)
+    return found if ok else None
+
+
+def _part_event(
+    name: str,
+    ref: str,
+    params: dict[str, Scalar],
+    time: float,
+    base: tuple[str | int, ...],
+    src: SourceMap,
+    circuit: ResolvedCircuit | None,
+    diag: Diagnostics,
+) -> CompiledEvent | None:
+    if circuit is None:
+        return None
+    part = circuit.parts.get(ref)
+    if part is None:
+        diag.error("unknown_part", f"{name}.events: no part named {ref!r}", src.at(*base, "part"))
+        return None
+    values: dict[str, tuple[float | str, str]] = {}
+    for param_name, raw in params.items():
+        param = part.spec.params.get(param_name)
+        where = src.at(*base, "set", param_name)
+        if param is None:
+            known = ", ".join(part.spec.params) or "none"
+            diag.error(
+                "unknown_param",
+                f"{ref}: {part.spec.id} has no parameter {param_name!r} (parameters: {known})",
+                where,
+            )
+            return None
+        parsed = _param_value(ref, param_name, param, raw, where, diag)
+        if parsed is None:
+            return None
+        values[param_name] = parsed
+    changed = replace(part, values={**part.values, **{k: v for k, (v, _) in values.items()}})
+    try:
+        alter_commands(part, changed, circuit)
+    except ValueError as exc:
+        diag.error("event_unsupported", f"{ref}: {exc}", src.at(*base, "set"))
+        return None
+    return CompiledEvent(time=time, location=src.at(*base), part=ref, values=values)
+
+
+def _serial_event(
+    name: str,
+    raw: SimEvent,
+    time: float,
+    runs_firmware: bool,
+    base: tuple[str | int, ...],
+    src: SourceMap,
+    firmware: ResolvedFirmware | None,
+    diag: Diagnostics,
+) -> CompiledEvent | None:
+    assert raw.serial is not None and raw.send is not None
+    if not runs_firmware:
+        diag.error(
+            "serial_needs_firmware", f"{name}: serial events need firmware: true", src.at(*base)
+        )
+        return None
+    signals = firmware.signals if firmware else {}
+    signal = signals.get(raw.serial)
+    rx = re.fullmatch(r"UART(\d)_RX", (signal.function if signal else None) or "")
+    if rx is None:
+        nets = [s.net for s in signals.values() if (s.function or "").endswith("_RX")]
+        diag.error(
+            "serial_net",
+            f"{raw.serial} is not a UART RX signal in firmware.yaml; UART RX nets: "
+            + (", ".join(nets) or "none"),
+            src.at(*base, "serial"),
+        )
+        return None
+    return CompiledEvent(
+        time=time, location=src.at(*base), net=raw.serial, uart=int(rx.group(1)), text=raw.send
+    )
 
 
 def _compile_overrides(
@@ -713,9 +841,29 @@ def _compile_expectation(
     if low is not None and high is not None and low > high:
         diag.error("invalid_bounds", f"{raw.measure}: min is greater than max", at)
         ok = False
+    window: dict[str, float | None] = {"start": None, "end": None}
+    for key, label in (("start", "from"), ("end", "to")):
+        text = getattr(raw, key)
+        if text is None:
+            continue
+        if analysis is not None and not isinstance(analysis, Tran):
+            diag.error("window_needs_tran", f"{label}: only tran measures take a time range", at)
+            ok = False
+            continue
+        try:
+            window[key] = parse_quantity(text, "s")
+        except QuantityError as exc:
+            diag.error("invalid_value", f"{label}: {exc}", src.at(*base, label))
+            ok = False
+    start, end = window["start"], window["end"]
+    if start is not None and end is not None and start >= end:
+        diag.error("invalid_window", f"{raw.measure}: `from` must be before `to`", at)
+        ok = False
     if not ok:
         return None
-    return CompiledExpectation(index=index, measure=measure, min=low, max=high, location=at)
+    return CompiledExpectation(
+        index=index, measure=measure, min=low, max=high, location=at, start=start, end=end
+    )
 
 
 def _probe_problem(probe: Probe, circuit: ResolvedCircuit) -> tuple[str, str] | None:

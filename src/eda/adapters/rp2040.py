@@ -86,12 +86,18 @@ class Emulator:
         self._log_file.close()
 
     def run(
-        self, until: float, inputs: dict[int, bool], adc: dict[int, int], break_on_mode: bool
+        self,
+        until: float,
+        inputs: dict[int, bool],
+        adc: dict[int, int],
+        break_on_mode: bool,
+        send: dict[int, str] | None = None,
     ) -> Window:
         """Run to `until` seconds with these GPIO input levels and ADC channel codes.
 
         With `break_on_mode`, return early right after a pin changes mode (pull-up enabled,
-        output enabled, ...): such a change can move the pin's own input level."""
+        output enabled, ...): such a change can move the pin's own input level. `send`
+        queues text for UART receivers (paced at the firmware's baud rate)."""
         reply = self._request(
             {
                 "cmd": "run",
@@ -99,6 +105,7 @@ class Emulator:
                 "inputs": {str(k): v for k, v in inputs.items()},
                 "adc": {str(k): v for k, v in adc.items()},
                 "break_on_mode": break_on_mode,
+                "send": {str(k): v for k, v in (send or {}).items()},
             }
         )
         pins: dict[int, Segments] = {

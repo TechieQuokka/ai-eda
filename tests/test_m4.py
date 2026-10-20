@@ -1,4 +1,5 @@
 import shutil
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -6,10 +7,12 @@ import pytest
 from eda import cosim, pipeline
 from eda.adapters import ngspice_shared, picosdk, rp2040
 from eda.design import load_design
+from eda.netlist.spice import alter_commands
 from eda.project import REPO_ROOT
 from eda.result import Diagnostics
 from eda.schema.part import McuSpec
 from eda.verify.measure import MeasureTypeError, check, evaluate, parse_measure
+from tests.conftest import MakeProject
 
 EXAMPLE = REPO_ROOT / "projects" / "pico_io"
 
@@ -195,7 +198,7 @@ def test_firmware_in_the_loop(pico: Path) -> None:
     assert isinstance(serial, dict) and "pot=2047" in str(serial["UART_TX"])
 
     # A firmware change shows up in the circuit: blinking at 250 ms breaks the period.
-    _edit(pico / "firmware" / "main.c", "pressed ? 100 : 500", "pressed ? 100 : 250")
+    _edit(pico / "firmware" / "main.c", "slow_ms = 500u", "slow_ms = 250u")
     result = pipeline.sim(pico, "firmware_blink")
     failed = [e for e in result.errors if e.rule == "expect"]
     assert [e.details["measure"] for e in failed] == [
@@ -204,3 +207,106 @@ def test_firmware_in_the_loop(pico: Path) -> None:
     ]
     value = failed[1].details["value"]
     assert isinstance(value, float) and value == pytest.approx(0.5, abs=0.01)
+
+
+# --- events --------------------------------------------------------------------------------
+
+SWITCHED_LED = """
+parts:
+  V1: { type: dc_voltage_source, voltage: 5V }
+  SW1: { type: push_button }
+  R1: { type: resistor, resistance: 330ohm }
+  D1: { type: led, color: red }
+  RV1: { type: potentiometer, resistance: 10kohm }
+  R2: { type: resistor, resistance: 1Mohm }
+nets:
+  VCC: [V1.+, SW1.1, RV1.3]
+  SWITCHED: [SW1.2, R1.1]
+  N1: [R1.2, D1.anode]
+  WIPER: [RV1.2, R2.1]
+  GND: [D1.cathode, V1.-, RV1.1, R2.2]
+"""
+
+
+def test_alter_commands(make_project: MakeProject) -> None:
+    root = make_project(
+        SWITCHED_LED,
+        "tests:\n  t:\n    analysis: { type: op }\n"
+        "    expect: [{ measure: current(D1), max: 1A }]\n",
+    )
+    diag = Diagnostics()
+    design = load_design(root, diag)
+    assert design is not None, diag.errors
+    circuit = design.circuit
+    sw1, rv1, v1 = circuit.parts["SW1"], circuit.parts["RV1"], circuit.parts["V1"]
+    pressed = replace(sw1, values={**sw1.values, "state": "pressed"})
+    assert alter_commands(sw1, pressed, circuit) == ["alter R_SW1 = 0.1"]
+    quarter = replace(rv1, values={**rv1.values, "position": 25.0})
+    assert alter_commands(rv1, quarter, circuit) == ["alter RV1a = 2500", "alter RV1b = 7500"]
+    with pytest.raises(ValueError, match="only R, C, and L"):
+        alter_commands(v1, replace(v1, values={**v1.values, "voltage": 3.0}), circuit)
+
+
+@pytest.mark.skipif(ngspice_shared.library_path() is None, reason="needs libngspice")
+def test_events_without_firmware(make_project: MakeProject) -> None:
+    tests = """
+tests:
+  press:
+    analysis: { type: tran, step: 100us, stop: 20ms }
+    events:
+      - { at: 10ms, part: SW1, set: { state: pressed } }
+      - { at: 15ms, part: RV1, set: { position: 20% } }
+    expect:
+      - { measure: max(current(D1)), to: 9.9ms, max: 1uA }
+      - { measure: min(current(D1)), from: 10.1ms, min: 5mA }
+      - { measure: "at(voltage(WIPER), 12ms)", min: 2.4V, max: 2.6V }
+      - { measure: "at(voltage(WIPER), 16ms)", min: 0.9V, max: 1.1V }
+"""
+    root = make_project(SWITCHED_LED, tests)
+    result = pipeline.sim(root)
+    assert result.ok, result.errors
+    data = result.data["tests"]
+    assert isinstance(data, dict)
+    press = data["press"]
+    assert isinstance(press, dict)
+    events = press["events"]
+    assert isinstance(events, list) and len(events) == 2
+
+
+def test_event_rules(pico: Path) -> None:
+    tests = pico / "design" / "test.yaml"
+    text = tests.read_text(encoding="utf-8")
+    text += """  bad_events:
+    analysis: { type: tran, step: 1ms, stop: 10ms }
+    events:
+      - { at: 5ms, part: NOPE, set: { state: pressed } }
+      - { at: 5ms, part: J1, set: { voltage: 3V } }
+      - { at: 20ms, part: SW1, set: { state: pressed } }
+      - { at: 1ms, serial: UART_RX, send: "x" }
+    expect:
+      - { measure: max(current(D1)), max: 1A }
+  op_events:
+    analysis: { type: op }
+    events:
+      - { at: 0s, part: SW1, set: { state: pressed } }
+    expect:
+      - { measure: current(D1), max: 1A }
+  tx_event:
+    analysis: { type: tran, step: 1ms, stop: 10ms }
+    firmware: true
+    events:
+      - { at: 1ms, serial: UART_TX, send: "x" }
+    expect:
+      - { measure: "period(current(D1), 3mA)", from: 1ms, min: 1ms }
+"""
+    tests.write_text(text, encoding="utf-8")
+    diag = Diagnostics()
+    load_design(pico, diag)
+    assert {e.rule for e in diag.errors} == {
+        "unknown_part",
+        "event_unsupported",
+        "event_time",
+        "serial_needs_firmware",
+        "events_need_tran",
+        "serial_net",
+    }

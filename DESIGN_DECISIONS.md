@@ -507,5 +507,26 @@ Verified before choosing (HANDOFF §4.2 criteria: runs the pico-sdk image unmodi
 1. Inputs still see the circuit one window late for output→input paths (e.g. a GPIO looped back to another through an RC); choose `step` well below the timing under test.
 2. Only core 0; no USB, no PIO timing beyond rp2040js's model; the ADC reference is taken as `vio`.
 3. `ngSpice_nospiceinit()` crashes libngspice 47 when called before `ngSpice_Init` as documented, so the shared-library runs do read a user `.spiceinit` (batch runs use `-n`).
-4. Serial input to the firmware (UART RX) is not modelled yet.
+4. ~~Serial input to the firmware (UART RX) is not modelled yet.~~ Done in §15.6.
 5. The co-simulated netlist adds two elements per firmware pin; a design with dozens of PWM pins changing every window will be slower (each change is two `alter`s).
+
+### 15.6 Stimulus: events during a run (2026-10-20)
+
+Tests could only hold inputs fixed for a whole run, so firmware behaviour over time (reacting to a press, parsing a command) could not be tested.
+
+- **`events:`** in a `tran` test, each at a time `at`:
+  - `part` + `set`: change part parameters mid-run (`{ at: 1.1s, part: SW1, set: { state: pressed } }`). Implemented with ngspice `alter` on the element values; `netlist.spice.alter_commands` re-renders the part's template with the new values and accepts only lines whose R/C/L value changed (values may be `{...}` expressions, evaluated by a small AST evaluator: numbers, + − × ÷, max/min/abs). Anything else (a source voltage, a model change) is `event_unsupported` at check time.
+  - `serial` + `send`: text into a firmware UART RX (`UARTn_RX` net). The emulator queues the bytes and feeds them one character time apart at the baud rate the firmware set (8N1; 115200 before it sets one), so the 32-byte RX FIFO does not overflow.
+- Tests with events but no firmware run through the same stepped runner (`cosim.run` without an emulator); ngspice lands exactly on each event time.
+- **Measure time ranges**: `from:` / `to:` on a tran expectation evaluate it over part of the run; the label shows the range (`period(current(D1), 3mA) [1.6s..end]`).
+- Rules: `events_need_tran`, `event_time` (outside the run), `event_unsupported`, `serial_needs_firmware`, `serial_net` (not a UART RX net), `window_needs_tran`, `invalid_window`.
+- Waveform plots mark each event with a labelled vertical line; the viewer lists a test's events.
+
+**Example firmware** (`pico_io/firmware/main.c`) now polls the UART every millisecond: `rate <ms>` sets the normal toggle interval and answers `rate=<ms>`, anything else answers `error: <line>`. New tests:
+
+| Test | Result |
+|---|---|
+| `firmware_press` (SW1 pressed at 1.1 s) | period 1.001 s before, 200.3 ms after; BUTTON 3.3 V → 6.6 µV |
+| `firmware_command` (`rate 100` at 300 ms, `speed up` at 400 ms) | period 200.3 ms from 700 ms; `rate=100`; one `error: speed up` |
+
+The 1 ms polling loop makes the firmware wake 1000 times per simulated second; all nine `pico_io` tests take about 5 s.

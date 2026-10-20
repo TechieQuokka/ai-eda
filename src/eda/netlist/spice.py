@@ -1,6 +1,8 @@
 """Resolved circuit → ngspice netlist with a batch `.control` block."""
 
+import ast
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 from eda.model import GROUND, Ac, Analysis, Op, ResolvedCircuit, ResolvedPart
@@ -216,3 +218,74 @@ def build_netlist(
         ]
     lines.append(".end")
     return "\n".join(lines) + "\n"
+
+
+# --- changing a part during a run ----------------------------------------------------------
+
+_ALTERABLE = frozenset("RCL")
+_BINARY: dict[type[ast.operator], Callable[[float, float], float]] = {
+    ast.Add: lambda a, b: a + b,
+    ast.Sub: lambda a, b: a - b,
+    ast.Mult: lambda a, b: a * b,
+    ast.Div: lambda a, b: a / b,
+}
+
+
+def _max(*values: float) -> float:
+    return max(values)
+
+
+def _min(*values: float) -> float:
+    return min(values)
+
+
+def _abs(value: float) -> float:
+    return abs(value)
+
+
+_FUNCTIONS: dict[str, Callable[..., float]] = {"max": _max, "min": _min, "abs": _abs}
+
+
+def alter_commands(old: ResolvedPart, new: ResolvedPart, circuit: ResolvedCircuit) -> list[str]:
+    """ngspice `alter` commands that turn `old`'s elements into `new`'s mid-simulation.
+
+    Only R, C, and L values can change (`R1 a b VALUE`); a value may be a `{...}`
+    expression of numbers, + - * /, max, min, and abs. Raises ValueError otherwise.
+    """
+    before = element_lines(old, circuit)
+    after = element_lines(new, circuit)
+    if len(before) != len(after):
+        raise ValueError("the parameter changes the part's SPICE structure")
+    commands: list[str] = []
+    for a, b in zip(before, after, strict=True):
+        if a == b:
+            continue
+        tokens_a, tokens_b = a.split(maxsplit=3), b.split(maxsplit=3)
+        name = tokens_b[0]
+        if len(tokens_b) != 4 or name[0].upper() not in _ALTERABLE or tokens_a[:3] != tokens_b[:3]:
+            raise ValueError(f"only R, C, and L values can change during a run, not {b!r}")
+        commands.append(f"alter {name} = {_spice_number(tokens_b[3]):.12g}")
+    return commands
+
+
+def _spice_number(text: str) -> float:
+    if text.startswith("{") and text.endswith("}"):
+        return _evaluate(ast.parse(text[1:-1], mode="eval").body)
+    return float(text)
+
+
+def _evaluate(node: ast.expr) -> float:
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+        return float(node.value)
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+        return -_evaluate(node.operand)
+    if isinstance(node, ast.BinOp) and type(node.op) in _BINARY:
+        return _BINARY[type(node.op)](_evaluate(node.left), _evaluate(node.right))
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id in _FUNCTIONS
+        and not node.keywords
+    ):
+        return _FUNCTIONS[node.func.id](*(_evaluate(arg) for arg in node.args))
+    raise ValueError(f"cannot evaluate {ast.unparse(node)!r}")

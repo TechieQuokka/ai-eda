@@ -14,6 +14,7 @@ from eda.adapters import ngspice, picosdk
 from eda.model import (
     GROUND,
     Ac,
+    CompiledEvent,
     CompiledExpectation,
     CompiledTest,
     Design,
@@ -112,7 +113,7 @@ def _run_one(
     raw_path = sim_dir / f"{test.name}.raw"
     log_path = sim_dir / f"{test.name}.log"
     raw_path.unlink(missing_ok=True)
-    if test.firmware:
+    if test.interactive:
         return _run_cosim(design, test, sim_dir, diag, image)
     netlist_path.write_text(
         build_netlist(
@@ -153,7 +154,7 @@ def _run_one(
 def _run_cosim(
     design: Design, test: CompiledTest, sim_dir: Path, diag: Diagnostics, image: Path | None
 ) -> dict[str, JsonValue] | None:
-    if image is None or not image.is_file():
+    if test.firmware and (image is None or not image.is_file()):
         try:
             picosdk.sdk_path()
         except picosdk.PicoSdkError as exc:
@@ -173,14 +174,18 @@ def _run_cosim(
         return None
     for warning in result.warnings[:5]:
         diag.warning("simulator_warning", f"{test.name}: {warning}", test.location)
+    outcome = _evaluate(design, test, sim_dir, raw_path, diag, raw_path.with_suffix(".cir"))
+    if outcome is None:
+        return None
+    if test.events:
+        outcome["events"] = [_event_json(event) for event in test.events]
+    if not test.firmware or image is None:
+        return outcome
     uart_path = sim_dir / f"{test.name}.uart.txt"
     serial = {net: result.uart.get(index, "") for net, index in _uart_nets(design).items()}
     uart_path.write_text(
         "".join(f"--- {net} ---\n{text}\n" for net, text in serial.items()), encoding="utf-8"
     )
-    outcome = _evaluate(design, test, sim_dir, raw_path, diag, raw_path.with_suffix(".cir"))
-    if outcome is None:
-        return None
     checks = outcome["expectations"]
     assert isinstance(checks, list)
     for exp in test.serial:
@@ -196,6 +201,17 @@ def _run_cosim(
         "serial_file": design.paths.rel(uart_path),
     }
     return outcome
+
+
+def _event_json(event: CompiledEvent) -> dict[str, JsonValue]:
+    what: str
+    if event.part is not None:
+        what = f"{event.part}: " + ", ".join(
+            f"{k}={label}" for k, (_, label) in event.values.items()
+        )
+    else:
+        what = f"{event.net} <- {event.text!r}"
+    return {"time": event.time, "display": format_quantity(event.time, "s"), "event": what}
 
 
 def _uart_nets(design: Design) -> dict[str, int]:
@@ -363,16 +379,22 @@ def _judge(
 ) -> dict[str, JsonValue]:
     measure = exp.measure
     unit = measure.unit
+    lo, hi = _window(traces.x, exp.start, exp.end)
+
+    def lookup(probe: Probe) -> Trace | None:
+        values = probe_values(probe, traces.signals, traces.points)
+        return values[lo:hi] if values is not None else None
+
     try:
         value = evaluate(
             measure.node,
             domain_of(test.analysis),
-            traces.x,
-            lambda probe: probe_values(probe, traces.signals, traces.points),
+            traces.x[lo:hi] if traces.x is not None else None,
+            lookup,
         )
     except KeyError as exc:
         diag.fail_tool("missing_vector", f"{test.name}: simulator did not report {exc.args[0]}")
-        return {"measure": measure.text, "passed": False, "value": None}
+        return {"measure": exp.label, "passed": False, "value": None}
     passed = (
         math.isfinite(value)
         and (exp.min is None or value >= exp.min)
@@ -393,7 +415,7 @@ def _judge(
             hint = f"too high by {format_quantity(value - exp.max, unit)}"
         diag.error(
             "expect",
-            f"{test.name}: {measure.text} = {display}, expected {exp.range_text} ({hint})",
+            f"{test.name}: {exp.label} = {display}, expected {exp.range_text} ({hint})",
             exp.location,
             test=test.name,
             measure=measure.text,
@@ -403,7 +425,7 @@ def _judge(
             unit=unit,
         )
     return {
-        "measure": measure.text,
+        "measure": exp.label,
         "value": value if math.isfinite(value) else None,
         "display": display,
         "unit": unit,
@@ -413,6 +435,17 @@ def _judge(
         "passed": passed,
         "line": exp.location.line,
     }
+
+
+def _window(
+    x: list[float] | None, start: float | None, end: float | None
+) -> tuple[int, int | None]:
+    """Slice bounds of the samples within [start, end] (the whole trace when unset)."""
+    if x is None or (start is None and end is None):
+        return 0, None
+    lo = next((i for i, t in enumerate(x) if start is None or t >= start - 1e-15), len(x))
+    hi = next((i for i, t in enumerate(x) if end is not None and t > end + 1e-15), len(x))
+    return lo, hi
 
 
 def _waveform_json(axis: Literal["time", "frequency"], traces: Traces) -> str:

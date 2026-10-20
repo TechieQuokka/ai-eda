@@ -15,7 +15,7 @@
 
 - All six open decisions from `PROJECT_SUMMARY.md` §11 are settled (Python, YAML, no tscircuit fork, YAML is the PCB source of truth, RP2040/Pico, 2-layer boards).
 - Repository: https://github.com/TechieQuokka/ai-eda (public, `master`); M4 commits are local until the user approves a push.
-- Quality gates: `ruff format --check`, `ruff check`, `pyright` (strict), and `pytest` (152 tests) all pass; all five example projects pass `eda run`.
+- Quality gates: `ruff format --check`, `ruff check`, `pyright` (strict), and `pytest` (155 tests) all pass; all five example projects pass `eda run`.
 
 ## 2. Resuming on this machine
 
@@ -59,9 +59,10 @@ Local-only, git-ignored state worth knowing about:
 
 M4 is finished (`DESIGN_DECISIONS.md` §15): `pico_io` blinks its LED in the emulator, the `tran` tests see the LED current toggle with a 1 s period (200 ms with the button held), and the pot reading reaches the firmware through the ADC (`pot=2047` / `pot=1024` on the UART). Candidates for what comes next, none started or agreed:
 
-1. Firmware stimulus: UART RX input, time-varying buttons (a switch that changes state during a test).
-2. Tighter output→input timing (inputs currently lag one window except after pin mode changes).
-3. Carry-overs from earlier milestones (table below).
+1. ~~Firmware stimulus~~: done (`events:`, §15.6).
+2. Ground plane / copper pours on boards (agreed as the next step after stimulus).
+3. Tighter output→input timing (inputs currently lag one window except after pin mode changes), when a design needs it.
+4. Other carry-overs from earlier milestones (table below).
 
 ## 5. Known issues and carry-overs
 
@@ -73,7 +74,7 @@ M4 is finished (`DESIGN_DECISIONS.md` §15): `pico_io` blinks its LED in the emu
 | Simulation | TLV6001-style vendor models need `.option optran` to converge; not supported | §12.4 |
 | Simulation | Old vendor macromodels (TL072 1989) do not model supply current | §12.4 |
 | Firmware | Co-simulation exchanges values once per `step`; output→input paths lag one window | §15.5 |
-| Firmware | Only core 0 emulated; no UART RX stimulus; ADC reference = `vio` | §15.5 |
+| Firmware | Only core 0 emulated; ADC reference = `vio` | §15.5 |
 | Simulation | libngspice reads a user `.spiceinit` (`ngSpice_nospiceinit` crashes ngspice 47) | §15.5 |
 | YAML | Values with commas inside `{ ... }` must be quoted; the loader explains it when it happens | §12.1, §14.6 |
 | Schematic | netlistsvg layout is automatic only; crowded for op-amp/MCU circuits | §12.4 |

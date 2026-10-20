@@ -54,3 +54,29 @@ tests:
       - { measure: max(voltage(BUTTON)), max: 0.1V }
       - { serial: UART_TX, match: 'pot=(\d+)', min: 950, max: 1100 }
       - { serial: UART_TX, match: 'pot=', min: 10 }
+  firmware_press:
+    description: >
+      The button is pressed at 1.1 s while the firmware runs: before, the LED blinks with
+      a 1 s period; once the firmware sees the press, with a 200 ms period.
+    analysis: { type: tran, step: 1ms, stop: 2.4s }
+    firmware: true
+    events:
+      - { at: 1.1s, part: SW1, set: { state: pressed } }
+    expect:
+      - { measure: "period(current(D1), 3mA)", to: 1.05s, min: 0.95s, max: 1.05s }
+      - { measure: "period(current(D1), 3mA)", from: 1.6s, min: 190ms, max: 210ms }
+      - { measure: "at(voltage(BUTTON), 1s)", min: 3.2V }
+      - { measure: "at(voltage(BUTTON), 1.2s)", max: 0.1V }
+  firmware_command:
+    description: >
+      "rate 100" sent to the firmware's UART at 300 ms makes it toggle every 100 ms; it
+      confirms with "rate=100". A bad command is reported.
+    analysis: { type: tran, step: 1ms, stop: 1.6s }
+    firmware: true
+    events:
+      - { at: 300ms, serial: UART_RX, send: "rate 100\n" }
+      - { at: 400ms, serial: UART_RX, send: "speed up\n" }
+    expect:
+      - { measure: "period(current(D1), 3mA)", from: 700ms, min: 190ms, max: 210ms }
+      - { serial: UART_TX, match: 'rate=(\d+)', min: 100, max: 100 }
+      - { serial: UART_TX, match: 'error: speed up', min: 1, max: 1 }

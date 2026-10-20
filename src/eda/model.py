@@ -80,6 +80,17 @@ class CompiledExpectation:
     min: float | None
     max: float | None
     location: Location
+    start: float | None = None  # tran: evaluate over [start, end] only (s)
+    end: float | None = None
+
+    @property
+    def label(self) -> str:
+        """The measure, with its time range when it has one."""
+        if self.start is None and self.end is None:
+            return self.measure.text
+        start = format_quantity(self.start or 0.0, "s")
+        end = format_quantity(self.end, "s") if self.end is not None else "end"
+        return f"{self.measure.text} [{start}..{end}]"
 
     @property
     def range_text(self) -> str:
@@ -115,6 +126,21 @@ class SerialExpectation:
 
 
 @dataclass(frozen=True)
+class CompiledEvent:
+    """A part parameter change or UART input at `time` during a tran test."""
+
+    time: float  # s
+    location: Location
+    part: str | None = None
+    values: dict[str, tuple[float | str, str]] = field(
+        default_factory=lambda: dict[str, tuple[float | str, str]]()
+    )  # param → (value, label)
+    net: str | None = None  # UART RX net
+    uart: int | None = None
+    text: str = ""
+
+
+@dataclass(frozen=True)
 class CompiledTest:
     name: str
     description: str
@@ -124,6 +150,7 @@ class CompiledTest:
     pins: dict[str, str] = field(default_factory=lambda: dict[str, str]())  # net → high/low
     firmware: bool = False  # co-simulate the compiled firmware (tran only)
     serial: tuple[SerialExpectation, ...] = ()
+    events: tuple[CompiledEvent, ...] = ()  # sorted by time
     # Per-test part parameters: ref → param → (value, label).
     parts: dict[str, dict[str, tuple[float | str, str]]] = field(
         default_factory=lambda: dict[str, dict[str, tuple[float | str, str]]]()
@@ -140,6 +167,11 @@ class CompiledTest:
             labels = {**part.labels, **{k: label for k, (_, label) in params.items()}}
             parts[ref] = replace(part, values=values, labels=labels)
         return replace(base, parts=parts)
+
+    @property
+    def interactive(self) -> bool:
+        """Runs through the stepped (co-)simulator instead of one ngspice batch run."""
+        return self.firmware or bool(self.events)
 
 
 @dataclass(frozen=True)

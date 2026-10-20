@@ -39,6 +39,9 @@ class Expectation(StrictModel):
     match: str | None = None
     min: str | float | None = None
     max: str | float | None = None
+    # tran only: evaluate the measure over this part of the run, e.g. from: 1s
+    start: str | None = Field(default=None, alias="from")
+    end: str | None = Field(default=None, alias="to")
 
     @model_validator(mode="after")
     def _measure_xor_serial(self) -> Self:
@@ -46,6 +49,30 @@ class Expectation(StrictModel):
             raise ValueError("give exactly one of `measure` or `serial`")
         if (self.serial is None) != (self.match is None):
             raise ValueError("`serial` and `match` go together")
+        return self
+
+
+class SimEvent(StrictModel):
+    """Something that happens during a tran test, at time `at`: a part parameter changes
+    (`part` + `set`, e.g. a button is pressed) or text arrives on a firmware UART RX net
+    (`serial` + `send`)."""
+
+    at: str
+    part: Ident | None = None
+    set: dict[str, Scalar] | None = None
+    serial: Ident | None = None  # UART RX net name
+    send: str | None = None
+
+    @model_validator(mode="after")
+    def _one_kind(self) -> Self:
+        part = self.part is not None or self.set is not None
+        serial = self.serial is not None or self.send is not None
+        if part == serial:
+            raise ValueError("give either `part` + `set` or `serial` + `send`")
+        if part and (self.part is None or not self.set):
+            raise ValueError("`part` and `set` go together")
+        if serial and (self.serial is None or self.send is None):
+            raise ValueError("`serial` and `send` go together")
         return self
 
 
@@ -60,6 +87,7 @@ class SimTest(StrictModel):
     parts: dict[Ident, dict[str, Scalar]] = Field(default_factory=dict[Ident, dict[str, Scalar]])
     # Run the compiled firmware in the RP2040 emulator, co-simulated with the circuit (tran).
     firmware: bool = False
+    events: list[SimEvent] = Field(default_factory=list[SimEvent])  # tran only
     expect: Annotated[list[Expectation], Field(min_length=1)]
 
 

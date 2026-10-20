@@ -140,6 +140,7 @@ def plot(
             )
             if bound.label:
                 parts.append(_label(right - 4, y - 4, bound.label, "#555", "end"))
+        labelled = 0  # stagger vertical-line labels so neighbours do not overlap
         for bound in x_bounds:
             if not (bound.value > 0 or not log_x):
                 continue
@@ -153,7 +154,9 @@ def plot(
             if bound.label and panel == 0:
                 anchor = "end" if px > (left + right) / 2 else "start"
                 offset = -4 if anchor == "end" else 4
-                parts.append(_label(px + offset, top + 30, bound.label, "#555", anchor))
+                y = top + 30 + 16 * (labelled % 4)
+                parts.append(_label(px + offset, y, bound.label, "#555", anchor))
+                labelled += 1
         legend_x = left + 8
         for trace in panel_traces:
             color = COLORS[color_index % len(COLORS)]

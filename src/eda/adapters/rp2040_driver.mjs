@@ -4,12 +4,15 @@
 // Protocol: one JSON request per stdin line, one JSON reply per stdout line.
 //   {"cmd":"init","bootrom":PATH,"image":PATH.uf2,"pins":[15,...],"uarts":[0,...]}
 //     -> {"ok":true}
-//   {"cmd":"run","until":NANOS,"inputs":{"14":true},"adc":{"0":2048},"break_on_mode":true}
+//   {"cmd":"run","until":NANOS,"inputs":{"14":true},"adc":{"0":2048},"break_on_mode":true,
+//    "send":{"0":"text"}}
 //     -> {"ok":true,"t":NANOS,"pins":{"15":[[NANOS,"high"],...]},"uart":{"0":"text"},
 //         "halted":null|CODE,"early":false}
 //   Each pin's list starts with its state at the start of the window, followed by changes.
 //   With break_on_mode the run returns early ("early": true) right after a watched pin
 //   changes mode (anything but a high<->low output toggle), so the circuit can respond.
+//   `send` queues bytes for a UART's receiver; they arrive one character time apart at the
+//   baud rate the firmware configured (115200 until it sets one).
 //   States: high, low, hiz, pullup, pulldown, keeper.
 import { readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
@@ -51,6 +54,8 @@ let segments = {};
 let uart = {};
 let halted = null;
 let modeChanged = false;
+const rxQueue = {}; // UART index -> bytes still to arrive
+let nextRx = 0; // nanos at which the next queued byte arrives
 const DRIVEN = new Set(['high', 'low']);
 
 function loadUF2(path) {
@@ -102,6 +107,11 @@ function run(request) {
   for (const [channel, code] of Object.entries(request.adc ?? {})) {
     mcu.adc.channelValues[Number(channel)] = code;
   }
+  for (const [index, text] of Object.entries(request.send ?? {})) {
+    const queue = (rxQueue[index] ??= []);
+    if (queue.length === 0) nextRx = Math.max(nextRx, clock.nanos);
+    queue.push(...Buffer.from(text, 'utf8'));
+  }
   segments = {};
   for (const index of watched) segments[index] = [[clock.nanos, STATE[mcu.gpio[index].value]]];
   uart = {};
@@ -109,16 +119,35 @@ function run(request) {
   const until = request.until;
   const breakOnMode = Boolean(request.break_on_mode);
   while (clock.nanos < until && !(breakOnMode && modeChanged)) {
-    const left = until - clock.nanos;
+    receive();
+    let left = until - clock.nanos;
+    if (pendingRx()) left = Math.max(0, Math.min(left, nextRx - clock.nanos));
     if (halted !== null || mcu.core.waiting) {
       const next = clock.nanosToNextAlarm;
-      clock.tick(halted === null && next > 0 && next < left ? next : left);
+      clock.tick(halted === null && next > 0 && next < left ? next : Math.max(left, 1));
     } else {
       clock.tick(mcu.core.executeInstruction() * CYCLE_NANOS);
     }
   }
   const early = breakOnMode && modeChanged && clock.nanos < until;
   return { ok: true, t: Math.min(clock.nanos, until), pins: segments, uart, halted, early };
+}
+
+function pendingRx() {
+  return Object.values(rxQueue).some((queue) => queue.length > 0);
+}
+
+function receive() {
+  if (clock.nanos < nextRx) return;
+  let gap = 0;
+  for (const [index, queue] of Object.entries(rxQueue)) {
+    if (queue.length === 0) continue;
+    const port = mcu.uart[Number(index)];
+    port.feedByte(queue.shift());
+    const baud = port.baudRate > 0 && Number.isFinite(port.baudRate) ? port.baudRate : 115200;
+    gap = Math.max(gap, 1e10 / baud); // 10 bits per character (8N1)
+  }
+  if (gap > 0) nextRx = clock.nanos + gap;
 }
 
 const lines = createInterface({ input: process.stdin });

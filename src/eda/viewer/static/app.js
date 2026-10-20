@@ -117,6 +117,10 @@ function renderTests(state) {
       el("thead", {}, el("tr", {}, el("th", {}, "measure"), el("th", {}, "value"),
         el("th", {}, "expected"), el("th", {}, ""))),
       el("tbody", {}, ...rows)));
+    if (test.events) {
+      blocks.push(el("p", { class: "muted" },
+        "events: " + test.events.map((e) => `${e.display} ${e.event}`).join(" · ")));
+    }
     if (test.firmware) {
       const fw = test.firmware;
       const serial = Object.entries(fw.serial).map(([net, text]) =>

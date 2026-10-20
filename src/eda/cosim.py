@@ -21,12 +21,19 @@ pins (UART, SPI, I2C) keep their static model from firmware.yaml, and UART outpu
 captured as text.
 """
 
-from dataclasses import dataclass, field
+from contextlib import ExitStack
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from eda.adapters import ngspice_shared, rp2040
 from eda.model import GROUND, CompiledTest, Design, Tran
-from eda.netlist.spice import build_netlist, fw_driver, needs_pspice_mode, voltage_vector
+from eda.netlist.spice import (
+    alter_commands,
+    build_netlist,
+    fw_driver,
+    needs_pspice_mode,
+    voltage_vector,
+)
 from eda.schema.part import McuSpec
 
 HIZ_OHM = 1e8
@@ -58,57 +65,49 @@ class _Pin:
     resistor: str
 
 
-def run(design: Design, test: CompiledTest, image: Path, raw_path: Path) -> CosimResult:
-    """Co-simulate `test` (a tran test with `firmware: true`) and write its raw file."""
-    firmware = design.firmware
+def run(design: Design, test: CompiledTest, image: Path | None, raw_path: Path) -> CosimResult:
+    """Run a stepped tran test (`firmware: true` and/or `events:`) and write its raw file.
+
+    `image` is the firmware UF2; it is needed only when the test runs the firmware."""
     analysis = test.analysis
-    assert firmware is not None and isinstance(analysis, Tran)
-    part = design.circuit.parts[firmware.mcu]
-    mcu = part.spec.mcu
-    assert mcu is not None
-
-    connected = [p for p in part.spec.pins if design.circuit.net_of(part.ref, p) is not None]
-    drives = firmware.drives()
-    pins: dict[str, _Pin] = {}
-    adc: dict[int, str] = {}  # ADC channel → net
-    uarts: list[int] = []
-    for signal in firmware.signals.values():
-        function = signal.function or ""
-        if signal.mode is not None or function.startswith("PWM"):
-            drives[signal.pin] = "fw"
-            source, resistor = fw_driver(part, signal.pin, connected)
-            pins[signal.pin] = _Pin(signal.net, signal.gpio, source, resistor)
-        elif function.startswith("ADC"):
-            adc[int(function.removeprefix("ADC"))] = signal.net
-        elif function.startswith("UART") and function.endswith("_TX"):
-            uarts.append(int(function[4]))
-
+    assert isinstance(analysis, Tran)
+    circuit = test.circuit(design.circuit)
+    mcu_ref, drives, pins, adc, uarts = _firmware_pins(design) if test.firmware else _NO_MCU
     netlist = build_netlist(
-        f"{design.project.name} / {test.name} (co-simulation)",
-        test.circuit(design.circuit),
+        f"{design.project.name} / {test.name} (stepped)",
+        circuit,
         analysis,
         raw_path,
-        {firmware.mcu: drives},
+        {mcu_ref: drives} if mcu_ref else None,
         batch=False,
     )
     raw_path.with_suffix(".cir").write_text(netlist, encoding="utf-8")
     window = analysis.step
-    tmax = window / MAX_STEP_PER_WINDOW
     settle = window / SETTLE_PER_WINDOW
     start = analysis.start or 0.0
-    command = f"tran {window:.12g} {analysis.stop:.12g} {start:.12g} {tmax:.12g}"
-    thevenin = _Thevenin(mcu)
+    command = (
+        f"tran {window:.12g} {analysis.stop:.12g} {start:.12g} {window / MAX_STEP_PER_WINDOW:.12g}"
+    )
+    events = list(test.events)
+    state = {ref: part for ref, part in circuit.parts.items()}
     levels: dict[int, bool] = {}
     uart: dict[int, str] = {}
+    send: dict[int, str] = {}
     halted: int | None = None
     count = 0
-    log = raw_path.with_suffix(".emulator.log")
 
     try:
-        with (
-            ngspice_shared.session(netlist, needs_pspice_mode(design.circuit)) as sim,
-            rp2040.Emulator(image, [p.gpio for p in pins.values()], uarts, log) as emulator,
-        ):
+        with ExitStack() as stack:
+            sim = stack.enter_context(ngspice_shared.session(netlist, needs_pspice_mode(circuit)))
+            emulator: rp2040.Emulator | None = None
+            if test.firmware:
+                assert image is not None
+                log = raw_path.with_suffix(".emulator.log")
+                emulator = stack.enter_context(
+                    rp2040.Emulator(image, [p.gpio for p in pins.values()], uarts, log)
+                )
+            mcu = design.circuit.parts[mcu_ref].spec.mcu if mcu_ref else None
+            thevenin = _Thevenin(mcu) if mcu else None
             applied: dict[str, tuple[float, float]] = {}
 
             def apply(pin: _Pin, volts: float, ohms: float) -> None:
@@ -124,17 +123,43 @@ def run(design: Design, test: CompiledTest, image: Path, raw_path: Path) -> Cosi
                 sim.command("resume")  # run to the end of the analysis
                 return analysis.stop
 
-            for pin in pins.values():
-                apply(pin, *thevenin.state("pulldown"))  # GPIO reset state
-            now = sim.start(command, settle)
+            def fire_due(now: float) -> None:
+                while events and events[0].time <= now * (1 + 1e-9) + 1e-15:
+                    event = events.pop(0)
+                    if event.part is not None:
+                        old = state[event.part]
+                        new = replace(
+                            old,
+                            values={**old.values, **{k: v for k, (v, _) in event.values.items()}},
+                        )
+                        for alter in alter_commands(old, new, circuit):
+                            sim.command(alter)
+                        state[event.part] = new
+                    elif event.uart is not None:
+                        send[event.uart] = send.get(event.uart, "") + event.text
+
+            if thevenin is not None:
+                for pin in pins.values():
+                    apply(pin, *thevenin.state("pulldown"))  # GPIO reset state
+            first = events[0].time if events and events[0].time > 0 else settle
+            now = sim.start(command, min(settle, first))
+            fire_due(now)
             while now < analysis.stop * (1 - 1e-9):
+                target = min(now + window, analysis.stop)
+                if events:
+                    target = min(target, max(events[0].time, now))
+                if emulator is None or thevenin is None or mcu is None:
+                    count += 1
+                    now = advance(target)
+                    fire_due(now)
+                    continue
                 inputs = {
                     p.gpio: _level(levels, p.gpio, _volts(sim, p.net), mcu.vio)
                     for p in pins.values()
                 }
                 codes = {ch: _adc_code(_volts(sim, net), mcu.vio) for ch, net in adc.items()}
-                target = min(now + window, analysis.stop)
-                result = emulator.run(target, inputs, codes, break_on_mode=True)
+                result = emulator.run(target, inputs, codes, break_on_mode=True, send=send)
+                send = {}
                 for index, text in result.uart.items():
                     uart[index] = uart.get(index, "") + text
                 halted = result.halted if halted is None else halted
@@ -152,11 +177,39 @@ def run(design: Design, test: CompiledTest, image: Path, raw_path: Path) -> Cosi
                         if segments:
                             apply(pin, *thevenin.state(segments[-1][1], inputs[pin.gpio]))
                     now = advance(now + settle)
+                fire_due(now)
             sim.write_raw(raw_path)
             warnings = sim.warnings()
-    except (ngspice_shared.SharedSpiceError, rp2040.EmulatorError) as exc:
+    except (ngspice_shared.SharedSpiceError, rp2040.EmulatorError, ValueError) as exc:
         raise CosimError(str(exc)) from exc
     return CosimResult(windows=count, uart=uart, halted=halted, warnings=warnings)
+
+
+type _McuSetup = tuple[str | None, dict[str, str], dict[str, _Pin], dict[int, str], list[int]]
+_NO_MCU: _McuSetup = (None, {}, {}, {}, [])
+
+
+def _firmware_pins(design: Design) -> _McuSetup:
+    """(MCU ref, pin drives, firmware-driven pins, ADC channel → net, UART TX indexes)."""
+    firmware = design.firmware
+    assert firmware is not None
+    part = design.circuit.parts[firmware.mcu]
+    connected = [p for p in part.spec.pins if design.circuit.net_of(part.ref, p) is not None]
+    drives = firmware.drives()
+    pins: dict[str, _Pin] = {}
+    adc: dict[int, str] = {}
+    uarts: list[int] = []
+    for signal in firmware.signals.values():
+        function = signal.function or ""
+        if signal.mode is not None or function.startswith("PWM"):
+            drives[signal.pin] = "fw"
+            source, resistor = fw_driver(part, signal.pin, connected)
+            pins[signal.pin] = _Pin(signal.net, signal.gpio, source, resistor)
+        elif function.startswith("ADC"):
+            adc[int(function.removeprefix("ADC"))] = signal.net
+        elif function.startswith("UART") and function.endswith("_TX"):
+            uarts.append(int(function[4]))
+    return firmware.mcu, drives, pins, adc, uarts
 
 
 def _volts(sim: ngspice_shared.Session, net: str) -> float:

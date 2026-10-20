@@ -165,6 +165,13 @@ def _plot_series(
             bounds.append(waveform.Bound(label if exp.max is None else "", unit, exp.min, axis))
         if exp.max is not None:
             bounds.append(waveform.Bound(label, unit, exp.max, axis))
+    for event in test.events:
+        if event.part is not None:
+            what = ", ".join(f"{k}={label}" for k, (_, label) in event.values.items())
+            text = f"{event.part}: {what}"
+        else:
+            text = f"{event.net} <- {event.text.strip()!r}"
+        bounds.append(waveform.Bound(text, "s", event.time, "x"))
     return traces, bounds
 
 
