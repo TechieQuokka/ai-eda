@@ -2,19 +2,22 @@
 
 import hashlib
 import json
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
-from pydantic import JsonValue
+from pydantic import JsonValue, ValidationError
 
 from eda.project import ProjectPaths
 from eda.result import Result
+from eda.summary import DesignSummary, diff
 
 _STATE_FILE = ".design-hashes.json"
+_SUMMARY_FILE = ".design-summary.json"
 
 
 def _now() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds")
+    """Local time with its UTC offset, e.g. 2026-10-20T18:14:21+09:00."""
+    return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
 def _append(paths: ProjectPaths, entry: dict[str, JsonValue]) -> None:
@@ -38,11 +41,35 @@ def changed_files(paths: ProjectPaths) -> list[str]:
     return [n for n in names if previous.get(n) != current.get(n)]
 
 
-def record_run(paths: ProjectPaths, result: Result, only_if_changed: bool = False) -> None:
+def design_changes(paths: ProjectPaths, result: Result) -> list[str] | None:
+    """Semantic changes since the last summarized run, or None if this run has no summary."""
+    raw = result.data.get("check") if result.command == "run" else result.data
+    if result.command not in ("check", "run") or not isinstance(raw, dict) or not raw:
+        return None
+    try:
+        current = DesignSummary.model_validate(raw)
+    except ValidationError:
+        return None
+    state_path = paths.out_dir / _SUMMARY_FILE
+    try:
+        previous = DesignSummary.model_validate_json(state_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        previous = None
+    paths.out_dir.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(current.model_dump_json(indent=1), encoding="utf-8")
+    return diff(previous, current) if previous is not None else None
+
+
+def record_run(
+    paths: ProjectPaths,
+    result: Result,
+    only_if_changed: bool = False,
+    note: str | None = None,
+) -> None:
     """Append a run entry. `only_if_changed` skips runs that saw no design change
     (used by `eda watch`, which often re-runs what an explicit command already logged)."""
     changed = changed_files(paths)
-    if only_if_changed and not changed:
+    if only_if_changed and not changed and note is None:
         return
     entry: dict[str, JsonValue] = {
         "time": _now(),
@@ -57,6 +84,11 @@ def record_run(paths: ProjectPaths, result: Result, only_if_changed: bool = Fals
         "error_count": len(result.errors),
         "warning_count": len(result.warnings),
     }
+    changes = design_changes(paths, result)
+    if changes is not None:
+        entry["design_changes"] = list(changes)
+    if note:
+        entry["note"] = note
     _append(paths, entry)
 
 

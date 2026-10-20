@@ -91,4 +91,5 @@ summary { cursor: pointer; color: var(--muted); }
 #log { margin: 0; padding-left: 28px; max-height: 360px; overflow: auto; }
 #log li { margin-bottom: 4px; }
 #log .note { font-style: italic; }
+#log .changes { margin: 2px 0 6px; padding-left: 18px; color: var(--muted); }
 code { font-family: ui-monospace, monospace; font-size: 12px; }

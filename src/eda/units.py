@@ -67,6 +67,17 @@ def parse_quantity(text: object, unit: str) -> float:
     return value
 
 
+def parse_any_quantity(text: str) -> tuple[float, str]:
+    """Parse a quantity of any known unit; returns (SI value, canonical unit)."""
+    match = _QUANTITY_RE.match(text.strip())
+    if match is None:
+        raise QuantityError(
+            f"invalid quantity {text!r}: expected number + optional prefix + unit, e.g. '4.7kohm'"
+        )
+    unit = UNITS[match["unit"]]
+    return parse_quantity(text, unit), unit
+
+
 def format_quantity(value: float, unit: str, digits: int = 4) -> str:
     """Format an SI value with an engineering prefix, e.g. 0.00931 A → '9.31mA'."""
     symbol = _display_unit(unit)

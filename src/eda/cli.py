@@ -8,9 +8,10 @@ from pathlib import Path
 
 from pydantic import JsonValue
 
-from eda import history, pipeline
+from eda import eseries, history, pipeline
 from eda.project import ProjectPaths, find_project, load_parts
 from eda.result import Diagnostics, ExitCode, Result
+from eda.units import format_quantity, parse_any_quantity
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -22,6 +23,8 @@ def main(argv: list[str] | None = None) -> int:
         return ExitCode.OK
     if command == "part":
         return _part(args.action, args.id)
+    if command == "value":
+        return _value(args.value, args.series)
 
     root = _project_root(args.project)
     if root is None:
@@ -54,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
         result = pipeline.render(root)
     else:
         result = pipeline.run(root)
-    history.record_run(paths, result)
+    history.record_run(paths, result, note=args.message)
     return _emit(result)
 
 
@@ -74,17 +77,25 @@ def _parser() -> argparse.ArgumentParser:
         )
         return p
 
-    with_project("check", "validate design files and run ERC")
-    sim = with_project("sim", "simulate every test and judge expectations")
+    def with_note(p: argparse.ArgumentParser) -> argparse.ArgumentParser:
+        p.add_argument("-m", "--message", help="note for the iteration log (intent / fix)")
+        return p
+
+    with_note(with_project("check", "validate design files and run ERC"))
+    sim = with_note(with_project("sim", "simulate every test and judge expectations"))
     sim.add_argument("-t", "--test", help="run only this test")
-    with_project("render", "render the schematic and waveforms (SVG + PNG)")
-    with_project("run", "check, sim, and render in one call")
+    with_note(with_project("render", "render the schematic and waveforms (SVG + PNG)"))
+    with_note(with_project("run", "check, sim, and render in one call"))
     log = with_project("log", "append a note to the iteration log")
     log.add_argument("-m", "--message", required=True, help="what changed and why")
     watch = with_project("watch", "re-run on file changes and serve the live viewer")
     watch.add_argument("--host", default="127.0.0.1")
     watch.add_argument("--port", type=int, default=8765)
     watch.add_argument("--no-open", action="store_true", help="do not open a browser")
+
+    value = sub.add_parser("value", help="nearest standard (E-series) values for a target")
+    value.add_argument("value", help="target quantity, e.g. 315ohm or 2.2uF")
+    value.add_argument("-s", "--series", default="E24", choices=eseries.SERIES)
 
     part = sub.add_parser("part", help="inspect the part database")
     part.add_argument("action", choices=["list", "show"])
@@ -124,6 +135,26 @@ def _part(action: str, part_id: str | None) -> int:
     else:
         data["part"] = specs[part_id].model_dump(mode="json")
     return _emit(diag.to_result(f"part {action}", root.name if root else "", data))
+
+
+def _value(text: str, series: str) -> int:
+    diag = Diagnostics()
+    data: dict[str, JsonValue] = {}
+    try:
+        target, unit = parse_any_quantity(text)
+        pick = eseries.nearest(target, series)
+    except ValueError as exc:
+        diag.error("invalid_value", str(exc))
+    else:
+        data = {
+            "target": format_quantity(target, unit),
+            "series": series,
+            "nearest": format_quantity(pick.nearest, unit),
+            "error_percent": round(pick.error * 100, 3),
+            "below": format_quantity(pick.below, unit),
+            "above": format_quantity(pick.above, unit),
+        }
+    return _emit(diag.to_result("value", "", data))
 
 
 def _emit(result: Result) -> int:

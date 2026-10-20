@@ -132,11 +132,15 @@ function renderLog(state) {
     if (entry.kind === "note") {
       return el("li", { class: "note" }, `${time} — note: ${entry.message}`);
     }
-    const changed = entry.changed?.length ? ` changed ${entry.changed.join(", ")};` : "";
     const outcome = entry.ok ? el("span", { class: "ok" }, "pass")
       : el("span", { class: "bad" }, `${entry.error_count} error(s)`);
     const first = entry.errors?.[0] ? ` — ${entry.errors[0].rule}: ${entry.errors[0].message}` : "";
-    return el("li", {}, `${time} eda ${entry.command}:${changed} `, outcome, first);
+    const item = el("li", {}, `${time} eda ${entry.command} `, outcome, first);
+    if (entry.note) item.append(el("div", { class: "note" }, entry.note));
+    const changes = entry.design_changes?.length ? entry.design_changes
+      : entry.changed?.length ? [`files: ${entry.changed.join(", ")}`] : [];
+    if (changes.length) item.append(el("ul", { class: "changes" }, ...changes.map((c) => el("li", {}, el("code", {}, c)))));
+    return item;
   });
   $("log").replaceChildren(...items);
 }

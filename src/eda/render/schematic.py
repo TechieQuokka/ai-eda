@@ -1,6 +1,8 @@
 """Resolved circuit → netlistsvg (yosys-style JSON) for automatic schematic layout."""
 
 import re
+from html import escape
+from pathlib import Path
 
 from pydantic import JsonValue
 
@@ -8,6 +10,29 @@ from eda.model import GROUND, ResolvedCircuit, ResolvedPart
 
 _LABEL = re.compile(r"<param:([^>]+)>")
 _PAD = {"left": 10, "top": 10, "right": 60, "bottom": 10}
+_LINE = re.compile(
+    r'<line x1="([-\d.]+)" x2="([-\d.]+)" y1="([-\d.]+)" y2="([-\d.]+)" class="net_(\d+)"/>'
+)
+
+SKIN = Path(__file__).with_name("skin.svg")
+
+
+def net_bits(circuit: ResolvedCircuit) -> dict[str, int]:
+    """netlistsvg identifies nets by integer "bits"; 0 and 1 are reserved constants."""
+    return {net: index + 2 for index, net in enumerate(circuit.nets)}
+
+
+def supply_nets(circuit: ResolvedCircuit) -> list[str]:
+    """Nets driven by a source whose other terminal is GND; drawn with a supply symbol."""
+    found: list[str] = []
+    for ref, part in circuit.parts.items():
+        if part.spec.category != "source":
+            continue
+        plus = circuit.net_of(ref, part.spec.pins[0])
+        minus = circuit.net_of(ref, part.spec.pins[1])
+        if plus and minus == GROUND and plus != GROUND and plus not in found:
+            found.append(plus)
+    return found
 
 
 def label(part: ResolvedPart) -> str:
@@ -15,9 +40,8 @@ def label(part: ResolvedPart) -> str:
 
 
 def to_netlistsvg(name: str, circuit: ResolvedCircuit) -> dict[str, JsonValue]:
-    bits = {net: index + 2 for index, net in enumerate(circuit.nets)}
+    bits = net_bits(circuit)
     cells: dict[str, JsonValue] = {}
-    supply_nets: list[str] = []
 
     for ref, part in circuit.parts.items():
         directions: dict[str, JsonValue] = {}
@@ -37,11 +61,6 @@ def to_netlistsvg(name: str, circuit: ResolvedCircuit) -> dict[str, JsonValue]:
             "connections": connections,
             "attributes": {"value": label(part)},
         }
-        if part.spec.category == "source":
-            plus = circuit.net_of(ref, part.spec.pins[0])
-            minus = circuit.net_of(ref, part.spec.pins[1])
-            if plus and minus == GROUND and plus != GROUND and plus not in supply_nets:
-                supply_nets.append(plus)
 
     if GROUND in bits:
         cells["__gnd"] = {
@@ -50,7 +69,7 @@ def to_netlistsvg(name: str, circuit: ResolvedCircuit) -> dict[str, JsonValue]:
             "connections": {"A": [bits[GROUND]]},
             "attributes": {"name": GROUND},
         }
-    for net in supply_nets:
+    for net in supply_nets(circuit):
         cells[f"__supply_{net}"] = {
             "type": "vcc",
             "port_directions": {"A": "output"},
@@ -78,3 +97,37 @@ def pad_svg(svg: str) -> str:
         'fill="#fff" stroke="none"/>'
     )
     return svg.replace(tag, new_tag + background, 1)
+
+
+def label_nets(svg: str, circuit: ResolvedCircuit) -> str:
+    """Write each net's name next to its longest wire segment.
+
+    GND and supply nets already carry a symbol with their name, so they are skipped.
+    """
+    skip = {GROUND, *supply_nets(circuit)}
+    names = {bit: net for net, bit in net_bits(circuit).items() if net not in skip}
+    segments: dict[int, list[tuple[float, float, float, float]]] = {}
+    for match in _LINE.finditer(svg):
+        x1, x2, y1, y2 = (float(match[i]) for i in range(1, 5))
+        segments.setdefault(int(match[5]), []).append((x1, y1, x2, y2))
+
+    labels: list[str] = []
+    for bit, net in names.items():
+        lines = segments.get(bit)
+        if not lines:
+            continue
+        # Prefer horizontal runs: a label above them never collides with vertical parts.
+        x1, y1, x2, y2 = max(
+            lines, key=lambda s: (s[1] == s[3], abs(s[2] - s[0]) + abs(s[3] - s[1]))
+        )
+        if y1 == y2:
+            x, y, anchor = (x1 + x2) / 2, y1 - 3, "middle"
+        else:
+            x, y, anchor = x1 - 4, (y1 + y2) / 2 + 3, "end"
+        labels.append(
+            f'<text x="{x:g}" y="{y:g}" text-anchor="{anchor}" class="netlabel">'
+            f"{escape(net)}</text>"
+        )
+    if not labels:
+        return svg
+    return svg.replace("</svg>", "\n".join(labels) + "\n</svg>", 1)

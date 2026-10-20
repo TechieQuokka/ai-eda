@@ -33,12 +33,12 @@ For a design task in `projects/<name>/` (schema: `DESIGN_DECISIONS.md` §10; exa
 
 1. Record the goal: `uv run eda log projects/<name> -m "Goal: ..."`.
 2. Edit the design YAML (`design/circuit.yaml`, `design/test.yaml`). Every requirement becomes an expectation in `test.yaml`.
-3. `uv run eda run projects/<name>` — check → sim → render in one call. Exit code 0 = all pass, 1 = design errors, 2 = tool failure.
+3. `uv run eda run projects/<name> -m "<why this change>"` — check → sim → render in one call; the note and a semantic diff of the design go into the iteration log. Exit code 0 = all pass, 1 = design errors, 2 = tool failure.
 4. On failure, read `errors` in the JSON: each has `rule`, `message`, `file`, `line`, `path`, `details`. Use `data.sim.tests.<name>.operating_point` for node voltages and currents.
-5. Record the fix and its reasoning: `uv run eda log projects/<name> -m "Fix: ..."`. Then edit and repeat from step 3.
+5. Fix the design files and repeat from step 3 with a `-m "Fix: ..."` note. Pick real component values with `uv run eda value <target> -s E24|E96`.
 6. Look at `out/schematic.png` and `out/waves/<test>.png` before reporting; when everything passes, report to the user.
 
-Other commands: `eda check`, `eda sim [-t TEST]`, `eda render`, `eda part list`, `eda part show ID`.
+Other commands: `eda check`, `eda sim [-t TEST]`, `eda render`, `eda part list`, `eda part show ID`, `eda value TARGET [-s SERIES]`.
 The CLI never makes design decisions; it only reports.
 
 ## 4. Iteration Log and Viewer

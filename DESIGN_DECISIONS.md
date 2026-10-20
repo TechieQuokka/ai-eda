@@ -234,15 +234,18 @@ Exit codes: `0` all passed, `1` design errors (fix the files), `2` tool or envir
 | `eda run [PROJECT]` | `check` → `sim` → `render` in one call |
 | `eda part list` / `eda part show ID` | Inspect the part database |
 | `eda log [PROJECT] -m TEXT` | Append a note (intent / fix) to the iteration log |
+| `eda value TARGET [-s E24]` | Nearest standard values (E3 … E192) for a target, e.g. `315ohm` → `316Ω` in E96 |
 | `eda watch [PROJECT]` | Re-run `run` on file change; serve the local viewer |
+
+`check`, `sim`, `render`, and `run` accept `-m TEXT` to attach a note to that run's log entry.
 
 ### 10.7 Engines and generated files
 
 - ngspice: `ngspice -b -n` with a `.control` block, `.option savecurrents`, ASCII raw output, parsed in Python.
-- netlistsvg 1.0.2 (analog skin), pinned in `tools/netlistsvg/` and run with Node.
-- Rasterizing for AI inspection: `rsvg-convert` if present, otherwise headless Chrome/Chromium.
+- netlistsvg 1.0.2, pinned in `tools/netlistsvg/` and run with Node, using our skin `src/eda/render/skin.svg` (its analog skin plus +/− marks on voltage sources and values on diodes/LEDs). Net names are added afterwards next to each net's longest wire; GND and supply nets keep their symbols.
+- Rasterizing for AI inspection: CairoSVG 2.9.1 in-process (needs the system cairo library), then `rsvg-convert`, then headless Chrome/Chromium.
 - Generated: `out/check.json`, `out/sim.json`, `out/render.json`, `out/sim/<test>.{cir,raw,log,json}`, `out/schematic.svg`, `out/waves/<test>.svg`.
-- Iteration log: `iterations.jsonl` in the project root (tracked by git, not regenerated). Each command appends its outcome and which design files changed; `eda log` adds free-text notes.
+- Iteration log: `iterations.jsonl` in the project root (tracked by git, not regenerated). Each command appends its outcome, the changed design files, a semantic diff (`R1.resistance: 470Ω → 316Ω`, added/removed parts, net membership, test changes), and an optional `-m` note. Times are local with UTC offset. `eda log` adds standalone notes.
 
 ### 10.8 Viewer
 
@@ -270,11 +273,15 @@ The JSON error and the operating-point table gave everything needed for the fix;
 - Examples: `projects/led_demo/` (op), `projects/rc_filter/` (tran + op).
 - 79 tests; ruff, pyright strict, pytest all pass.
 
-### Friction points (to address before or during M1)
+### Friction points and fixes
 
-1. **Schematic net names are not shown.** netlistsvg draws only supply and ground symbols, so nets such as `N1` or `OUT` that tests refer to are unlabeled.
-2. **Symbol details are missing.** The voltage-source symbol has no +/− marks, and the LED symbol does not show its color value.
-3. **Iteration notes are manual.** The "why" of a change exists only if `eda log -m` is called; the CLI cannot infer intent.
-4. **Rasterizing uses Chrome.** It works but takes about a second per image; `rsvg-convert` (`librsvg2-bin`) would be faster if installed.
-5. **No standard-value helper.** Picking E-series values (316 Ω) is left to the agent; a part-level `series: E96` hint or a helper could reduce guesswork later.
-6. **Timestamps in the log are UTC**; the viewer converts to local time, raw JSON does not.
+| # | Friction found in the scenario | Fix (2026-10-20) |
+|---|---|---|
+| 1 | Schematic did not show net names such as `N1`, `OUT` | Net labels drawn next to each net's longest wire (`render/schematic.py: label_nets`) |
+| 2 | No +/− on voltage sources; LED color not shown | Own netlistsvg skin `src/eda/render/skin.svg` |
+| 3 | The "why" of a change was only logged by a separate `eda log` call | `-m` on `check/sim/render/run`; every summarized run also logs a semantic diff of the design |
+| 4 | PNG via headless Chrome took about 1 s per image | CairoSVG in-process (about 0.03 s per image); Chrome stays as fallback |
+| 5 | No help picking standard values | `eda value 315ohm -s E96` → 316 Ω (+0.32 %), with neighbors below/above |
+| 6 | Log timestamps were UTC | Local time with offset (`2026-10-20T18:21:53+09:00`) |
+
+Remaining known limits: netlistsvg places parts automatically with no hints (fine for small circuits; KiCad-based rendering is planned for M2), and waveform bound labels can overlap traces near the right edge.

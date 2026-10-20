@@ -10,6 +10,7 @@ from eda.design import load_design
 from eda.model import Design, Op
 from eda.render import schematic, waveform
 from eda.result import Diagnostics, Result
+from eda.summary import summarize
 
 
 def check(root: Path) -> tuple[Result, Design | None]:
@@ -73,22 +74,7 @@ def _write(root: Path, command: str, result: Result) -> None:
 
 
 def _summary(design: Design) -> dict[str, JsonValue]:
-    return {
-        "parts": {
-            ref: {"type": part.spec.id, "params": dict(part.labels)}
-            for ref, part in design.circuit.parts.items()
-        },
-        "nets": {
-            net: [f"{ref}.{pin}" for ref, pin in pins] for net, pins in design.circuit.nets.items()
-        },
-        "tests": {
-            name: {
-                "analysis": "op" if isinstance(test.analysis, Op) else "tran",
-                "expectations": [f"{e.measure.text}: {e.range_text}" for e in test.expectations],
-            }
-            for name, test in design.tests.items()
-        },
-    }
+    return summarize(design).model_dump(mode="json")
 
 
 def _render(design: Design, diag: Diagnostics) -> dict[str, JsonValue]:
@@ -103,10 +89,11 @@ def _render(design: Design, diag: Diagnostics) -> dict[str, JsonValue]:
             schematic.to_netlistsvg(design.project.name, design.circuit),
             out / "schematic.netlistsvg.json",
             svg_path,
+            schematic.SKIN,
         )
-        svg_path.write_text(
-            schematic.pad_svg(svg_path.read_text(encoding="utf-8")), encoding="utf-8"
-        )
+        drawn = svg_path.read_text(encoding="utf-8")
+        drawn = schematic.pad_svg(schematic.label_nets(drawn, design.circuit))
+        svg_path.write_text(drawn, encoding="utf-8")
         images["schematic"] = rel(svg_path)
     except (netlistsvg.NetlistsvgUnavailable, RuntimeError, OSError) as exc:
         diag.fail_tool("render_schematic", str(exc))
@@ -165,4 +152,5 @@ def _render(design: Design, diag: Diagnostics) -> dict[str, JsonValue]:
             except (RuntimeError, OSError) as exc:
                 diag.warning("rasterize_failed", f"{rel(svg)}: {exc}")
     images["png"] = pngs
+    images["rasterizer"] = rasterize.available()
     return images

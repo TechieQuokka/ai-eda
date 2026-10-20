@@ -18,7 +18,7 @@ class NetlistsvgUnavailable(RuntimeError):
     pass
 
 
-def render(netlist: dict[str, JsonValue], json_path: Path, svg_path: Path) -> None:
+def render(netlist: dict[str, JsonValue], json_path: Path, svg_path: Path, skin: Path) -> None:
     node = shutil.which("node")
     if node is None:
         raise NetlistsvgUnavailable("node not found on PATH (needed for netlistsvg)")
@@ -32,7 +32,7 @@ def render(netlist: dict[str, JsonValue], json_path: Path, svg_path: Path) -> No
             str(PACKAGE_DIR / "bin" / "netlistsvg.js"),
             str(json_path),
             "--skin",
-            str(PACKAGE_DIR / "lib" / "analog.svg"),
+            str(skin),
             "-o",
             str(svg_path),
         ],
