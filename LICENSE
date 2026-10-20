@@ -1,0 +1,72 @@
+ai-eda License (Non-Commercial / Commercial Dual License)
+Version 1.0, October 2026
+
+Copyright (c) 2026 TechieQuokka. All rights reserved except as granted below.
+
+1. Definitions
+
+   "Software" means the source code, documentation, part definitions, examples, images, and
+   any other files in this repository, and any portion or derivative of them.
+
+   "Non-Commercial Use" means use that is not primarily intended for or directed toward
+   commercial advantage or monetary compensation, including:
+     (a) personal learning and self-study;
+     (b) teaching, coursework, and academic research at educational or non-profit
+         institutions;
+     (c) hobby projects and personal experimentation.
+
+   "Commercial Use" means any use that is not Non-Commercial Use, including:
+     (a) use by or on behalf of a for-profit organization in the course of its business;
+     (b) use in work performed for a client or for compensation;
+     (c) incorporating the Software, in whole or in part, into a product, service, or
+         internal business tool;
+     (d) offering the Software or a derivative as a hosted, managed, or paid service;
+     (e) selling, licensing, or otherwise commercially exploiting outputs produced with the
+         Software (such as schematics, simulation reports, or board files) as part of a
+         commercial activity.
+
+2. Grant for Non-Commercial Use
+
+   Subject to the conditions of this License, the copyright holder grants you a worldwide,
+   royalty-free, non-exclusive, non-transferable license to use, copy, modify, and
+   distribute the Software solely for Non-Commercial Use, provided that:
+     (a) this License and the above copyright notice are included in all copies or
+         substantial portions of the Software;
+     (b) modified versions are clearly marked as modified;
+     (c) any distribution of the Software or a derivative is made under this same License.
+
+3. Commercial Use
+
+   Commercial Use requires a separate, paid commercial license from the copyright holder.
+   No right to Commercial Use is granted by this License. To request a commercial license,
+   open an issue titled "Commercial license inquiry" at
+   https://github.com/TechieQuokka/ai-eda/issues or contact the maintainer through
+   https://github.com/TechieQuokka. If you are unsure whether your use is commercial, ask
+   before using the Software.
+
+4. Third-Party Components
+
+   Third-party components used by or included in the Software remain under their own
+   licenses and are not relicensed by this License. In particular,
+   src/eda/render/skin.svg is derived from netlistsvg (Copyright (c) 2016 Neil Turley) and
+   is distributed under the MIT License, as stated in that file. See the "Third-party
+   components" section of README.md for the list.
+
+5. Termination
+
+   Any use of the Software outside the scope of this License, or any breach of its
+   conditions, automatically terminates the rights granted to you under this License.
+
+6. Disclaimer of Warranty
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+   INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+   PURPOSE, AND NONINFRINGEMENT. SIMULATION RESULTS ARE APPROXIMATIONS AND MUST BE VERIFIED
+   AGAINST DATASHEETS AND MEASUREMENTS BEFORE BEING RELIED UPON.
+
+7. Limitation of Liability
+
+   IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY CLAIM, DAMAGES,
+   OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM,
+   OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE,
+   INCLUDING DAMAGE TO HARDWARE BUILT FROM DESIGNS PRODUCED WITH THE SOFTWARE.

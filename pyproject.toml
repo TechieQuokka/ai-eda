@@ -3,6 +3,7 @@ name = "eda"
 version = "0.0.0"
 description = "AI-native EDA toolchain operated through files and CLI"
 readme = "README.md"
+license-files = ["LICENSE"]
 requires-python = ">=3.13,<3.14"
 dependencies = [
     "cairosvg==2.9.1",

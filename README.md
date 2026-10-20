@@ -157,7 +157,7 @@ uv run pytest                                     # 89 tests
 
 Copyright © 2026 TechieQuokka. All rights reserved except as granted below.
 
-ai-eda is **source-available under a dual licensing model**.
+ai-eda is **source-available under a dual licensing model**. The full terms are in [`LICENSE`](LICENSE); this section is a summary.
 
 ### 🎓 Free for learning and non-commercial use
 
