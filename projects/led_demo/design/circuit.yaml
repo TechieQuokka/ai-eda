@@ -1,7 +1,7 @@
 description: 5 V supply, series resistor, red LED.
 parts:
   V1: { type: dc_voltage_source, voltage: 5V }
-  R1: { type: resistor, resistance: 330ohm }
+  R1: { type: resistor, resistance: 470ohm }
   D1: { type: led, color: red }
 nets:
   VCC: [V1.+, R1.1]
