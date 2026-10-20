@@ -1,0 +1,7 @@
+tests:
+  led_current:
+    description: LED runs at 10 mA (±5 %).
+    analysis: { type: op }
+    expect:
+      - { measure: current(D1), min: 9.5mA, max: 10.5mA }
+      - { measure: voltage(N1), max: 3V }

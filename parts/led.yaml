@@ -1,0 +1,25 @@
+id: led
+name: LED
+category: semiconductor
+description: >
+  Indicator LED. Models are Shockley fits (N=2, RS=1) giving a typical forward voltage at
+  10 mA: red 1.85 V, yellow 2.0 V, green 2.1 V, blue/white 3.0 V. Keep the current below
+  about 20 mA. Current is positive from anode to cathode.
+pins: [anode, cathode]
+params:
+  color: { choices: [red, yellow, green, blue, white], default: red }
+spice:
+  prefix: D
+  template: "<name> <pin:anode> <pin:cathode> <model>"
+  current: "@<name>[id]"
+  model_param: color
+  models:
+    red: "D(IS=3.568e-18 N=2 RS=1 CJO=10p BV=5 IBV=10u)"
+    yellow: "D(IS=1.964e-19 N=2 RS=1 CJO=10p BV=5 IBV=10u)"
+    green: "D(IS=2.842e-20 N=2 RS=1 CJO=10p BV=5 IBV=10u)"
+    blue: "D(IS=7.902e-28 N=2 RS=1 CJO=10p BV=5 IBV=10u)"
+    white: "D(IS=7.902e-28 N=2 RS=1 CJO=10p BV=5 IBV=10u)"
+symbol:
+  cell: d_led_v
+  ports: { anode: "+", cathode: "-" }
+  label: "<param:color>"

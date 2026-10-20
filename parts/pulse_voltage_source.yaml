@@ -1,0 +1,25 @@
+id: pulse_voltage_source
+name: Pulse Voltage Source
+category: source
+description: >
+  Trapezoidal pulse between low and high. Before `delay` the output is `low`.
+  Current is positive into the + pin.
+pins: ["+", "-"]
+params:
+  low: { unit: V, default: 0V }
+  high: { unit: V }
+  delay: { unit: s, default: 0s }
+  rise: { unit: s, default: 1ns }
+  fall: { unit: s, default: 1ns }
+  width: { unit: s }
+  period: { unit: s }
+spice:
+  prefix: V
+  template: >-
+    <name> <pin:+> <pin:-> DC <param:low>
+    PULSE(<param:low> <param:high> <param:delay> <param:rise> <param:fall> <param:width> <param:period>)
+  current: "<name>"
+symbol:
+  cell: v
+  ports: { "+": "+", "-": "-" }
+  label: "<param:low>/<param:high>"

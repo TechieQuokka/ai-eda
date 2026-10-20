@@ -1,0 +1,16 @@
+id: capacitor
+name: Capacitor
+category: passive
+description: Ideal capacitor. Current is positive from pin 1 to pin 2. Blocks DC.
+pins: ["1", "2"]
+params:
+  capacitance: { unit: F }
+spice:
+  prefix: C
+  template: "<name> <pin:1> <pin:2> <param:capacitance>"
+  current: "@<name>[i]"
+symbol:
+  cell: c_v
+  ports: { "1": A, "2": B }
+  label: "<param:capacitance>"
+dc_path: false

@@ -1,0 +1,15 @@
+id: inductor
+name: Inductor
+category: passive
+description: Ideal inductor. Current is positive from pin 1 to pin 2.
+pins: ["1", "2"]
+params:
+  inductance: { unit: H }
+spice:
+  prefix: L
+  template: "<name> <pin:1> <pin:2> <param:inductance>"
+  current: "@<name>[i]"
+symbol:
+  cell: l_v
+  ports: { "1": A, "2": B }
+  label: "<param:inductance>"

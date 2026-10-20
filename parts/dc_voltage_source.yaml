@@ -1,0 +1,17 @@
+id: dc_voltage_source
+name: DC Voltage Source
+category: source
+description: >
+  Ideal DC voltage source; V(+) - V(-) = voltage. Current is positive into the + pin,
+  so a source delivering power reads negative.
+pins: ["+", "-"]
+params:
+  voltage: { unit: V }
+spice:
+  prefix: V
+  template: "<name> <pin:+> <pin:-> DC <param:voltage>"
+  current: "<name>"
+symbol:
+  cell: v
+  ports: { "+": "+", "-": "-" }
+  label: "<param:voltage>"

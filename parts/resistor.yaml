@@ -1,0 +1,15 @@
+id: resistor
+name: Resistor
+category: passive
+description: Ideal resistor. Current is positive from pin 1 to pin 2.
+pins: ["1", "2"]
+params:
+  resistance: { unit: ohm }
+spice:
+  prefix: R
+  template: "<name> <pin:1> <pin:2> <param:resistance>"
+  current: "@<name>[i]"
+symbol:
+  cell: r_v
+  ports: { "1": A, "2": B }
+  label: "<param:resistance>"
