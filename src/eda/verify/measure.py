@@ -12,6 +12,8 @@ Functions by analysis:
     sampling    at(trace, X)                    tran, ac       value at time / frequency X
                 cross(trace, LEVEL)             tran, ac       first time / frequency the
                                                                trace crosses LEVEL
+                period(trace, LEVEL)            tran           mean time between rising
+                                                               crossings of LEVEL
     transforms  db mag phase                    ac             complex trace → real trace
 
 A `tran` measure must end in a value; an `ac` probe must pass through db(), mag(), or
@@ -32,7 +34,7 @@ type Domain = Literal["op", "tran", "ac"]
 REDUCTIONS: Final = ("max", "min", "initial", "final", "avg", "rms", "pp")
 TIME_ONLY: Final = frozenset({"avg", "rms", "pp"})
 TRANSFORMS: Final = {"db": "dB", "mag": None, "phase": "deg"}
-SAMPLERS: Final = ("at", "cross")
+SAMPLERS: Final = ("at", "cross", "period")
 X_UNIT: Final[dict[Domain, str | None]] = {"op": None, "tran": "s", "ac": "Hz"}
 
 _TOKEN: Final = re.compile(r"\s*(?:(?P<open>\()|(?P<close>\))|(?P<comma>,)|(?P<atom>[^\s(),]+))")
@@ -173,7 +175,7 @@ def _parse_node(tokens: list[tuple[str, str]], text: str) -> tuple[Node, list[tu
     if not rest or rest[0][0] != "close":
         raise MeasureSyntaxError(f"missing ')' after {name}(...) in {text!r}")
     if name in SAMPLERS and quantity is None:
-        hint = "at(db(voltage(OUT)), 1kHz)" if name == "at" else "cross(voltage(OUT), 2.5V)"
+        hint = "at(db(voltage(OUT)), 1kHz)" if name == "at" else f"{name}(voltage(OUT), 2.5V)"
         raise MeasureSyntaxError(f"{name}() needs a second argument, e.g. {hint}")
     if name not in SAMPLERS and quantity is not None:
         raise MeasureSyntaxError(f"{name}() takes one argument in {text!r}")
@@ -220,7 +222,8 @@ def check(node: Node, domain: Domain) -> Measure:
         if domain == "tran":
             raise MeasureTypeError(
                 f"{node.text}: a tran analysis gives a waveform; reduce it with max(), min(), "
-                "avg(), rms(), pp(), initial(), final(), at(..., TIME), or cross(..., LEVEL)"
+                "avg(), rms(), pp(), initial(), final(), at(..., TIME), cross(..., LEVEL), "
+                "or period(..., LEVEL)"
             )
         if domain == "ac":
             raise MeasureTypeError(
@@ -253,6 +256,8 @@ def _check(node: Node, domain: Domain) -> _Type:
         x_unit = X_UNIT[domain]
         if x_unit is None:
             raise MeasureTypeError(f"{node.text}: {fn}() needs a tran or ac analysis")
+        if fn == "period" and domain != "tran":
+            raise MeasureTypeError(f"{node.text}: period() needs a tran analysis")
         assert node.quantity is not None
         expected = x_unit if fn == "at" else inner.unit
         if node.quantity.unit != expected:
@@ -313,6 +318,8 @@ def _eval(
         if node.fn == "at":
             target = math.log10(node.quantity.value) if domain == "ac" else node.quantity.value
             return _interpolate(xs, values, target)
+        if node.fn == "period":
+            return _period(xs, values, node.quantity.value)
         found = _crossing(xs, values, node.quantity.value)
         return 10**found if domain == "ac" and math.isfinite(found) else found
     return reduce(node.fn, x if domain == "tran" else None, values)
@@ -364,6 +371,18 @@ def _crossing(xs: Sequence[float], ys: Sequence[float], level: float) -> float:
         if a * b < 0:
             return xs[i - 1] + (xs[i] - xs[i - 1]) * a / (a - b)
     return math.nan
+
+
+def _period(xs: Sequence[float], ys: Sequence[float], level: float) -> float:
+    """Mean spacing of the times the trace rises through `level` (NaN below two rises)."""
+    rises: list[float] = []
+    for i in range(1, len(xs)):
+        a, b = ys[i - 1] - level, ys[i] - level
+        if a < 0 <= b:
+            rises.append(xs[i - 1] + (xs[i] - xs[i - 1]) * a / (a - b))
+    if len(rises) < 2:
+        return math.nan
+    return (rises[-1] - rises[0]) / (len(rises) - 1)
 
 
 def reduce(reduction: str | None, time: Sequence[float] | None, values: Sequence[float]) -> float:

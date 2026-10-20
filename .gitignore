@@ -20,3 +20,6 @@ parts/vendor/
 
 # Raspberry Pi pico-sdk checkout (large; fetched locally)
 tools/pico-sdk/
+
+# RP2040 boot ROM for the emulator (fetched by tools/rp2040/fetch-bootrom.sh)
+tools/rp2040/dl/

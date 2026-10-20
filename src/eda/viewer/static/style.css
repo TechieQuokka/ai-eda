@@ -97,3 +97,11 @@ summary { cursor: pointer; color: var(--muted); }
 code { font-family: ui-monospace, monospace; font-size: 12px; }
 .board-images { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; margin-bottom: 10px; }
 .board-images img.render { width: 100%; border-radius: 6px; }
+
+pre.serial {
+  max-height: 12rem;
+  overflow: auto;
+  padding: 0.5rem;
+  background: var(--code-bg, rgba(127, 127, 127, 0.1));
+  font-size: 0.8rem;
+}

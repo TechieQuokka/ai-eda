@@ -1,7 +1,7 @@
 """Resolved, checked design objects produced by `eda.design`."""
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from eda.loader import SourceMap
 from eda.project import ProjectPaths
@@ -92,6 +92,29 @@ class CompiledExpectation:
 
 
 @dataclass(frozen=True)
+class SerialExpectation:
+    """A number read from the firmware's UART output (see schema.testspec.Expectation)."""
+
+    index: int
+    net: str  # UART TX net
+    uart: int  # UART peripheral index
+    pattern: str
+    min: float | None
+    max: float | None
+    location: Location
+
+    @property
+    def text(self) -> str:
+        return f"serial({self.net}) ~ /{self.pattern}/"
+
+    @property
+    def range_text(self) -> str:
+        if self.min is not None and self.max is not None:
+            return f"{self.min:g}..{self.max:g}"
+        return f">= {self.min:g}" if self.min is not None else f"<= {self.max:g}"
+
+
+@dataclass(frozen=True)
 class CompiledTest:
     name: str
     description: str
@@ -99,6 +122,24 @@ class CompiledTest:
     expectations: tuple[CompiledExpectation, ...]
     location: Location
     pins: dict[str, str] = field(default_factory=lambda: dict[str, str]())  # net → high/low
+    firmware: bool = False  # co-simulate the compiled firmware (tran only)
+    serial: tuple[SerialExpectation, ...] = ()
+    # Per-test part parameters: ref → param → (value, label).
+    parts: dict[str, dict[str, tuple[float | str, str]]] = field(
+        default_factory=lambda: dict[str, dict[str, tuple[float | str, str]]]()
+    )
+
+    def circuit(self, base: "ResolvedCircuit") -> "ResolvedCircuit":
+        """The circuit this test simulates: `base` with the test's part parameters."""
+        if not self.parts:
+            return base
+        parts = dict(base.parts)
+        for ref, params in self.parts.items():
+            part = parts[ref]
+            values = {**part.values, **{k: v for k, (v, _) in params.items()}}
+            labels = {**part.labels, **{k: label for k, (_, label) in params.items()}}
+            parts[ref] = replace(part, values=values, labels=labels)
+        return replace(base, parts=parts)
 
 
 @dataclass(frozen=True)

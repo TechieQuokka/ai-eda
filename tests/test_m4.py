@@ -3,9 +3,13 @@ from pathlib import Path
 
 import pytest
 
-from eda import pipeline
-from eda.adapters import picosdk
+from eda import cosim, pipeline
+from eda.adapters import ngspice_shared, picosdk, rp2040
+from eda.design import load_design
 from eda.project import REPO_ROOT
+from eda.result import Diagnostics
+from eda.schema.part import McuSpec
+from eda.verify.measure import MeasureTypeError, check, evaluate, parse_measure
 
 EXAMPLE = REPO_ROOT / "projects" / "pico_io"
 
@@ -93,3 +97,110 @@ def test_build_reports_errors_then_succeeds(tmp_path: Path) -> None:
     # The warning comes back on a rebuild even though main.c did not change.
     result = pipeline.fw(root, build=True)
     assert [w.rule for w in result.warnings] == ["fw_compile_warning"]
+
+
+# --- co-simulation -----------------------------------------------------------------------
+
+
+def _has_cosim() -> bool:
+    try:
+        rp2040.bootrom()
+    except rp2040.EmulatorError:
+        return False
+    return (
+        _has_sdk()
+        and shutil.which("node") is not None
+        and (rp2040.PACKAGE_DIR / "package.json").is_file()
+        and ngspice_shared.library_path() is not None
+    )
+
+
+requires_cosim = pytest.mark.skipif(
+    not _has_cosim(), reason="needs pico-sdk, rp2040js + boot ROM, and libngspice"
+)
+
+
+@pytest.fixture
+def pico(tmp_path: Path) -> Path:
+    root = tmp_path / "pico_io"
+    shutil.copytree(EXAMPLE, root, ignore=shutil.ignore_patterns("out", "iterations.jsonl"))
+    (root / "design" / "board.yaml").unlink()
+    return root
+
+
+def _edit(path: Path, old: str, new: str) -> None:
+    text = path.read_text(encoding="utf-8")
+    assert old in text
+    path.write_text(text.replace(old, new), encoding="utf-8")
+
+
+def test_period_measure() -> None:
+    node = parse_measure("period(voltage(OUT), 1V)")
+    measure = check(node, "tran")
+    assert measure.unit == "s"
+    xs = [i * 0.1 for i in range(41)]  # 0..4 s, square wave with a 1 s period
+    ys = [2.0 if (x % 1.0) < 0.5 else 0.0 for x in xs]
+    value = evaluate(node, "tran", xs, lambda _probe: ys)
+    assert value == pytest.approx(1.0, abs=0.01)
+    with pytest.raises(MeasureTypeError):
+        check(node, "ac")
+
+
+def test_thevenin_average() -> None:
+    mcu = McuSpec(family="rp2040", vio=3.3, supply_pin="3V3", ground_pin="GND", gpio={})
+    thevenin = cosim._Thevenin(mcu)  # pyright: ignore[reportPrivateUsage]
+    # Driven high for a quarter of the window: a 25 % PWM averages to vio / 4.
+    volts, ohms = thevenin.average([(0.0, "high"), (0.25e-3, "low")], 1e-3, False)
+    assert volts == pytest.approx(3.3 / 4)
+    assert ohms == pytest.approx(mcu.drive_ohm)
+    assert thevenin.average([(0.0, "pullup")], 1e-3, False) == (3.3, mcu.pull_ohm)
+
+
+def test_firmware_test_rules(pico: Path) -> None:
+    tests = pico / "design" / "test.yaml"
+    _edit(tests, "analysis: { type: tran, step: 1ms, stop: 2.2s }", "analysis: { type: op }")
+    _edit(tests, "SW1: { state: pressed }", "SW1: { state: stuck }")
+    _edit(tests, "      RV1: { position: 25% }", "      RV1: { position: 25% }\n      R9: { x: 1 }")
+    text = tests.read_text(encoding="utf-8")
+    text += (
+        "  not_fw:\n    analysis: { type: tran, step: 1ms, stop: 10ms }\n    expect:\n"
+        "      - { serial: UART_TX, match: x, min: 1 }\n"
+        "  bad_net:\n    analysis: { type: tran, step: 1ms, stop: 10ms }\n"
+        "    firmware: true\n    expect:\n      - { serial: LED, match: x, min: 1 }\n"
+    )
+    tests.write_text(text, encoding="utf-8")
+    diag = Diagnostics()
+    load_design(pico, diag)
+    assert {e.rule for e in diag.errors} == {
+        "firmware_needs_tran",  # firmware_blink switched to op ...
+        "invalid_measure",  # ... where period() and at() do not apply
+        "invalid_choice",
+        "serial_needs_firmware",
+        "serial_net",
+        "unknown_part",
+    }
+
+
+@requires_cosim
+def test_firmware_in_the_loop(pico: Path) -> None:
+    result = pipeline.sim(pico)
+    assert result.ok, result.errors
+    tests = result.data["tests"]
+    assert isinstance(tests, dict)
+    blink = tests["firmware_blink"]
+    assert isinstance(blink, dict)
+    firmware = blink["firmware"]
+    assert isinstance(firmware, dict)
+    serial = firmware["serial"]
+    assert isinstance(serial, dict) and "pot=2047" in str(serial["UART_TX"])
+
+    # A firmware change shows up in the circuit: blinking at 250 ms breaks the period.
+    _edit(pico / "firmware" / "main.c", "pressed ? 100 : 500", "pressed ? 100 : 250")
+    result = pipeline.sim(pico, "firmware_blink")
+    failed = [e for e in result.errors if e.rule == "expect"]
+    assert [e.details["measure"] for e in failed] == [
+        "at(current(D1), 700ms)",
+        "period(current(D1), 3mA)",
+    ]
+    value = failed[1].details["value"]
+    assert isinstance(value, float) and value == pytest.approx(0.5, abs=0.01)

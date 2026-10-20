@@ -4,6 +4,7 @@ Pydantic checks structure; this module checks meaning: part types, parameter val
 units, pin references, and test expressions. ERC lives in `eda.verify.erc`.
 """
 
+import re
 from pathlib import Path
 
 from eda import firmware as fw
@@ -25,6 +26,7 @@ from eda.model import (
     ResolvedCircuit,
     ResolvedFirmware,
     ResolvedPart,
+    SerialExpectation,
     Tran,
     domain_of,
 )
@@ -33,9 +35,16 @@ from eda.result import Diagnostics, Location
 from eda.schema.board import BoardFile
 from eda.schema.circuit import Circuit
 from eda.schema.firmware import FirmwareFile
-from eda.schema.part import PartSpec
+from eda.schema.part import ParamSpec, PartSpec
 from eda.schema.project import Project
-from eda.schema.testspec import AcAnalysis, Expectation, OpAnalysis, SimTestFile, TranAnalysis
+from eda.schema.testspec import (
+    AcAnalysis,
+    Expectation,
+    OpAnalysis,
+    SimTest,
+    SimTestFile,
+    TranAnalysis,
+)
 from eda.units import QuantityError, format_quantity, parse_quantity
 from eda.verify.erc import run_erc
 from eda.verify.measure import (
@@ -199,27 +208,33 @@ def _resolve_params(
                 src.at("parts", ref),
             )
             continue
-        if param.unit is not None:
-            try:
-                value = parse_quantity(raw, param.unit)
-            except QuantityError as exc:
-                diag.error("invalid_value", f"{ref}.{name}: {exc}", at)
-                continue
-            values[name] = value
-            labels[name] = format_quantity(value, param.unit)
-        else:
-            choices = param.choices or []
-            if not isinstance(raw, str) or raw not in choices:
-                diag.error(
-                    "invalid_choice",
-                    f"{ref}.{name}: {raw!r} is not one of {choices}",
-                    at,
-                    choices=choices,
-                )
-                continue
-            values[name] = raw
-            labels[name] = raw
+        parsed = _param_value(ref, name, param, raw, at, diag)
+        if parsed is not None:
+            values[name], labels[name] = parsed
     return values, labels
+
+
+def _param_value(
+    ref: str, name: str, param: ParamSpec, raw: object, at: Location, diag: Diagnostics
+) -> tuple[float | str, str] | None:
+    """(value, label) of one parameter: an SI float for quantities, the choice string."""
+    if param.unit is not None:
+        try:
+            value = parse_quantity(raw, param.unit)
+        except QuantityError as exc:
+            diag.error("invalid_value", f"{ref}.{name}: {exc}", at)
+            return None
+        return value, format_quantity(value, param.unit)
+    choices = param.choices or []
+    if not isinstance(raw, str) or raw not in choices:
+        diag.error(
+            "invalid_choice",
+            f"{ref}.{name}: {raw!r} is not one of {choices}",
+            at,
+            choices=choices,
+        )
+        return None
+    return raw, raw
 
 
 def _spice_name(prefix: str, ref: str) -> str:
@@ -437,12 +452,23 @@ def _compile_tests(
                 "e.g. { type: sine_voltage_source, ..., ac: 1V }",
                 _at(src, name),
             )
+        ok = True
+        if case.firmware:
+            ok = _check_firmware_test(name, case, analysis, src, firmware, diag)
+        overrides = _compile_overrides(name, case, src, circuit, diag)
+        ok = ok and overrides is not None
         expectations: list[CompiledExpectation] = []
+        serial: list[SerialExpectation] = []
         for index, exp in enumerate(case.expect):
+            if exp.serial is not None:
+                found = _compile_serial(name, index, exp, case.firmware, src, firmware, diag)
+                if found is not None:
+                    serial.append(found)
+                continue
             item = _compile_expectation(name, index, exp, analysis, src, circuit, diag)
             if item is not None:
                 expectations.append(item)
-        if analysis is not None and len(expectations) == len(case.expect):
+        if ok and analysis is not None and len(expectations) + len(serial) == len(case.expect):
             compiled[name] = CompiledTest(
                 name=name,
                 description=case.description,
@@ -450,8 +476,136 @@ def _compile_tests(
                 expectations=tuple(expectations),
                 location=src.at("tests", name),
                 pins=dict(case.pins),
+                firmware=case.firmware,
+                serial=tuple(serial),
+                parts=overrides or {},
             )
     return compiled
+
+
+def _compile_overrides(
+    name: str,
+    case: SimTest,
+    src: SourceMap,
+    circuit: ResolvedCircuit | None,
+    diag: Diagnostics,
+) -> dict[str, dict[str, tuple[float | str, str]]] | None:
+    """Per-test part parameters, e.g. `parts: { SW1: { state: pressed } }`."""
+    found: dict[str, dict[str, tuple[float | str, str]]] = {}
+    ok = True
+    for ref, params in case.parts.items():
+        at = src.at("tests", name, "parts", ref)
+        part = circuit.parts.get(ref) if circuit else None
+        if part is None:
+            if circuit is not None:
+                diag.error("unknown_part", f"{name}.parts: no part named {ref!r}", at)
+            ok = False
+            continue
+        found[ref] = {}
+        for param_name, raw in params.items():
+            param = part.spec.params.get(param_name)
+            where = src.at("tests", name, "parts", ref, param_name)
+            if param is None:
+                known = ", ".join(part.spec.params) or "none"
+                diag.error(
+                    "unknown_param",
+                    f"{ref}: {part.spec.id} has no parameter {param_name!r} (parameters: {known})",
+                    where,
+                )
+                ok = False
+                continue
+            parsed = _param_value(ref, param_name, param, raw, where, diag)
+            if parsed is None:
+                ok = False
+                continue
+            found[ref][param_name] = parsed
+    return found if ok else None
+
+
+def _check_firmware_test(
+    name: str,
+    case: SimTest,
+    analysis: Analysis | None,
+    src: SourceMap,
+    firmware: ResolvedFirmware | None,
+    diag: Diagnostics,
+) -> bool:
+    at = src.at("tests", name, "firmware")
+    if firmware is None:
+        diag.error("no_firmware", f"{name}: firmware: true needs design/firmware.yaml", at)
+        return False
+    if analysis is not None and not isinstance(analysis, Tran):
+        diag.error("firmware_needs_tran", f"{name}: firmware runs only in a tran analysis", at)
+        return False
+    if case.pins:
+        diag.error(
+            "firmware_pins",
+            f"{name}: pins overrides do not apply when the firmware drives the pins",
+            src.at("tests", name, "pins"),
+        )
+        return False
+    return True
+
+
+def _compile_serial(
+    name: str,
+    index: int,
+    raw: Expectation,
+    runs_firmware: bool,
+    src: SourceMap,
+    firmware: ResolvedFirmware | None,
+    diag: Diagnostics,
+) -> SerialExpectation | None:
+    base = ("tests", name, "expect", index)
+    at = src.at(*base)
+    assert raw.serial is not None and raw.match is not None
+    if not runs_firmware:
+        diag.error("serial_needs_firmware", f"{name}: serial expectations need firmware: true", at)
+        return None
+    signals = firmware.signals if firmware else {}
+    signal = signals.get(raw.serial)
+    tx = re.fullmatch(r"UART(\d)_TX", (signal.function if signal else None) or "")
+    if tx is None:
+        uarts = [s.net for s in signals.values() if (s.function or "").endswith("_TX")]
+        diag.error(
+            "serial_net",
+            f"{raw.serial} is not a UART TX signal in firmware.yaml; UART TX nets: "
+            + (", ".join(uarts) or "none"),
+            src.at(*base, "serial"),
+        )
+        return None
+    try:
+        pattern = re.compile(raw.match)
+    except re.error as exc:
+        diag.error("invalid_match", f"match: {exc}", src.at(*base, "match"))
+        return None
+    if pattern.groups > 1:
+        diag.error("invalid_match", "match: use at most one capture group", src.at(*base, "match"))
+        return None
+    if raw.min is None and raw.max is None:
+        diag.error("missing_bound", f"serial({raw.serial}): give min, max, or both", at)
+        return None
+    bounds: dict[str, float | None] = {"min": None, "max": None}
+    for key in ("min", "max"):
+        value = getattr(raw, key)
+        if value is None:
+            continue
+        try:
+            bounds[key] = float(value)
+        except ValueError:
+            diag.error(
+                "invalid_value", f"{key}: expected a number, got {value!r}", src.at(*base, key)
+            )
+            return None
+    return SerialExpectation(
+        index=index,
+        net=raw.serial,
+        uart=int(tx.group(1)),
+        pattern=raw.match,
+        min=bounds["min"],
+        max=bounds["max"],
+        location=at,
+    )
 
 
 def _has_ac_source(circuit: ResolvedCircuit) -> bool:
@@ -516,6 +670,7 @@ def _compile_expectation(
     base = ("tests", name, "expect", index)
     at = src.at(*base)
     at_measure = src.at(*base, "measure")
+    assert raw.measure is not None
     try:
         node = parse_measure(raw.measure)
     except MeasureSyntaxError as exc:

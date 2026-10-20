@@ -2,14 +2,13 @@
 #include <stdio.h>
 
 #include "hardware/adc.h"
-#include "hardware/uart.h"
 #include "pico/stdlib.h"
 #include "pins.h"
 #include "pins_init.h"
 
 int main(void) {
     pins_init();
-    uart_init(uart0, 115200);
+    stdio_init_all();  // printf -> UART0 (PIN_UART_TX), 115200 baud
     adc_init();
     adc_select_input(0);  // ADC0 = PIN_POT
 

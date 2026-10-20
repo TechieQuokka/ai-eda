@@ -27,3 +27,30 @@ tests:
     analysis: { type: op }
     expect:
       - { measure: voltage(UART_TX), min: 3.2V }
+  firmware_blink:
+    description: >
+      Firmware in the loop. With the button released (read through the circuit and the
+      internal pull-up) the LED toggles every 500 ms, and the firmware prints the ADC
+      reading of the potentiometer (mid-scale, about 2048 of 4095) on the UART.
+    analysis: { type: tran, step: 1ms, stop: 2.2s }
+    firmware: true
+    expect:
+      - { measure: max(current(D1)), min: 5mA, max: 10mA }
+      - { measure: "at(current(D1), 700ms)", max: 10uA }
+      - { measure: "period(current(D1), 3mA)", min: 0.95s, max: 1.05s }
+      - { serial: UART_TX, match: 'pot=(\d+)', min: 1950, max: 2150 }
+  firmware_button:
+    description: >
+      Firmware in the loop with the button held and the potentiometer at a quarter: the
+      firmware reads BUTTON low through the switch and blinks five times faster (toggle
+      every 100 ms, period 200 ms), and reports about a quarter of full scale (~1024).
+    analysis: { type: tran, step: 1ms, stop: 1.2s }
+    firmware: true
+    parts:
+      SW1: { state: pressed }
+      RV1: { position: 25% }
+    expect:
+      - { measure: "period(current(D1), 3mA)", min: 190ms, max: 210ms }
+      - { measure: max(voltage(BUTTON)), max: 0.1V }
+      - { serial: UART_TX, match: 'pot=(\d+)', min: 950, max: 1100 }
+      - { serial: UART_TX, match: 'pot=', min: 10 }

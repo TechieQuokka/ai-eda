@@ -466,3 +466,46 @@ Goal (`PROJECT_SUMMARY.md` §12): the firmware runs against the simulated circui
 - **Warnings on every build**: the objects of the project's own sources are deleted before each build, so their warnings are reported every time, not only when the file changed; SDK objects stay cached.
 - `eda run` builds when the SDK is present and warns `fw_build_skipped` otherwise. The example firmware is compiled with `-Wall -Wextra`.
 - Result: `pico_io` builds cleanly: 21 KB flash (1.0 %), 1.2 KB RAM.
+
+### 15.2 Emulator: rp2040js
+
+Verified before choosing (HANDOFF §4.2 criteria: runs the pico-sdk image unmodified, exposes GPIO/ADC/UART to an external process, headless and scriptable):
+
+| Candidate | Finding |
+|---|---|
+| **rp2040js 1.4.1** (Wokwi, MIT, Node) | Runs pico-sdk UF2 images (its CI builds pico-sdk examples); GPIO pin states with listeners, `setInputValue`, ADC `channelValues`, UART `onByte`, PWM drives pins; the clock skips ahead while the core waits (WFE), so `sleep_ms` is cheap. **Chosen.** |
+| Renode | No RP2040 platform upstream (only a community plugin); needs Mono/.NET. |
+| QEMU | No RP2040 machine upstream (only Cortex-A Raspberry Pi boards). |
+
+- Pinned in `tools/rp2040/` (`package.json` + lock, like netlistsvg). rp2040js needs the RP2040 boot ROM: `tools/rp2040/fetch-bootrom.sh` downloads revision B2 from `raspberrypi/pico-bootrom-rp2040` (SHA-256 pinned) into the git-ignored `tools/rp2040/dl/` (part of it has its own license; not redistributed).
+- `adapters/rp2040_driver.mjs` runs the core instruction by instruction to a target time and answers line-delimited JSON (`init`, `run`); `adapters/rp2040.py` is the Python side. Only core 0 is emulated (rp2040js limitation).
+- Speed: 2.2 s of `pico_io` firmware time in ~30 ms of emulator time; the whole co-simulated test takes ~1 s, dominated by ngspice.
+
+### 15.3 Co-simulation (level 2)
+
+- **ngspice in-process**: `adapters/ngspice_shared.py` drives libngspice through ctypes. A transient run is halted at each window boundary (`ngSpice_SetBkpt` makes a time point land exactly there, `stop when time >= t` halts on it), sources are changed with `alter`, and the run `resume`s. The result is written as the usual ASCII raw file, so measures, waveforms, and the viewer work unchanged.
+- **Pin model**: every firmware-driven pin (GPIO `mode:` and PWM) is a Thevenin source (voltage source + resistor) named per pin. States map to high/low behind `drive_ohm`, pull-up/down behind `pull_ohm`, high impedance as 100 MΩ. Within a window the states are averaged as Norton equivalents (mean conductance, mean current), so a PWM output becomes its average and an edge inside a window becomes one intermediate step. UART/SPI/I2C pins keep their static model; UART TX bytes come from the emulated peripheral.
+- **Loop** (window = the test's `step`, ngspice max step = window/5): read inputs at the circuit time (digital through RP2040 Schmitt thresholds VIH 2.0 V / VIL 0.8 V scaled to `vio`; ADC as `round(V / vio × 4095)`), run the emulator to the end of the window, apply the averaged pin sources, run ngspice to the same time.
+- **Mode changes stop the window**: inputs lag by one window, which broke the first real run: `pins_init()` enables BUTTON's pull-up and the firmware reads it microseconds later, still seeing the reset pull-down (0 V, "pressed"), so the first blink was 100 ms instead of 500 ms. Now the emulator stops right after any change other than a high↔low output toggle; the circuit settles on the new state for window/100 before the firmware continues.
+- **Tests**: `firmware: true` (tran only, needs firmware.yaml, no `pins:` overrides); `parts:` per-test parameters (reusable by any test); `period(trace, LEVEL)` measure; serial expectations `{ serial: NET, match: REGEX, min, max }` with rules `serial_needs_firmware`, `serial_net`, `invalid_match`. Errors: `firmware_not_built` (build failed), `cosim_failed` / `fw_toolchain` (tool errors, exit 2).
+- `eda sim` builds the firmware before co-simulated tests; `eda run` reuses the image built in its fw step.
+
+### 15.4 Result
+
+`projects/pico_io` (done criterion of HANDOFF §4.4):
+
+| Test | Result |
+|---|---|
+| `firmware_blink` (button released, pot at 50 %) | LED 6.1 mA, off at 700 ms, blink period 1000 ms; UART `pot=2047` |
+| `firmware_button` (`SW1: pressed`, `RV1: 25%`) | blink period 200 ms (the firmware reads the button through the circuit); UART `pot=1024`, 12 lines |
+
+- Co-simulation found a real firmware bug: `main.c` called `uart_init` but never `stdio_init_all`, so `printf` went nowhere. Fixed.
+- `tests/test_m4.py`: log parsing, missing SDK, compile error → fix → warning, Norton averaging, `period`, test rules, and firmware-in-the-loop (changing the blink delay in `main.c` makes `period` fail at 500 ms).
+
+### 15.5 Not done / findings
+
+1. Inputs still see the circuit one window late for output→input paths (e.g. a GPIO looped back to another through an RC); choose `step` well below the timing under test.
+2. Only core 0; no USB, no PIO timing beyond rp2040js's model; the ADC reference is taken as `vio`.
+3. `ngSpice_nospiceinit()` crashes libngspice 47 when called before `ngSpice_Init` as documented, so the shared-library runs do read a user `.spiceinit` (batch runs use `-n`).
+4. Serial input to the firmware (UART RX) is not modelled yet.
+5. The co-simulated netlist adds two elements per firmware pin; a design with dozens of PWM pins changing every window will be slower (each change is two `alter`s).

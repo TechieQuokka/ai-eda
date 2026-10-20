@@ -37,7 +37,8 @@ def sensed_pins(part: ResolvedPart) -> list[str]:
 
 
 # Simulated behavior of an MCU pin, set by firmware.yaml (and test overrides).
-type Drive = str  # "high" | "low" | "pullup" | "pulldown" | "hiz"
+# "fw": driven by the emulated firmware during co-simulation (see `fw_driver`).
+type Drive = str  # "high" | "low" | "pullup" | "pulldown" | "hiz" | "fw"
 
 
 def element_lines(
@@ -89,7 +90,8 @@ def mcu_lines(part: ResolvedPart, circuit: ResolvedCircuit, drives: dict[str, Dr
 
     The internal I/O supply is an ideal `vio` source; the supply pin is that source behind
     1 Ω. Each connected GPIO is an output (`vio`/0 V behind the driver resistance), a pull-up
-    or pull-down, or high impedance (100 MΩ to ground so the node stays defined).
+    or pull-down, or high impedance (100 MΩ to ground so the node stays defined). A "fw"
+    pin is a Thevenin source (voltage source + resistor) that co-simulation alters.
     """
     mcu = part.spec.mcu
     assert mcu is not None
@@ -127,9 +129,25 @@ def mcu_lines(part: ResolvedPart, circuit: ResolvedCircuit, drives: dict[str, Dr
             lines.append(f"R_{name}_pu {node} {vdd} {mcu.pull_ohm:.12g}")
         elif drive == "pulldown":
             lines.append(f"R_{name}_pd {node} {gnd} {mcu.pull_ohm:.12g}")
+        elif drive == "fw":
+            source, resistor = fw_driver(part, pin, nodes)
+            lines.append(f"{source} {name}_f {gnd} DC 0")
+            lines.append(f"{resistor} {name}_f {node} 1e8")
         else:
             lines.append(f"R_{name}_hiz {node} {gnd} 1e8")
     return lines
+
+
+def fw_driver(
+    part: ResolvedPart, pin: str, connected: dict[str, str] | list[str]
+) -> tuple[str, str]:
+    """(voltage source, resistor) element names of a firmware-driven MCU pin.
+
+    `connected` lists the part's connected pins in pin order (as mcu_lines numbers them).
+    """
+    index = list(connected).index(pin)
+    name = f"{part.ref.lower()}_{index}"
+    return f"V_{name}_fw", f"R_{name}_fw"
 
 
 def current_vector(part: ResolvedPart) -> str | None:
@@ -159,8 +177,12 @@ def build_netlist(
     analysis: Analysis,
     raw_path: Path,
     drives: dict[str, dict[str, Drive]] | None = None,
+    batch: bool = True,
 ) -> str:
-    """`drives` maps an MCU part reference to its pin drives (from firmware.yaml)."""
+    """`drives` maps an MCU part reference to its pin drives (from firmware.yaml).
+
+    `batch=False` leaves out the `.control` block, for interactive (co-simulation) runs.
+    """
     lines = [f"* {title}"]
     includes: list[str] = []
     models: dict[str, str] = {}
@@ -183,13 +205,14 @@ def build_netlist(
         command = f"tran {analysis.step:.12g} {analysis.stop:.12g}"
         if analysis.start is not None:
             command += f" {analysis.start:.12g}"
-    lines += [
-        ".control",
-        "set filetype=ascii",
-        command,
-        f"write {raw_path.as_posix()} all",
-        "quit",
-        ".endc",
-        ".end",
-    ]
+    if batch:
+        lines += [
+            ".control",
+            "set filetype=ascii",
+            command,
+            f"write {raw_path.as_posix()} all",
+            "quit",
+            ".endc",
+        ]
+    lines.append(".end")
     return "\n".join(lines) + "\n"

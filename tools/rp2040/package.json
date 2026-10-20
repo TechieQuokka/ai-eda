@@ -1,0 +1,9 @@
+{
+  "name": "eda-tools-rp2040",
+  "private": true,
+  "description": "Pinned rp2040js (Wokwi's RP2040 emulator) used by eda for firmware co-simulation",
+  "type": "module",
+  "dependencies": {
+    "rp2040js": "1.4.1"
+  }
+}

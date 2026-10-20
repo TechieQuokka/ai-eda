@@ -1,7 +1,7 @@
 # Handoff — where the work stopped and how to continue
 
-> Written 2026-10-20 at the end of the session that built M0–M3. Read this first, then
-> `CLAUDE.md` (working rules and design loop), then `DESIGN_DECISIONS.md` §10–§14 for detail.
+> Written 2026-10-20 after M0–M3, updated the same day after M4. Read this first, then
+> `CLAUDE.md` (working rules and design loop), then `DESIGN_DECISIONS.md` §10–§15 for detail.
 
 ## 1. Status
 
@@ -11,11 +11,11 @@
 | M1 Vendor SPICE models, op-amps, AC analysis | ✅ done | §12 |
 | M2 Boards: KiCad layout, Freerouting, DRC JSON, Gerbers | ✅ done | §13 |
 | M3 Firmware integration for the Raspberry Pi Pico (pins.h, cross-checks) | ✅ done | §14 |
-| **M4** Firmware build, MCU emulation co-simulated with the circuit | **not started** — stopped by the user before the toolchain install | §4 below |
+| M4 Firmware build (`eda fw --build`), RP2040 emulation co-simulated with ngspice | ✅ done | §15 |
 
 - All six open decisions from `PROJECT_SUMMARY.md` §11 are settled (Python, YAML, no tscircuit fork, YAML is the PCB source of truth, RP2040/Pico, 2-layer boards).
-- Last commit: `02eac90` (M3), pushed to https://github.com/TechieQuokka/ai-eda (public, `master`).
-- Quality gates at the stop: `ruff format --check`, `ruff check`, `pyright` (strict), and `pytest` (145 tests) all pass; all five example projects pass `eda run`.
+- Repository: https://github.com/TechieQuokka/ai-eda (public, `master`); M4 commits are local until the user approves a push.
+- Quality gates: `ruff format --check`, `ruff check`, `pyright` (strict), and `pytest` (152 tests) all pass; all five example projects pass `eda run`.
 
 ## 2. Resuming on this machine
 
@@ -25,7 +25,7 @@ Everything below is already installed here; on a fresh machine see §3.
 cd ai-eda
 uv sync                                   # Python deps (pinned in pyproject.toml)
 uv run ruff format --check && uv run ruff check && uv run pyright && uv run pytest
-uv run eda run projects/pico_io           # check → fw → sim → render → pcb
+uv run eda run projects/pico_io           # check → fw (+ build) → sim (+ firmware in the loop) → render → pcb
 uv run eda watch projects/pico_io         # live viewer at http://127.0.0.1:8765/
 ```
 
@@ -42,6 +42,12 @@ Example projects: `led_demo` (op, board), `rc_filter` (tran + op), `opamp_amp` (
 | Java | 21 | pre-installed; keep as is | Freerouting |
 | Freerouting | 2.1.0 jar | `tools/freerouting/fetch.sh` (SHA-256 pinned; 2.2+ needs Java 25) | `pcb` autorouting |
 | cairo | system library | pre-installed | PNG output (CairoSVG) |
+| arm-none-eabi-gcc + newlib | 13.2.1 | `sudo apt install gcc-arm-none-eabi libnewlib-arm-none-eabi` (user ran it) | `eda fw --build` |
+| CMake | 3.28 | pre-installed | firmware build |
+| pico-sdk | 2.3.1 | `tools/fetch-pico-sdk.sh` → `tools/pico-sdk/` (git-ignored, 436 MB) | firmware build |
+| rp2040js | 1.4.1 | `npm --prefix tools/rp2040 ci` | co-simulation |
+| RP2040 boot ROM | B2 | `tools/rp2040/fetch-bootrom.sh` → `tools/rp2040/dl/` (git-ignored) | co-simulation |
+| libngspice | 47 (shared) | built with ngspice into `/usr/local/lib` | co-simulation |
 
 Local-only, git-ignored state worth knowing about:
 
@@ -49,17 +55,13 @@ Local-only, git-ignored state worth knowing about:
 - `build/` (278 MB: ngspice source/build), `tools/freerouting/dl/` (64 MB jar), `tools/freerouting/data/` (router settings/logs, kept inside the repo on purpose), every project's `out/` (regenerated, includes the route cache).
 - KiCad 3D models (`kicad-packages3d`, several GB) are not installed, so 3D renders show bare boards.
 
-## 4. Next: M4 plan (approved scope not yet started)
+## 4. Next
 
-Goal (`PROJECT_SUMMARY.md` §12): firmware runs against the simulated circuit.
+M4 is finished (`DESIGN_DECISIONS.md` §15): `pico_io` blinks its LED in the emulator, the `tran` tests see the LED current toggle with a 1 s period (200 ms with the button held), and the pot reading reaches the firmware through the ADC (`pot=2047` / `pot=1024` on the UART). Candidates for what comes next, none started or agreed:
 
-1. **Toolchain** — needs the user, because of `sudo` and a large download:
-   - `sudo apt install gcc-arm-none-eabi libnewlib-arm-none-eabi cmake` (the user runs it; `!` prefix does not work in a plain terminal).
-   - pico-sdk into `tools/pico-sdk/` (git-ignored) with submodules (`tinyusb` is the large one). Check the latest release tag first (working rule 6).
-   - Then build `projects/pico_io/firmware` (`CMakeLists.txt` is ready) and add `eda fw --build` with compiler errors mapped to `Issue`s (file, line).
-2. **Emulator** — verify before choosing: Renode's RP2040 support is a community plugin, not upstream (earlier advice overstated it). Alternatives to evaluate: rp2040js (Wokwi's JS emulator), QEMU (no upstream RP2040 machine at last check). Criteria: runs the pico-sdk `.elf` unmodified, exposes GPIO/ADC/UART to an external process, scriptable headless.
-3. **Co-simulation (level 2)** — the emulator drives GPIO outputs; ngspice computes the analog side; ADC reads come back from node voltages. Start with a lock-step loop over `tran` time windows (PWM duty → average, ADC samples at window boundaries) before anything fancier.
-4. Done when: `pico_io` firmware blinks the LED in emulation and a `tran` test sees the LED current toggle, with the button and pot readings flowing back to the firmware.
+1. Firmware stimulus: UART RX input, time-varying buttons (a switch that changes state during a test).
+2. Tighter output→input timing (inputs currently lag one window except after pin mode changes).
+3. Carry-overs from earlier milestones (table below).
 
 ## 5. Known issues and carry-overs
 
@@ -70,7 +72,9 @@ Goal (`PROJECT_SUMMARY.md` §12): firmware runs against the simulated circuit.
 | Boards | Freerouting is nondeterministic (handled by a route cache keyed on the `.dsn` hash); one unexplained 10-min hang (now a 180 s timeout) | §13.3, adapters/freerouting.py |
 | Simulation | TLV6001-style vendor models need `.option optran` to converge; not supported | §12.4 |
 | Simulation | Old vendor macromodels (TL072 1989) do not model supply current | §12.4 |
-| Firmware | Static pin model only (no timing, PWM duty, ADC conversion) until M4 | §14.6 |
+| Firmware | Co-simulation exchanges values once per `step`; output→input paths lag one window | §15.5 |
+| Firmware | Only core 0 emulated; no UART RX stimulus; ADC reference = `vio` | §15.5 |
+| Simulation | libngspice reads a user `.spiceinit` (`ngSpice_nospiceinit` crashes ngspice 47) | §15.5 |
 | YAML | Values with commas inside `{ ... }` must be quoted; the loader explains it when it happens | §12.1, §14.6 |
 | Schematic | netlistsvg layout is automatic only; crowded for op-amp/MCU circuits | §12.4 |
 

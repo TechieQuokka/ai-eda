@@ -201,7 +201,7 @@ Rationale for each is in `DESIGN_DECISIONS.md` §2 and §7.
 | **M1** ✅ | Part DB, import vendor SPICE models, waveform output, ERC, AC analysis | Real ICs (e.g. an op-amp circuit) simulate with pass/fail tests (done 2026-10-20: TI TL072 / TLV9002) |
 | **M2** ✅ | KiCad format generation, `kicad-cli` DRC and Gerber export, auto-routing | A board is produced from design files with DRC results as JSON (done 2026-10-20) |
 | **M3** ✅ | Firmware integration: pin header generation, static cross-checks | Changing a pin in the schematic updates `pins.h` and flags conflicts (done 2026-10-20) |
-| **M4** | MCU emulation + SPICE mixed simulation | Firmware runs against the simulated circuit |
+| **M4** ✅ | MCU emulation + SPICE mixed simulation | Firmware runs against the simulated circuit (done 2026-10-20: pico-sdk build, rp2040js + ngspice lock-step) |
 | **Later** | Decide whether to build a custom PCB editor | Only if KiCad-based flow proves limiting |
 
 ## 13. Observability for the Human
@@ -236,5 +236,5 @@ Because the human only watches, provide:
 
 ## 16. Immediate Next Steps
 
-1. Start M4: install the RP2040 toolchain (pico-sdk, arm-none-eabi-gcc) and compile the firmware, then pick and verify an emulator (Renode RP2040 plugin or alternatives) and couple it to ngspice.
+1. M4 is done (`DESIGN_DECISIONS.md` §15). Next candidates: UART RX / stimulus input to the firmware, finer output→input timing, a second MCU family.
 2. Carry-overs: `optran` for hard-to-converge vendor models (§12.4); connectivity-aware placement, ground pours, KiCad schematic export (§13.5); MCU-aware placement (§14.6).

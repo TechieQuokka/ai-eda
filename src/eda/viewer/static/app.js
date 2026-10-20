@@ -117,6 +117,15 @@ function renderTests(state) {
       el("thead", {}, el("tr", {}, el("th", {}, "measure"), el("th", {}, "value"),
         el("th", {}, "expected"), el("th", {}, ""))),
       el("tbody", {}, ...rows)));
+    if (test.firmware) {
+      const fw = test.firmware;
+      const serial = Object.entries(fw.serial).map(([net, text]) =>
+        el("div", {}, el("code", {}, net), el("pre", { class: "serial" }, text || "(nothing sent)")));
+      blocks.push(el("details", {},
+        el("summary", {}, `firmware in the loop · ${fw.image} · ${fw.windows} windows` +
+          (fw.halted !== null ? ` · halted (${fw.halted})` : "")),
+        ...serial));
+    }
     if (test.operating_point) {
       const opRows = Object.entries(test.operating_point).map(([signal, v]) =>
         el("tr", {}, el("td", {}, el("code", {}, signal)), el("td", {}, v.display)));
@@ -139,8 +148,17 @@ function renderFirmware(state) {
     el("td", {}, el("code", {}, p.macro)),
     el("td", {}, `${p.pin} (GPIO ${p.gpio})`),
     el("td", {}, p.role + (p.pull !== "none" ? `, pull-${p.pull}` : "") + (p.initial ? `, starts ${p.initial}` : ""))));
+  const build = data.build;
+  let built = "not built";
+  if (build && build.built) {
+    built = `built ${build.elf} · flash ${build.size.flash} B` +
+      (build.size_percent ? ` (${build.size_percent.flash}%)` : "") + ` · RAM ${build.size.ram} B`;
+  } else if (build && build.built === false) {
+    built = "build failed (see issues)";
+  }
   $("fw").replaceChildren(
     el("p", { class: "muted" }, `${data.mcu} · ${data.family} · generated ${data.generated.join(", ")}`),
+    el("p", { class: "muted" }, built),
     el("table", {},
       el("thead", {}, el("tr", {}, el("th", {}, "macro"), el("th", {}, "pin"), el("th", {}, "role"))),
       el("tbody", {}, ...rows)));

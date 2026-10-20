@@ -74,16 +74,20 @@ def run(root: Path) -> Result:
     if design is not None:
         data["check"] = _summary(design)
         _write(root, "check", diag.to_result("check", root.name, data["check"]))
+        image: Path | None = None
         if design.firmware is not None:
             fw_diag = Diagnostics()
             fw_data = firmware.generate(design, fw_diag)
             if fw_diag.ok:
-                fw_data["build"] = _build_if_possible(design, fw_diag)
+                build = _build_if_possible(design, fw_diag)
+                fw_data["build"] = build
+                uf2 = build.get("uf2")
+                image = root / uf2 if isinstance(uf2, str) else None
             data["fw"] = fw_data
             _write(root, "fw", fw_diag.to_result("fw", root.name, fw_data))
             diag.extend(fw_diag)
         sim_diag = Diagnostics()
-        data["sim"] = simulate.run_tests(design, sim_diag)
+        data["sim"] = simulate.run_tests(design, sim_diag, image=image, build_firmware=False)
         _write(root, "sim", sim_diag.to_result("sim", root.name, data["sim"]))
         render_diag = Diagnostics()
         data["render"] = _render(design, render_diag)
@@ -151,6 +155,8 @@ def _plot_series(
             else:
                 real = [v.real if isinstance(v, complex) else v for v in values]
                 add(waveform.Trace(probe.text, probe.unit, real))
+        if exp.measure.reduction == "period":
+            continue  # a duration, not a position on either axis
         unit = exp.measure.unit
         axis: Literal["x", "y"] = "x" if unit == x_unit else "y"
         label = f"{exp.measure.text}: {exp.range_text}"
