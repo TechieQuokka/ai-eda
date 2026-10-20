@@ -9,7 +9,10 @@ def run_erc(circuit: ResolvedCircuit, diag: Diagnostics) -> None:
     connected: set[tuple[str, str]] = {pin for pins in circuit.nets.values() for pin in pins}
 
     for ref, part in circuit.parts.items():
-        missing = [pin for pin in part.spec.pins if (ref, pin) not in connected]
+        optional = set(part.spec.optional_pins)
+        missing = [
+            pin for pin in part.spec.pins if (ref, pin) not in connected and pin not in optional
+        ]
         if missing:
             diag.error(
                 "unconnected_pin",
@@ -18,7 +21,7 @@ def run_erc(circuit: ResolvedCircuit, diag: Diagnostics) -> None:
                 pins=missing,
             )
         nets = {circuit.net_of(ref, pin) for pin in part.spec.pins} - {None}
-        if len(part.spec.pins) > 1 and len(nets) == 1 and not missing:
+        if len(part.spec.pins) > 1 and len(nets) == 1 and not missing and not optional:
             rule, message = "shorted_part", f"{ref}: all pins are on net {nets.pop()!r}"
             if part.spec.category == "source":
                 diag.error(rule, f"{message} (source shorted)", src.at("parts", ref))

@@ -158,10 +158,11 @@ def _schema_message(kind: str, message: str, loc: DataPath) -> str:
     where = format_path(loc) or "document"
     if kind == "extra_forbidden":
         key = str(loc[-1]) if loc else ""
-        if "(" in key or ")" in key:
+        if any(c in key for c in "() "):
             return (
                 f"unknown field {where!r}: a comma inside {{ ... }} split the value; "
-                'quote it, e.g. measure: "at(db(voltage(OUT)), 1kHz)"'
+                'quote it, e.g. measure: "at(db(voltage(OUT)), 1kHz)" or '
+                'description: "LED, active high"'
             )
         return f"unknown field {where!r}"
     if kind == "missing":

@@ -35,6 +35,10 @@ class Expectation(StrictModel):
 class SimTest(StrictModel):
     description: str = ""
     analysis: Analysis
+    # Override firmware pin levels for this test, e.g. { LED: high } (net name → level).
+    pins: dict[Ident, Literal["high", "low"]] = Field(
+        default_factory=dict[Ident, Literal["high", "low"]]
+    )
     expect: Annotated[list[Expectation], Field(min_length=1)]
 
 

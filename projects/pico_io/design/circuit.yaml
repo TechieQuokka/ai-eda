@@ -1,0 +1,19 @@
+description: Pico I/O demo. Net names become firmware pin names (PIN_<NET>).
+parts:
+  J1: { type: dc_voltage_source, voltage: 5V }      # 5 V power input on VSYS
+  U1: { type: raspberry_pi_pico }
+  R1: { type: resistor, resistance: 150ohm }
+  D1: { type: led, color: green }
+  SW1: { type: push_button }
+  RV1: { type: potentiometer, resistance: 10kohm, position: 50% }
+  J2: { type: connector_1x03 }                      # UART header: 1 TX, 2 RX, 3 GND
+nets:
+  VSYS: [J1.+, U1.VSYS]
+  V3V3: [U1.3V3, RV1.3]
+  LED: [U1.GP15, R1.1]
+  LED_A: [R1.2, D1.anode]
+  BUTTON: [U1.GP14, SW1.1]
+  POT: [U1.GP26, RV1.2]
+  UART_TX: [U1.GP0, J2.1]
+  UART_RX: [U1.GP1, J2.2]
+  GND: [J1.-, U1.GND, D1.cathode, SW1.2, RV1.1, J2.3]

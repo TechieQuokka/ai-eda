@@ -42,6 +42,8 @@ def to_netlistsvg(name: str, circuit: ResolvedCircuit) -> dict[str, JsonValue]:
         directions: dict[str, JsonValue] = {}
         connections: dict[str, JsonValue] = {}
         for index, pin in enumerate(part.spec.pins):
+            if pin in part.spec.optional_pins and circuit.net_of(ref, pin) is None:
+                continue  # unused optional pins (e.g. spare GPIOs) are not drawn
             port = part.spec.symbol.ports[pin]
             # Layout runs top-down: inputs on top. Sources put + on top via "output".
             first = index == 0

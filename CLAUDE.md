@@ -71,3 +71,11 @@ The CLI never makes design decisions; it only reports.
 - `uv run eda pcb projects/<name>` builds, autoroutes (Freerouting), runs DRC, and exports Gerbers/drill/BOM. DRC issues come back as `drc_<type>` errors pointing at the part; `unrouted` means the router gave up: move parts apart (placement), enlarge the board, or raise `routing.passes`.
 - Read `unused_pads` warnings: unused IC channels usually need tying off.
 - Freerouting must be installed once: `tools/freerouting/fetch.sh`.
+
+## 8. Firmware (`design/firmware.yaml`, `firmware/`)
+
+- The MCU is the Raspberry Pi Pico (`raspberry_pi_pico`, RP2040). Wire GPIOs in `circuit.yaml` with meaningful net names: the net name becomes the firmware macro `PIN_<NET>`.
+- `firmware.yaml` declares each GPIO net's role: `mode: input|output` (+ `pull`, `initial`) or `function:` (e.g. `UART0_TX`, `ADC0`, `PWM7_B`, `I2C0_SDA`). `eda part show raspberry_pi_pico` lists which functions each pin has.
+- `uv run eda fw projects/<name>` validates roles against the pinout, finds conflicts, writes `firmware/pins.h` and `firmware/pins_init.h` (never edit those by hand), and scans firmware sources.
+- Firmware code uses only `PIN_` macros and `pins_init()`; hard-coded GPIO numbers are warnings, unknown macros are errors.
+- Simulation follows firmware.yaml (outputs drive, pulls pull, others are high-Z). Test each output state with `pins: { LED: high }` in a test.

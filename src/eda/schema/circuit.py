@@ -15,7 +15,7 @@ class PartInstance(StrictModel):
 
     type: Ident
     footprint: str | None = None
-    pads: dict[str, str | int] | None = None
+    pads: dict[str, str | int | list[str]] | None = None
 
     @property
     def params(self) -> dict[str, object]:

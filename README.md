@@ -9,7 +9,7 @@ You describe the goal. The agent writes the circuit as YAML, simulates it, reads
 ![Python](https://img.shields.io/badge/python-3.13-3776AB?logo=python&logoColor=white)
 ![ngspice](https://img.shields.io/badge/simulator-ngspice%2047-555)
 ![pyright](https://img.shields.io/badge/types-pyright%20strict-2563eb)
-![tests](https://img.shields.io/badge/tests-137%20passing-15803d)
+![tests](https://img.shields.io/badge/tests-145%20passing-15803d)
 ![license](https://img.shields.io/badge/license-free%20for%20learning%20%7C%20paid%20commercial-b45309)
 
 </div>
@@ -100,6 +100,7 @@ Every run is written to the project's `iterations.jsonl` with the note, the chan
 | **Vendor models** | `eda model inspect` / `eda model import` turn a manufacturer `.subckt` (e.g. TI TL072, TLV9002) into a part, detecting PSpice-compatibility mode automatically |
 | **Rendering** | Schematic auto-layout via netlistsvg with a custom skin and net labels; waveform SVGs; PNG copies via CairoSVG for the agent to look at |
 | **Boards** | `board.yaml` (outline, rules, optional placement) → KiCad 10 board → Freerouting autorouting → `kicad-cli` DRC as JSON → Gerbers, drill, positions, and BOM in one zip |
+| **Firmware** | Raspberry Pi Pico (RP2040) part with its full GPIO function table; `firmware.yaml` assigns roles per net; `eda fw` checks functions and conflicts, generates `pins.h` / `pins_init.h`, and scans C sources; simulation follows the firmware's pin states |
 | **Live viewer** | `eda watch` re-runs on every save and pushes updates to a local page: schematic, verdicts, operating point, zoomable waveforms, board layout and 3D view, iteration log |
 | **Helpers** | `eda value` for E3 … E192 standard values, `eda part list/show`, `eda log` notes |
 
@@ -142,6 +143,19 @@ $ eda pcb projects/tl072_amp
 
 The YAML stays the source of truth: the KiCad board, routes, and Gerbers are regenerated on every run, and identical designs give identical boards.
 
+### Schematic and firmware stay in sync
+
+```yaml
+# design/firmware.yaml — the schematic decides the pin, this file decides the role
+mcu: U1
+signals:
+  LED:     { mode: output, initial: low }
+  BUTTON:  { mode: input, pull: up }
+  UART_TX: { function: UART0_TX }
+```
+
+`eda fw` writes `firmware/pins.h` (`#define PIN_LED 15u`) and a pico-sdk `pins_init()`. Move the LED to GP16 in `circuit.yaml` and the header follows; move `UART_TX` to GP2 and you get *"UART0_TX is not available on GP2; it is on GP0, GP12, GP16, GP28"*. Tests can set firmware pin levels (`pins: { LED: high }`) and check the analog result.
+
 ### Vendor models
 
 Manufacturer SPICE models are imported locally and are **not** part of this repository, because their licenses usually forbid redistribution:
@@ -174,6 +188,7 @@ uv run eda watch projects/rc_filter  # live viewer at http://127.0.0.1:8765/
 | `eda check [PROJECT]` | Validate files, run ERC, compile tests |
 | `eda sim [PROJECT] [-t TEST]` | Simulate and judge every expectation |
 | `eda render [PROJECT]` | Schematic and waveform SVG/PNG |
+| `eda fw [PROJECT]` | Firmware: check pin roles, generate `pins.h` / `pins_init.h`, scan sources |
 | `eda pcb [PROJECT]` | Board: build, autoroute, DRC, Gerbers/drill/BOM |
 | `eda run [PROJECT] [-m NOTE]` | check → sim → render (→ pcb) in one call, logged with an optional note |
 | `eda watch [PROJECT]` | Re-run on change and serve the live viewer |
@@ -195,8 +210,8 @@ The repository's [`CLAUDE.md`](CLAUDE.md) is the working contract for an agent s
 | **M0** | Text design → ngspice → JSON verdict → schematic and waveforms → live viewer | ✅ Done |
 | **M1** | Vendor SPICE models (`.lib` subcircuits), op-amps, AC analysis | ✅ Done |
 | **M2** | KiCad board generation, `kicad-cli` DRC and Gerber export, auto-routing | ✅ Done |
-| **M3** | Firmware integration: generated `pins.h`, schematic/firmware cross-checks | Next |
-| **M4** | MCU emulation co-simulated with the analog circuit | Planned |
+| **M3** | Firmware integration: generated `pins.h`, schematic/firmware cross-checks | ✅ Done |
+| **M4** | Firmware build, MCU emulation co-simulated with the analog circuit | Next |
 
 Background and decisions: [`PROJECT_SUMMARY.md`](PROJECT_SUMMARY.md), [`DESIGN_DECISIONS.md`](DESIGN_DECISIONS.md).
 
@@ -205,7 +220,7 @@ Background and decisions: [`PROJECT_SUMMARY.md`](PROJECT_SUMMARY.md), [`DESIGN_D
 ```bash
 uv run ruff format --check && uv run ruff check   # style and lint
 uv run pyright                                    # strict static typing
-uv run pytest                                     # 137 tests
+uv run pytest                                     # 145 tests
 ```
 
 ---

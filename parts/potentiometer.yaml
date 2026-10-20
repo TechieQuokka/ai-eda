@@ -1,0 +1,23 @@
+id: potentiometer
+name: Potentiometer
+category: passive
+description: >
+  Trimmer potentiometer. `position` is the wiper position from pin 1 (0 %) to pin 3
+  (100 %). Pin 2 is the wiper. Pin currents: current(RV1.1), current(RV1.2), current(RV1.3).
+pins: ["1", "2", "3"]
+params:
+  resistance: { unit: ohm, description: total track resistance }
+  position: { unit: "%", default: 50%, description: wiper position from pin 1 }
+spice:
+  prefix: R
+  template: |
+    <name>a <pin:1> <pin:2> {max(<param:resistance>*<param:position>/100, 1e-3)}
+    <name>b <pin:2> <pin:3> {max(<param:resistance>*(1-<param:position>/100), 1e-3)}
+  pin_currents: true
+symbol:
+  cell: x_pot
+  ports: { "1": "1", "2": "2", "3": "3" }
+  label: "<param:resistance> @<param:position>"
+pcb:
+  footprint: Potentiometer_THT:Potentiometer_Bourns_3386P_Vertical
+  pads: { "1": "1", "2": "2", "3": "3" }

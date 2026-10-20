@@ -1,0 +1,7 @@
+# Pico lies horizontally along the top; the small parts are packed below it.
+board:
+  spacing: 3mm
+rules:
+  track_width: 0.3mm
+placement:
+  U1: { x: 40mm, y: 15mm, rotation: 90deg }

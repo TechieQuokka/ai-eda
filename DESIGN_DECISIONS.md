@@ -1,7 +1,7 @@
 # AI-Native EDA — Design Decisions
 
 > Companion to `PROJECT_SUMMARY.md`. Records what was discussed and decided on 2026-10-20.
-> Status: M0, M1, M2 complete (2026-10-20). M0: §10–§11. M1: §12. M2: §13.
+> Status: M0–M3 complete (2026-10-20). M0: §10–§11. M1: §12. M2: §13. M3: §14.
 
 ---
 
@@ -108,7 +108,6 @@ Not needed for M0; revisit at the listed milestone.
 
 | # | Topic | Default leaning | Revisit at |
 |---|---|---|---|
-| 5 | Primary target MCU | Undecided | M3 |
 | 6 | Board complexity | 2-layer (decided in M2, §13); multi-layer later if needed | — |
 
 ## 8. Research Snapshot (2026-10)
@@ -394,3 +393,63 @@ routing:
 3. **No copper pours / ground plane** yet.
 4. **3D render has no component bodies** because `kicad-packages3d` (several GB) is not installed.
 5. Dual-channel parts: an imported single-channel model on a dual package leaves the other channel floating; the `unused_pads` warning says so, but tying it off is still a manual design step.
+
+## 14. M3 Specification and Result (2026-10-20)
+
+Goal (`PROJECT_SUMMARY.md` §12): changing a pin in the schematic updates `pins.h` and flags conflicts.
+
+### 14.1 Decision #5 — target MCU
+
+**RP2040, as the Raspberry Pi Pico module** (decided with the user): cheap, free toolchain (pico-sdk + GCC), a simple and regular pin-function table, and a 40-pin DIP module that is easy to put on a two-layer board. Correction to the earlier rationale: Renode's RP2040 support comes from a community plugin, not upstream; it will be verified at M4.
+
+### 14.2 Model
+
+- **Part `raspberry_pi_pico`**: 33 pins (GP0–GP22, GP26–GP28, GND, 3V3, 3V3_EN, VSYS, VBUS, RUN, ADC_VREF), an `mcu:` facet with each GPIO's functions generated from the RP2040 datasheet's function-select table (SPI, UART, I2C, PWM slice/channel, ADC0–2, PIO0/1), and the Pico footprint (`GND` owns eight pads). All pins except GND are `optional_pins`, so unused GPIOs are not ERC errors.
+- **The schematic decides which GPIO a net reaches; `design/firmware.yaml` says how firmware uses that net**:
+
+```yaml
+mcu: U1
+signals:                      # net name → role; macro is PIN_<NET>
+  LED:     { mode: output, initial: low }
+  BUTTON:  { mode: input, pull: up }
+  POT:     { function: ADC0 }
+  UART_TX: { function: UART0_TX }
+```
+
+- **Simulation follows the firmware**: the MCU becomes a 3.3 V source (3V3 pin behind 1 Ω) with each used GPIO driven high/low through 50 Ω, pulled up/down through 50 kΩ, or high-impedance; UART TX and SPI CSN idle high. A test can override levels: `pins: { LED: high }`.
+- New parts for this: `push_button` (state open/pressed), `potentiometer` (resistance, position %), `connector_1x02/03/04` (off-board headers). Templates may span several lines; `<choice:P>` maps a choice to a SPICE value.
+
+### 14.3 Checks (`eda check`, `eda fw`)
+
+| Rule | When |
+|---|---|
+| `pin_function` | The function is not on that pin; the message lists the pins that have it |
+| `pin_conflict` | One peripheral signal (e.g. UART0_TX) on two nets |
+| `pwm_shared` (warning) | Two nets on the same PWM slice channel |
+| `signal_pin` | A declared net reaches no GPIO (or several) of the MCU |
+| `undeclared_gpio` (warning) | A GPIO is wired but firmware.yaml does not say how it is used |
+| `gpio_overvoltage` | A source above VIO + 0.3 V drives a GPIO net |
+| `undefined_pin` | Firmware source uses a `PIN_` macro the design does not define (file:line) |
+| `hardcoded_gpio` (warning) | `gpio_put(15, …)`-style literals; suggests the macro |
+| `unknown_signal` | A test overrides a pin that is not a firmware signal |
+
+### 14.4 Generated files
+
+`eda fw` (and `eda run` when firmware.yaml exists) writes `firmware/pins.h` (`#define PIN_LED 15u` with role comments) and `firmware/pins_init.h` (a pico-sdk `pins_init()` that sets direction, pulls, initial levels, and peripheral functions). The viewer shows the pin table.
+
+### 14.5 Result
+
+`projects/pico_io` (Pico, LED, button, potentiometer, UART header, 5 V on VSYS):
+
+- Simulation: LED 6.1 mA with `LED: high`, 0 A with `LED: low`; BUTTON 3.3 V via the internal pull-up; POT 1.65 V at mid-scale; UART TX idles at 3.3 V — all pass.
+- Firmware: `pins.h` / `pins_init.h` generated; `firmware/main.c` uses only `PIN_` macros and passes the scan.
+- Board: fully routed, 0 DRC errors (Pico placed by hand, the rest packed).
+- Done criterion, as tests (`tests/test_m3.py`): moving `LED` from GP15 to GP16 in `circuit.yaml` turns `#define PIN_LED 15u` into `16u`; moving `UART_TX` to GP2 fails with "UART0_TX is not available on GP2; it is on GP0, GP12, GP16, GP28".
+
+### 14.6 Not done / findings
+
+1. **The firmware is not compiled.** pico-sdk and `arm-none-eabi-gcc` are not installed (the SDK with submodules is a large download, the compiler needs `sudo apt`); `CMakeLists.txt` is ready for when they are. This is the first step of M4.
+2. **Static pin model only**: no timing, PWM duty, or ADC conversion. That is M4's co-simulation.
+3. **Auto-placement around a 51 mm module is poor**; hand placement of the MCU (as in `pico_io/design/board.yaml`) is needed for a sensible board.
+4. Another flow-mapping comma trap (`description: LED, active high`) hit while writing firmware.yaml; the loader's hint now covers any split value, not just measures.
+5. Pico's internal nets (GP23–GP25, GP29, the on-board LED) are not modelled.

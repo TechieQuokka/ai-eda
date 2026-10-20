@@ -1,0 +1,19 @@
+id: connector_1x02
+name: Pin Header 1x02
+category: connector
+description: >
+  2.54 mm pin header for off-board signals (pin 2 is the reference, usually GND).
+  In simulation each pin sees 1 GΩ to pin 2, i.e. nothing is plugged in.
+pins: ["1", "2"]
+spice:
+  prefix: R
+  template: |
+    <name>_1 <pin:1> <pin:2> 1e9
+  pin_currents: true
+symbol:
+  cell: x_conn2
+  ports: { "1": "1", "2": "2" }
+  label: "1x02"
+pcb:
+  footprint: Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical
+  pads: { "1": "1", "2": "2" }

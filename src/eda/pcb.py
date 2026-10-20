@@ -48,7 +48,15 @@ def build(design: Design, diag: Diagnostics) -> dict[str, JsonValue]:
 
     try:
         cached = _route_cached(dsn, ses, board.passes, out)
-        stats = kicad.pcbnew({"command": "import_ses", "pcb": str(pcb), "ses": str(ses)})
+        kicad.pcbnew({"command": "import_ses", "pcb": str(pcb), "ses": str(ses)})
+        removed = 0
+        for _ in range(20):
+            step = int(kicad.pcbnew({"command": "remove_stubs", "pcb": str(pcb)})["removed"])
+            removed += step
+            if step == 0:
+                break
+        stats = kicad.pcbnew({"command": "inspect", "pcb": str(pcb)})
+        stats["removed_stubs"] = removed
     except (freerouting.FreeroutingUnavailable, kicad.KicadError, RuntimeError) as exc:
         diag.fail_tool("autoroute", f"autorouting failed: {exc}")
         return {"pcb": rel(pcb), "layout": _json(layout)}

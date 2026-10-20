@@ -59,6 +59,8 @@ def main(argv: list[str] | None = None) -> int:
         result = pipeline.render(root)
     elif command == "pcb":
         result = pipeline.pcb(root)
+    elif command == "fw":
+        result = pipeline.fw(root)
     else:
         result = pipeline.run(root)
     history.record_run(paths, result, note=args.message)
@@ -89,6 +91,7 @@ def _parser() -> argparse.ArgumentParser:
     sim = with_note(with_project("sim", "simulate every test and judge expectations"))
     sim.add_argument("-t", "--test", help="run only this test")
     with_note(with_project("render", "render the schematic and waveforms (SVG + PNG)"))
+    with_note(with_project("fw", "check firmware pin roles, generate pins.h, scan sources"))
     with_note(with_project("pcb", "build, autoroute, DRC, and export the board"))
     with_note(with_project("run", "check, sim, render, and pcb (if board.yaml) in one call"))
     log = with_project("log", "append a note to the iteration log")

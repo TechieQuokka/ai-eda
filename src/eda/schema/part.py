@@ -50,14 +50,42 @@ class SpiceSpec(StrictModel):
     models: dict[str, str] = Field(default_factory=dict[str, str])
     include: str | None = None
     compat: Literal["ps"] | None = None
+    generator: Literal["mcu"] | None = None  # netlist written by code, not by `template`
+    # `<choice:P>` in the template becomes choice_values[P][value of P], e.g. a switch's
+    # resistance for state open / pressed.
+    choice_values: dict[str, dict[str, str]] = Field(default_factory=dict[str, dict[str, str]])
 
 
 class PcbSpec(StrictModel):
     """Default footprint (`Library:Name` from the KiCad libraries) and pin → pad numbers."""
 
     footprint: str
-    pads: dict[str, str]
+    pads: dict[str, str | list[str]]  # a pin may own several pads (e.g. GND)
     nc: list[str] = Field(default_factory=list[str])  # pads that are meant to stay open
+
+
+class GpioSpec(StrictModel):
+    number: int
+    functions: list[str]
+
+
+class McuSpec(StrictModel):
+    """Microcontroller facet: I/O voltage, power pins, and the functions of each GPIO.
+
+    `gpio` maps a part pin (e.g. GP15) to its GPIO number and the peripheral functions it
+    can take (e.g. UART0_TX, SPI1_SCK, I2C0_SDA, PWM7_B, ADC0). Every GPIO can also be a
+    plain digital input or output.
+    """
+
+    family: str
+    vio: float  # I/O supply voltage in volts
+    supply_pin: str  # regulated I/O supply output (modelled as a source)
+    ground_pin: str
+    drive_ohm: float = 50.0  # output driver resistance for simulation
+    pull_ohm: float = 50e3  # internal pull-up / pull-down resistance
+    pins_pulled_up: list[str] = Field(default_factory=list[str])  # e.g. RUN, 3V3_EN
+    loads: dict[str, float] = Field(default_factory=dict[str, float])  # pin → ohms to ground
+    gpio: dict[str, GpioSpec]
 
 
 class SymbolSpec(StrictModel):
@@ -80,6 +108,8 @@ class PartSpec(StrictModel):
     spice: SpiceSpec
     symbol: SymbolSpec
     pcb: PcbSpec | None = None
+    mcu: McuSpec | None = None
+    optional_pins: list[str] = Field(default_factory=list[str])  # may stay unconnected
     dc_path: bool = True
     datasheet: str | None = None
     source_dir: str | None = Field(
@@ -99,6 +129,10 @@ class PartSpec(StrictModel):
             raise ValueError("pin names must be unique")
         if set(self.symbol.ports) != set(self.pins):
             raise ValueError("symbol.ports must map every pin exactly once")
+        if self.optional_pins and not set(self.optional_pins) <= set(self.pins):
+            raise ValueError("optional_pins must be pins of the part")
+        if self.mcu is not None and not set(self.mcu.gpio) <= set(self.pins):
+            raise ValueError("mcu.gpio keys must be pins of the part")
         if self.pcb is not None and set(self.pcb.pads) != set(self.pins):
             raise ValueError("pcb.pads must map every pin exactly once")
         if self.spice.model_param is not None:

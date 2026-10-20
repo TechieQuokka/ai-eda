@@ -1,0 +1,4 @@
+name: pico_io
+description: >
+  Raspberry Pi Pico (RP2040) with a status LED, a push button, a potentiometer on the ADC,
+  and a UART header; powered from 5 V on VSYS.

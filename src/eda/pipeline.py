@@ -5,8 +5,8 @@ from typing import Literal
 
 from pydantic import JsonValue
 
+from eda import firmware, simulate
 from eda import pcb as board
-from eda import simulate
 from eda.adapters import netlistsvg, rasterize
 from eda.design import load_design
 from eda.model import CompiledTest, Design, Op
@@ -43,6 +43,15 @@ def render(root: Path) -> Result:
     return _finish(root, "render", diag, data)
 
 
+def fw(root: Path) -> Result:
+    diag = Diagnostics()
+    design = load_design(root, diag)
+    data: dict[str, JsonValue] = {}
+    if design is not None:
+        data = firmware.generate(design, diag)
+    return _finish(root, "fw", diag, data)
+
+
 def pcb(root: Path) -> Result:
     diag = Diagnostics()
     design = load_design(root, diag)
@@ -53,7 +62,8 @@ def pcb(root: Path) -> Result:
 
 
 def run(root: Path) -> Result:
-    """check → sim → render (→ pcb when design/board.yaml exists) in one call.
+    """check (→ fw) → sim → render (→ pcb) in one call; fw and pcb run when
+    design/firmware.yaml and design/board.yaml exist.
 
     Stops after check if the design has errors."""
     diag = Diagnostics()
@@ -62,6 +72,11 @@ def run(root: Path) -> Result:
     if design is not None:
         data["check"] = _summary(design)
         _write(root, "check", diag.to_result("check", root.name, data["check"]))
+        if design.firmware is not None:
+            fw_diag = Diagnostics()
+            data["fw"] = firmware.generate(design, fw_diag)
+            _write(root, "fw", fw_diag.to_result("fw", root.name, data["fw"]))
+            diag.extend(fw_diag)
         sim_diag = Diagnostics()
         data["sim"] = simulate.run_tests(design, sim_diag)
         _write(root, "sim", sim_diag.to_result("sim", root.name, data["sim"]))

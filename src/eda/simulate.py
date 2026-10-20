@@ -91,6 +91,7 @@ def _run_one(
             design.circuit,
             test.analysis,
             Path(raw_path.name),
+            _drives(design, test),
         ),
         encoding="utf-8",
     )
@@ -157,6 +158,13 @@ def _run_one(
         wave_path.write_text(_waveform_json(axis, traces), encoding="utf-8")
         outcome["waveform"] = design.paths.rel(wave_path)
     return outcome
+
+
+def _drives(design: Design, test: CompiledTest) -> dict[str, dict[str, str]]:
+    firmware = design.firmware
+    if firmware is None:
+        return {}
+    return {firmware.mcu: firmware.drives(test.pins)}
 
 
 def _real(value: float | complex) -> float:

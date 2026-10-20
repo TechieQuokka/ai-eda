@@ -6,6 +6,7 @@ units, pin references, and test expressions. ERC lives in `eda.verify.erc`.
 
 from pathlib import Path
 
+from eda import firmware as fw
 from eda.footprints import pad_numbers
 from eda.loader import Document, SourceMap, load_yaml, validate
 from eda.model import (
@@ -22,6 +23,7 @@ from eda.model import (
     PinKey,
     ResolvedBoard,
     ResolvedCircuit,
+    ResolvedFirmware,
     ResolvedPart,
     Tran,
     domain_of,
@@ -30,6 +32,7 @@ from eda.project import ProjectPaths, load_parts
 from eda.result import Diagnostics, Location
 from eda.schema.board import BoardFile
 from eda.schema.circuit import Circuit
+from eda.schema.firmware import FirmwareFile
 from eda.schema.part import PartSpec
 from eda.schema.project import Project
 from eda.schema.testspec import AcAnalysis, Expectation, OpAnalysis, SimTestFile, TranAnalysis
@@ -62,12 +65,19 @@ def load_design(root: Path, diag: Diagnostics) -> Design | None:
             circuit = _resolve_circuit(raw_circuit, circuit_doc, parts, diag)
             run_erc(circuit, diag)
 
+    firmware: ResolvedFirmware | None = None
+    if paths.firmware_file.is_file() and circuit is not None:
+        fw_doc = load_yaml(paths.firmware_file, paths.rel(paths.firmware_file), diag)
+        raw_fw = validate(FirmwareFile, fw_doc, diag) if fw_doc is not None else None
+        if raw_fw is not None and fw_doc is not None:
+            firmware = fw.resolve(raw_fw, fw_doc.source, circuit, diag)
+
     tests: dict[str, CompiledTest] = {}
     test_doc = load_yaml(paths.test_file, paths.rel(paths.test_file), diag)
     if test_doc is not None:
         raw_tests = validate(SimTestFile, test_doc, diag)
         if raw_tests is not None:
-            tests = _compile_tests(raw_tests, test_doc.source, circuit, diag)
+            tests = _compile_tests(raw_tests, test_doc.source, circuit, firmware, diag)
 
     board: ResolvedBoard | None = None
     if paths.board_file.is_file() and circuit is not None and circuit_doc is not None:
@@ -79,7 +89,13 @@ def load_design(root: Path, diag: Diagnostics) -> Design | None:
     if not diag.ok or project is None or circuit is None:
         return None
     return Design(
-        paths=paths, project=project, circuit=circuit, tests=tests, parts=parts, board=board
+        paths=paths,
+        project=project,
+        circuit=circuit,
+        tests=tests,
+        parts=parts,
+        board=board,
+        firmware=firmware,
     )
 
 
@@ -238,6 +254,10 @@ def _mm(text: str, where: Location, label: str, diag: Diagnostics) -> float | No
         return None
 
 
+def _pad_list(value: str | int | list[str]) -> list[str]:
+    return [str(v) for v in value] if isinstance(value, list) else [str(value)]
+
+
 def _pad_order(pad: str) -> tuple[int, str]:
     return (int(pad), "") if pad.isdigit() else (1 << 30, pad)
 
@@ -308,10 +328,10 @@ def _resolve_board(
         inst = raw_circuit.parts[ref]
         default = part.spec.pcb
         footprint = inst.footprint or (default.footprint if default else None)
-        pads = (
-            {pin: str(pad) for pin, pad in inst.pads.items()}
+        pads: dict[str, list[str]] | None = (
+            {pin: _pad_list(pad) for pin, pad in inst.pads.items()}
             if inst.pads is not None
-            else (dict(default.pads) if default else None)
+            else ({pin: _pad_list(p) for pin, p in default.pads.items()} if default else None)
         )
         at = csrc.at("parts", ref)
         if footprint is None or pads is None:
@@ -333,7 +353,7 @@ def _resolve_board(
             ok = False
             continue
         missing = [pin for pin in part.spec.pins if pin not in pads]
-        bad = sorted({p for p in pads.values() if p not in available})
+        bad = sorted({p for group in pads.values() for p in group if p not in available})
         extra = [pin for pin in pads if pin not in part.spec.pins]
         if missing or bad or extra:
             problems: list[str] = []
@@ -352,8 +372,10 @@ def _resolve_board(
             ok = False
             continue
         intended = set(default.nc) if default and inst.footprint is None else set[str]()
-        unused = sorted(available - set(pads.values()) - intended, key=_pad_order)
-        if unused and part.spec.category not in ("passive", "source"):
+        used = {p for group in pads.values() for p in group}
+        optional = set(part.spec.optional_pins)
+        unused = sorted(available - used - intended, key=_pad_order)
+        if unused and part.spec.category not in ("passive", "source") and not optional:
             diag.warning(
                 "unused_pads",
                 f"{ref}: pads {', '.join(unused)} of {footprint} are not connected; "
@@ -362,9 +384,10 @@ def _resolve_board(
                 pads=unused,
             )
         pad_nets = {
-            pads[pin]: net
+            pad: net
             for pin in part.spec.pins
             if (net := circuit.net_of(ref, pin)) is not None
+            for pad in pads[pin]
         }
         parts.append(
             BoardPart(ref, part.label() or part.spec.id, footprint, pad_nets, placements.get(ref))
@@ -393,11 +416,20 @@ def _compile_tests(
     raw: SimTestFile,
     src: SourceMap,
     circuit: ResolvedCircuit | None,
+    firmware: ResolvedFirmware | None,
     diag: Diagnostics,
 ) -> dict[str, CompiledTest]:
     compiled: dict[str, CompiledTest] = {}
     for name, case in raw.tests.items():
         analysis = _compile_analysis(name, case.analysis, src, diag)
+        for net in case.pins:
+            if firmware is None or net not in firmware.signals:
+                declared = ", ".join(firmware.signals) if firmware else "none loaded"
+                diag.error(
+                    "unknown_signal",
+                    f"{name}.pins.{net}: not a firmware signal; signals: {declared}",
+                    src.at("tests", name, "pins", net),
+                )
         if isinstance(analysis, Ac) and circuit is not None and not _has_ac_source(circuit):
             diag.error(
                 "ac_no_source",
@@ -417,6 +449,7 @@ def _compile_tests(
                 analysis=analysis,
                 expectations=tuple(expectations),
                 location=src.at("tests", name),
+                pins=dict(case.pins),
             )
     return compiled
 

@@ -35,17 +35,18 @@ UNITS: Final[dict[str, tuple[str, float]]] = {
     "V/ms": ("V/s", 1e3),
     "V/us": ("V/s", 1e6),
     "m": ("m", 1.0),
+    "%": ("%", 1.0),
 }
 CANONICAL: Final = frozenset(unit for unit, _ in UNITS.values())
 
 # Logarithmic and compound units take no SI prefix.
-_NO_PREFIX: Final = frozenset({"dB", "deg", "V/s", "V/ms", "V/us"})
+_NO_PREFIX: Final = frozenset({"dB", "deg", "V/s", "V/ms", "V/us", "%"})
 _DISPLAY: Final[dict[str, str]] = {"ohm": "Ω"}
 
 _QUANTITY_RE: Final = re.compile(
     r"^(?P<number>[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)"
     r" ?(?P<prefix>[pnuµmkMGT])?"
-    r"(?P<unit>V/us|V/ms|V/s|ohm|Ω|Hz|dB|deg|F|H|V|A|s|m)$"
+    r"(?P<unit>V/us|V/ms|V/s|ohm|Ω|Hz|dB|deg|F|H|V|A|s|m|%)$"
 )
 
 
@@ -93,11 +94,13 @@ def parse_any_quantity(text: str) -> tuple[float, str]:
 def format_quantity(value: float, unit: str, digits: int = 4) -> str:
     """Format an SI value with an engineering prefix, e.g. 0.00931 A → '9.31mA'."""
     symbol = _display_unit(unit)
-    if unit in ("dB", "deg"):
+    if unit in ("dB", "deg", "%"):
         return f"{value:.{digits}g}{symbol}"
     if unit == "V/s":
         return f"{value / 1e6:.{digits}g}V/us"
-    if value == 0 or not math.isfinite(value):
+    if abs(value) < 1e-15:  # below anything a simulation resolves: show as zero
+        return f"0{symbol}"
+    if not math.isfinite(value):
         return f"{value:g}{symbol}"
     exponent = math.floor(math.log10(abs(value)) / 3) * 3
     exponent = max(-12, min(12, exponent))

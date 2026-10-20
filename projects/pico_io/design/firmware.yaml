@@ -1,0 +1,9 @@
+# How the firmware uses each net that reaches a Pico GPIO. `eda fw` turns this into
+# firmware/pins.h (PIN_<NET>) and firmware/pins_init.h, and checks it against the pinout.
+mcu: U1
+signals:
+  LED: { mode: output, initial: low, description: "status LED, active high" }
+  BUTTON: { mode: input, pull: up, description: "push button to GND, active low" }
+  POT: { function: ADC0, description: "potentiometer wiper, 0-3.3 V" }
+  UART_TX: { function: UART0_TX, description: debug console out }
+  UART_RX: { function: UART0_RX, description: debug console in }

@@ -1,0 +1,21 @@
+id: connector_1x04
+name: Pin Header 1x04
+category: connector
+description: >
+  2.54 mm pin header for off-board signals (pin 4 is the reference, usually GND).
+  In simulation each pin sees 1 GΩ to pin 4, i.e. nothing is plugged in.
+pins: ["1", "2", "3", "4"]
+spice:
+  prefix: R
+  template: |
+    <name>_1 <pin:1> <pin:4> 1e9
+    <name>_2 <pin:2> <pin:4> 1e9
+    <name>_3 <pin:3> <pin:4> 1e9
+  pin_currents: true
+symbol:
+  cell: x_conn4
+  ports: { "1": "1", "2": "2", "3": "3", "4": "4" }
+  label: "1x04"
+pcb:
+  footprint: Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical
+  pads: { "1": "1", "2": "2", "3": "3", "4": "4" }

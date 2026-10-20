@@ -52,7 +52,7 @@ function niceTicks(lo, hi, count = 5) {
 function renderIssues(state) {
   const seen = new Set();
   const items = [];
-  for (const key of ["check", "sim", "render", "pcb"]) {
+  for (const key of ["check", "fw", "sim", "render", "pcb"]) {
     const result = state[key];
     if (!result) continue;
     for (const [kind, list] of [["error", result.errors], ["warning", result.warnings]]) {
@@ -74,7 +74,7 @@ function renderIssues(state) {
 
 function renderStatus(state) {
   const badge = $("status");
-  const results = ["check", "sim", "render", "pcb"].map((k) => state[k]).filter(Boolean);
+  const results = ["check", "fw", "sim", "render", "pcb"].map((k) => state[k]).filter(Boolean);
   if (results.length === 0) {
     badge.textContent = "no results";
     badge.className = "badge";
@@ -125,6 +125,25 @@ function renderTests(state) {
     }
   }
   box.replaceChildren(...blocks);
+}
+
+function renderFirmware(state) {
+  const data = state.fw?.data;
+  const section = $("fw-section");
+  if (!data || !data.pins) {
+    section.hidden = true;
+    return;
+  }
+  section.hidden = false;
+  const rows = data.pins.map((p) => el("tr", {},
+    el("td", {}, el("code", {}, p.macro)),
+    el("td", {}, `${p.pin} (GPIO ${p.gpio})`),
+    el("td", {}, p.role + (p.pull !== "none" ? `, pull-${p.pull}` : "") + (p.initial ? `, starts ${p.initial}` : ""))));
+  $("fw").replaceChildren(
+    el("p", { class: "muted" }, `${data.mcu} · ${data.family} · generated ${data.generated.join(", ")}`),
+    el("table", {},
+      el("thead", {}, el("tr", {}, el("th", {}, "macro"), el("th", {}, "pin"), el("th", {}, "role"))),
+      el("tbody", {}, ...rows)));
 }
 
 function renderBoard(state, version) {
@@ -402,6 +421,7 @@ async function refresh() {
   renderIssues(state);
   renderSchematic(state, state.version);
   renderTests(state);
+  renderFirmware(state);
   renderBoard(state, state.version);
   renderLog(state);
   await renderWaveforms(state, state.version);

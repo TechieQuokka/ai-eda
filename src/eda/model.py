@@ -1,7 +1,7 @@
 """Resolved, checked design objects produced by `eda.design`."""
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from eda.loader import SourceMap
 from eda.project import ProjectPaths
@@ -98,6 +98,7 @@ class CompiledTest:
     analysis: Analysis
     expectations: tuple[CompiledExpectation, ...]
     location: Location
+    pins: dict[str, str] = field(default_factory=lambda: dict[str, str]())  # net → high/low
 
 
 @dataclass(frozen=True)
@@ -139,6 +140,46 @@ class ResolvedBoard:
 
 
 @dataclass(frozen=True)
+class FirmwareSignal:
+    net: str
+    pin: str  # MCU part pin, e.g. GP15
+    gpio: int  # GPIO number
+    mode: str | None  # input | output
+    function: str | None  # peripheral function, e.g. UART0_TX
+    pull: str  # up | down | none
+    initial: str  # high | low
+    description: str
+
+    @property
+    def macro(self) -> str:
+        return f"PIN_{self.net.upper()}"
+
+    def drive(self, override: str | None = None) -> str:
+        """Simulated pin behavior: high | low | pullup | pulldown | hiz."""
+        if override is not None:
+            return override
+        if self.mode == "output":
+            return self.initial
+        if self.function is not None and self.function.endswith(("_TX", "_CSN")):
+            return "high"  # UART TX and SPI chip select idle high
+        return {"up": "pullup", "down": "pulldown"}.get(self.pull, "hiz")
+
+
+@dataclass(frozen=True)
+class ResolvedFirmware:
+    mcu: str  # part reference
+    family: str
+    signals: dict[str, FirmwareSignal]  # by net
+    sources: tuple[str, ...]
+    source: SourceMap
+
+    def drives(self, overrides: dict[str, str] | None = None) -> dict[str, str]:
+        """MCU pin → simulated drive, with per-test overrides by net name."""
+        overrides = overrides or {}
+        return {s.pin: s.drive(overrides.get(s.net)) for s in self.signals.values()}
+
+
+@dataclass(frozen=True)
 class Design:
     paths: ProjectPaths
     project: Project
@@ -146,3 +187,4 @@ class Design:
     tests: dict[str, CompiledTest]
     parts: dict[str, PartSpec]
     board: ResolvedBoard | None = None
+    firmware: ResolvedFirmware | None = None

@@ -1,0 +1,62 @@
+# Raspberry Pi Pico (RP2040) module. GPIO function table generated from the RP2040
+# datasheet, section 2.19.2 (function select F1 SPI, F2 UART, F3 I2C, F4 PWM, F6/F7 PIO);
+# GP23-GP25 and GP29 are used on the module itself and are not on the header.
+id: raspberry_pi_pico
+name: Raspberry Pi Pico (RP2040)
+category: mcu
+description: >
+  RP2040 module, 40-pin DIP footprint. Pins: GP0-GP22, GP26-GP28 (ADC0-ADC2), GND,
+  3V3 (regulator output), 3V3_EN, VSYS (supply in, 1.8-5.5 V), VBUS (USB 5 V), RUN,
+  ADC_VREF. Pin roles come from design/firmware.yaml; in simulation the module is a
+  3.3 V source with each used GPIO driven, pulled, or high impedance as configured.
+datasheet: https://datasheets.raspberrypi.com/pico/pico-datasheet.pdf
+pins: ["GP0", "GP1", "GP2", "GP3", "GP4", "GP5", "GP6", "GP7", "GP8", "GP9", "GP10", "GP11", "GP12", "GP13", "GP14", "GP15", "GP16", "GP17", "GP18", "GP19", "GP20", "GP21", "GP22", "GP26", "GP27", "GP28", "GND", "3V3", "3V3_EN", "VSYS", "VBUS", "RUN", "ADC_VREF"]
+optional_pins: ["GP0", "GP1", "GP2", "GP3", "GP4", "GP5", "GP6", "GP7", "GP8", "GP9", "GP10", "GP11", "GP12", "GP13", "GP14", "GP15", "GP16", "GP17", "GP18", "GP19", "GP20", "GP21", "GP22", "GP26", "GP27", "GP28", "3V3", "3V3_EN", "VSYS", "VBUS", "RUN", "ADC_VREF"]
+spice:
+  prefix: X
+  template: ""
+  generator: mcu
+  pin_currents: true
+mcu:
+  family: rp2040
+  vio: 3.3
+  supply_pin: 3V3
+  ground_pin: GND
+  drive_ohm: 50  # ~4 mA drive strength setting
+  pull_ohm: 50000  # internal pull-up/down 50-80 kΩ
+  pins_pulled_up: [RUN, 3V3_EN]
+  loads: { VSYS: 250, VBUS: 1000000 }  # VSYS: about 20 mA at 5 V for a running Pico
+  gpio:
+    GP0: { number: 0, functions: [SPI0_RX, UART0_TX, I2C0_SDA, PWM0_A, PIO0, PIO1] }
+    GP1: { number: 1, functions: [SPI0_CSN, UART0_RX, I2C0_SCL, PWM0_B, PIO0, PIO1] }
+    GP2: { number: 2, functions: [SPI0_SCK, UART0_CTS, I2C1_SDA, PWM1_A, PIO0, PIO1] }
+    GP3: { number: 3, functions: [SPI0_TX, UART0_RTS, I2C1_SCL, PWM1_B, PIO0, PIO1] }
+    GP4: { number: 4, functions: [SPI0_RX, UART1_TX, I2C0_SDA, PWM2_A, PIO0, PIO1] }
+    GP5: { number: 5, functions: [SPI0_CSN, UART1_RX, I2C0_SCL, PWM2_B, PIO0, PIO1] }
+    GP6: { number: 6, functions: [SPI0_SCK, UART1_CTS, I2C1_SDA, PWM3_A, PIO0, PIO1] }
+    GP7: { number: 7, functions: [SPI0_TX, UART1_RTS, I2C1_SCL, PWM3_B, PIO0, PIO1] }
+    GP8: { number: 8, functions: [SPI1_RX, UART1_TX, I2C0_SDA, PWM4_A, PIO0, PIO1] }
+    GP9: { number: 9, functions: [SPI1_CSN, UART1_RX, I2C0_SCL, PWM4_B, PIO0, PIO1] }
+    GP10: { number: 10, functions: [SPI1_SCK, UART1_CTS, I2C1_SDA, PWM5_A, PIO0, PIO1] }
+    GP11: { number: 11, functions: [SPI1_TX, UART1_RTS, I2C1_SCL, PWM5_B, PIO0, PIO1] }
+    GP12: { number: 12, functions: [SPI1_RX, UART0_TX, I2C0_SDA, PWM6_A, PIO0, PIO1] }
+    GP13: { number: 13, functions: [SPI1_CSN, UART0_RX, I2C0_SCL, PWM6_B, PIO0, PIO1] }
+    GP14: { number: 14, functions: [SPI1_SCK, UART0_CTS, I2C1_SDA, PWM7_A, PIO0, PIO1] }
+    GP15: { number: 15, functions: [SPI1_TX, UART0_RTS, I2C1_SCL, PWM7_B, PIO0, PIO1] }
+    GP16: { number: 16, functions: [SPI0_RX, UART0_TX, I2C0_SDA, PWM0_A, PIO0, PIO1] }
+    GP17: { number: 17, functions: [SPI0_CSN, UART0_RX, I2C0_SCL, PWM0_B, PIO0, PIO1] }
+    GP18: { number: 18, functions: [SPI0_SCK, UART0_CTS, I2C1_SDA, PWM1_A, PIO0, PIO1] }
+    GP19: { number: 19, functions: [SPI0_TX, UART0_RTS, I2C1_SCL, PWM1_B, PIO0, PIO1] }
+    GP20: { number: 20, functions: [SPI0_RX, UART1_TX, I2C0_SDA, PWM2_A, PIO0, PIO1] }
+    GP21: { number: 21, functions: [SPI0_CSN, UART1_RX, I2C0_SCL, PWM2_B, PIO0, PIO1] }
+    GP22: { number: 22, functions: [SPI0_SCK, UART1_CTS, I2C1_SDA, PWM3_A, PIO0, PIO1] }
+    GP26: { number: 26, functions: [SPI1_SCK, UART1_CTS, I2C1_SDA, PWM5_A, ADC0, PIO0, PIO1] }
+    GP27: { number: 27, functions: [SPI1_TX, UART1_RTS, I2C1_SCL, PWM5_B, ADC1, PIO0, PIO1] }
+    GP28: { number: 28, functions: [SPI1_RX, UART0_TX, I2C0_SDA, PWM6_A, ADC2, PIO0, PIO1] }
+symbol:
+  cell: x_pico
+  ports: { "GP0": "GP0", "GP1": "GP1", "GP2": "GP2", "GP3": "GP3", "GP4": "GP4", "GP5": "GP5", "GP6": "GP6", "GP7": "GP7", "GP8": "GP8", "GP9": "GP9", "GP10": "GP10", "GP11": "GP11", "GP12": "GP12", "GP13": "GP13", "GP14": "GP14", "GP15": "GP15", "GP16": "GP16", "GP17": "GP17", "GP18": "GP18", "GP19": "GP19", "GP20": "GP20", "GP21": "GP21", "GP22": "GP22", "GP26": "GP26", "GP27": "GP27", "GP28": "GP28", "GND": "GND", "3V3": "3V3", "3V3_EN": "3V3_EN", "VSYS": "VSYS", "VBUS": "VBUS", "RUN": "RUN", "ADC_VREF": "ADC_VREF" }
+  label: "RP2040"
+pcb:
+  footprint: Module:RaspberryPi_Pico_Common_THT
+  pads: { "GP0": "1", "GP1": "2", "GP2": "4", "GP3": "5", "GP4": "6", "GP5": "7", "GP6": "9", "GP7": "10", "GP8": "11", "GP9": "12", "GP10": "14", "GP11": "15", "GP12": "16", "GP13": "17", "GP14": "19", "GP15": "20", "GP16": "21", "GP17": "22", "GP18": "24", "GP19": "25", "GP20": "26", "GP21": "27", "GP22": "29", "GP26": "31", "GP27": "32", "GP28": "34", "3V3": "36", "3V3_EN": "37", "VSYS": "39", "VBUS": "40", "RUN": "30", "ADC_VREF": "35", "GND": ["3", "8", "13", "18", "23", "28", "33", "38"] }

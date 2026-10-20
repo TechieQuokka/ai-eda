@@ -6,6 +6,7 @@ reads one JSON object from stdout. Commands:
   build       create a .kicad_pcb from footprints, nets, placement, outline, and rules,
               then export a Specctra .dsn for the autorouter
   import_ses  load the board, import the autorouter's .ses session, save
+  remove_stubs  delete dangling track stubs once (repeat until it removes nothing)
   inspect     report footprint positions, sizes, and routed/unrouted connection counts
 
 Keep this file free of eda imports and third-party packages.
@@ -70,11 +71,18 @@ def _courtyard(footprint: Any) -> Box:
 def _auto_place(
     placed: list[tuple[Any, Box]], unplaced: list[Any], width: float, gap: float
 ) -> None:
-    """Shelf packing left to right, top to bottom, starting below/after placed parts."""
+    """Shelf packing, largest parts first (so small parts fill the shelf beside them),
+    left to right, top to bottom, starting below any hand-placed parts."""
     x, y, shelf = gap, gap, 0.0
     if placed:
         y = max(box[1] + box[3] for _, box in placed) + gap
-    for footprint in unplaced:
+
+    def area(footprint: Any) -> float:
+        footprint.SetPosition(_point(0, 0))
+        _, _, w, h = _courtyard(footprint)
+        return w * h
+
+    for footprint in sorted(unplaced, key=area, reverse=True):
         footprint.SetPosition(_point(0, 0))
         bx, by, bw, bh = _courtyard(footprint)
         if x + bw > width - gap and x > gap:
@@ -161,27 +169,29 @@ def import_ses(request: Request) -> Request:
     board = pcbnew.LoadBoard(request["pcb"])
     if not pcbnew.ImportSpecctraSES(board, request["ses"]):
         raise ValueError("could not import " + request["ses"])
-    removed = _remove_dangling(board)
     board.Save(request["pcb"])
-    return {**inspect(request), "removed_stubs": removed}
+    return {"imported": True}
 
 
-def _remove_dangling(board: Any) -> int:
-    """Delete track stubs with an unconnected end (autorouter leftovers), until none remain."""
-    removed = 0
-    while True:
-        board.BuildConnectivity()
-        connectivity = board.GetConnectivity()
-        stubs = [
-            t
-            for t in board.GetTracks()
-            if t.GetClass() == "PCB_TRACK" and connectivity.TestTrackEndpointDangling(t, False)
-        ]
-        if not stubs:
-            return removed
-        for track in stubs:
-            board.Remove(track)
-        removed += len(stubs)
+def remove_stubs(request: Request) -> Request:
+    """One pass of deleting track stubs with an unconnected end (autorouter leftovers).
+
+    The caller repeats this in fresh processes until nothing is removed: pcbnew's SWIG
+    objects become unusable after Remove() or a second LoadBoard() in the same process.
+    """
+    board = pcbnew.LoadBoard(request["pcb"])
+    board.BuildConnectivity()
+    connectivity = board.GetConnectivity()
+    stubs = [
+        t
+        for t in board.GetTracks()
+        if t.GetClass() == "PCB_TRACK" and connectivity.TestTrackEndpointDangling(t, False)
+    ]
+    for track in stubs:
+        board.Remove(track)
+    if stubs:
+        board.Save(request["pcb"])
+    return {"removed": len(stubs)}
 
 
 def inspect(request: Request) -> Request:
@@ -216,7 +226,12 @@ def _footprint_report(board: Any) -> Request:
 
 def main() -> None:
     request = json.load(sys.stdin)
-    commands = {"build": build, "import_ses": import_ses, "inspect": inspect}
+    commands = {
+        "build": build,
+        "import_ses": import_ses,
+        "remove_stubs": remove_stubs,
+        "inspect": inspect,
+    }
     result: Request
     try:
         result = {"ok": True, "result": commands[request["command"]](request)}

@@ -1,0 +1,20 @@
+id: connector_1x03
+name: Pin Header 1x03
+category: connector
+description: >
+  2.54 mm pin header for off-board signals (pin 3 is the reference, usually GND).
+  In simulation each pin sees 1 GΩ to pin 3, i.e. nothing is plugged in.
+pins: ["1", "2", "3"]
+spice:
+  prefix: R
+  template: |
+    <name>_1 <pin:1> <pin:3> 1e9
+    <name>_2 <pin:2> <pin:3> 1e9
+  pin_currents: true
+symbol:
+  cell: x_conn3
+  ports: { "1": "1", "2": "2", "3": "3" }
+  label: "1x03"
+pcb:
+  footprint: Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical
+  pads: { "1": "1", "2": "2", "3": "3" }

@@ -1,0 +1,29 @@
+tests:
+  led_on:
+    description: With the LED pin high, the LED runs at about 8 mA (GPIO drive limit 12 mA).
+    analysis: { type: op }
+    pins: { LED: high }
+    expect:
+      - { measure: current(D1), min: 6mA, max: 10mA }
+      - { measure: current(U1.GP15), min: -12mA, max: 0mA }
+  led_off:
+    description: With the LED pin low, the LED is dark.
+    analysis: { type: op }
+    pins: { LED: low }
+    expect:
+      - { measure: current(D1), max: 10uA }
+  button_idle:
+    description: The internal pull-up holds BUTTON high while the switch is open.
+    analysis: { type: op }
+    expect:
+      - { measure: voltage(BUTTON), min: 3.2V }
+  pot_midscale:
+    description: The wiper at 50 % puts half of 3.3 V on ADC0.
+    analysis: { type: op }
+    expect:
+      - { measure: voltage(POT), min: 1.6V, max: 1.7V }
+  uart_idle:
+    description: UART TX idles high.
+    analysis: { type: op }
+    expect:
+      - { measure: voltage(UART_TX), min: 3.2V }
