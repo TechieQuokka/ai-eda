@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Rules for Claude Code working in this repository. Background: `PROJECT_SUMMARY.md` (vision, architecture, roadmap) and `DESIGN_DECISIONS.md` (settled decisions).
+Rules for Claude Code working in this repository. **Resuming work? Read `HANDOFF.md` first.** Background: `PROJECT_SUMMARY.md` (vision, architecture, roadmap) and `DESIGN_DECISIONS.md` (settled decisions).
 
 ## 1. Working Rules
 
