@@ -48,8 +48,16 @@ def test_led_schematic(make_project: MakeProject) -> None:
     libs = [str(s[1]) for s in sexpr.children(sexpr.child(tree, "lib_symbols") or [], "symbol")]
     assert {"Device:R", "Device:LED", "Simulation_SPICE:VDC", "power:GND"} <= set(libs)
     assert schematic.expected["N1"] == {("R1", "2"), ("D1", "2")}  # LED anode is pin 2
-    labels = {str(item[1]) for item in sexpr.children(tree, "label")}
-    assert labels == {"VCC", "N1"}  # GND is drawn with ground symbols
+    assert not list(sexpr.children(tree, "label"))  # N1 is a wire, VCC and GND power symbols
+    assert list(sexpr.children(tree, "wire"))
+    powers = {
+        str(p[2])
+        for s in sexpr.children(tree, "symbol")
+        for p in sexpr.children(s, "property")
+        if p[1] == "Value" and str(sexpr.child(s, "lib_id")[1]).startswith("power:")  # type: ignore[index]
+    }
+    assert powers == {"VCC", "GND", "PWR_FLAG"}
+    assert schematic.unrouted == []
     assert kicad_sch.build(design).text == schematic.text  # deterministic
 
 
@@ -106,3 +114,136 @@ def test_missing_symbol_library_is_a_warning(
     assert kicad_sch.export(design, diag) == {}
     assert [w.rule for w in diag.warnings] == ["kicad_sch_skipped"]
     kicad_sch._library.cache_clear()  # pyright: ignore[reportPrivateUsage]
+
+
+OPAMP_CIRCUIT = """
+parts:
+  VCC: { type: dc_voltage_source, voltage: 12V }
+  VEE: { type: dc_voltage_source, voltage: 12V }
+  VIN: { type: sine_voltage_source, amplitude: 0.5V, frequency: 1kHz }
+  U1: { type: opamp }
+  RF: { type: resistor, resistance: 10kohm }
+  RG: { type: resistor, resistance: 1kohm }
+  RL: { type: resistor, resistance: 10kohm }
+nets:
+  VP: [VCC.+, U1.v+]
+  VN: [VEE.-, U1.v-]
+  IN: [VIN.+, U1.in+]
+  FB: [U1.in-, RF.2, RG.1]
+  OUT: [U1.out, RF.1, RL.1]
+  GND: [VCC.-, VEE.+, VIN.-, RG.2, RL.2]
+"""
+OPAMP_TESTS = (
+    "tests:\n  t:\n    analysis: { type: op }\n    expect: [{ measure: voltage(OUT), max: 1V }]\n"
+)
+
+
+def test_symbol_geometry() -> None:
+    # KiCad turns symbols counter-clockwise on the sheet (y down); mirroring flips x first
+    assert kicad_sch._turn(0, 3.81, 0) == (0, -3.81)  # pyright: ignore[reportPrivateUsage]
+    assert kicad_sch._turn(0, 3.81, 90) == (-3.81, 0)  # pyright: ignore[reportPrivateUsage]
+    assert kicad_sch._turn(3.0, 0, 0, mirror=True) == (-3.0, 0)  # pyright: ignore[reportPrivateUsage]
+    # a pin pointing into the body to the right (angle 0) leaves it to the left
+    assert kicad_sch._outward(0, 0) == (-1, 0)  # pyright: ignore[reportPrivateUsage]
+    assert kicad_sch._outward(270, 90) == (-1, 0)  # pyright: ignore[reportPrivateUsage]
+
+
+def test_references_get_numbers_for_kicad() -> None:
+    assert kicad_sch.annotate(["VCC", "RF", "RF1", "U1"]) == {
+        "VCC": "VCC1",
+        "RF": "RF2",
+        "RF1": "RF1",
+        "U1": "U1",
+    }
+
+
+@requires_symbols
+def test_opamp_schematic_is_wired(make_project: MakeProject) -> None:
+    root = make_project(circuit=OPAMP_CIRCUIT, tests=OPAMP_TESTS)
+    diag = Diagnostics()
+    design = load_design(root, diag)
+    assert design is not None, diag.errors
+    schematic = kicad_sch.build(design)
+    tree = sexpr.parse(schematic.text)
+    assert schematic.unrouted == []
+    assert not list(sexpr.children(tree, "label"))
+    assert len(list(sexpr.children(tree, "junction"))) >= 2  # FB and OUT branch
+    assert schematic.references == {"VCC": "VCC1", "VEE": "VEE1", "VIN": "VIN1", "RF": "RF1",
+                                    "RG": "RG1", "RL": "RL1"}  # fmt: skip
+    assert ("RF1", "1") in schematic.expected["OUT"]
+    x0, y0, x1, y1 = schematic.drawing
+    assert 0 < x0 < x1 < 297 and 0 < y0 < y1 < 210  # on the A4 sheet
+    assert schematic.paper == "A4"
+
+
+@requires_symbols
+@requires_kicad_cli
+def test_opamp_schematic_matches_in_kicad(make_project: MakeProject) -> None:
+    root = make_project(circuit=OPAMP_CIRCUIT, tests=OPAMP_TESTS)
+    result = pipeline.render(root)
+    assert not result.tool_error, result.errors
+    kicad = result.data["kicad"]
+    assert isinstance(kicad, dict)
+    assert kicad["netlist_matches"] is True
+    assert not [w for w in result.warnings if w.rule.startswith("kicad_erc_")]
+    assert isinstance(kicad["view"], str)
+    view = (root / kicad["view"]).read_text(encoding="utf-8")
+    assert 'viewBox="0.0000 0.0000' not in view  # cropped to the drawing
+
+
+@requires_symbols
+@requires_kicad_cli
+def test_unroutable_pins_get_labels(
+    make_project: MakeProject, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(kicad_sch._Router, "LIMIT", 0)  # pyright: ignore[reportPrivateUsage]
+    root = make_project(circuit=OPAMP_CIRCUIT, tests=OPAMP_TESTS)
+    result = pipeline.render(root)
+    assert not result.tool_error, result.errors
+    kicad = result.data["kicad"]
+    assert isinstance(kicad, dict)
+    assert kicad["labelled_nets"] == ["FB", "IN", "OUT"]
+    assert kicad["netlist_matches"] is True  # labels on the pins connect them
+
+
+def test_crop_svg(tmp_path: Path) -> None:
+    svg = tmp_path / "a.svg"
+    svg.write_text(
+        '<svg width="297.0022mm" height="210.0072mm" viewBox="0.0000 0.0000 297.0022 210.0072">'
+        "</svg>",
+        encoding="utf-8",
+    )
+    out = kicad_sch.crop_svg(svg, tmp_path / "b.svg", (20.0, 30.0, 60.0, 50.0), margin=5.0)
+    assert 'viewBox="15.0000 25.0000 50.0000 30.0000"' in out.read_text(encoding="utf-8")
+    assert 'width="50.0000mm" height="30.0000mm"' in out.read_text(encoding="utf-8")
+
+
+@requires_symbols
+def test_ic_pins_fan_out_in_rows(make_project: MakeProject) -> None:
+    leds = "".join(
+        f"  R{i}: {{ type: resistor, resistance: 150ohm }}\n  D{i}: {{ type: led, color: red }}\n"
+        for i in range(1, 5)
+    )
+    nets = "".join(
+        f"  LED{i}: [U1.GP{i + 1}, R{i}.1]\n  LA{i}: [R{i}.2, D{i}.anode]\n" for i in range(1, 5)
+    )
+    cathodes = ", ".join(f"D{i}.cathode" for i in range(1, 5))
+    circuit = (
+        "parts:\n  J1: { type: dc_voltage_source, voltage: 5V }\n"
+        f"  U1: {{ type: raspberry_pi_pico }}\n{leds}"
+        f"nets:\n  VSYS: [J1.+, U1.VSYS]\n{nets}  GND: [J1.-, U1.GND, {cathodes}]\n"
+    )
+    root = make_project(circuit=circuit, tests=OPAMP_TESTS.replace("OUT", "VSYS"))
+    diag = Diagnostics()
+    design = load_design(root, diag)
+    assert design is not None, diag.errors
+    schematic = kicad_sch.build(design)
+    assert schematic.unrouted == []
+    tree = sexpr.parse(schematic.text)
+    at = {
+        str(sexpr.child(s, "property")[2]): sexpr.number(sexpr.child(s, "at")[2])  # type: ignore[index]
+        for s in sexpr.children(tree, "symbol")
+        if str(sexpr.child(s, "lib_id")[1]) == "Device:R"  # type: ignore[index]
+    }
+    assert sorted(at, key=lambda r: at[r]) == ["R1", "R2", "R3", "R4"]  # in GPIO order
+    assert not list(sexpr.children(tree, "junction"))  # each row is one unbranched wire

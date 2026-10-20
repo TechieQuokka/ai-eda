@@ -98,7 +98,8 @@ function renderSchematic(state, version) {
     const check = kicad.netlist_matches ? "netlist matches the design" : "netlist NOT checked";
     parts.push(el("details", {},
       el("summary", {}, `KiCad schematic · ${kicad.schematic} · ${kicad.paper} · ${check}`),
-      el("img", { src: `/${kicad.svg}?v=${version}`, alt: "KiCad schematic" })));
+      el("img", { src: `/${kicad.view ?? kicad.svg}?v=${version}`, alt: "KiCad schematic" }),
+      el("p", {}, el("a", { href: `/${kicad.svg}?v=${version}`, target: "_blank" }, "Full sheet (SVG)"))));
   }
   box.replaceChildren(...parts);
 }
