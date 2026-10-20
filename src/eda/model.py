@@ -219,6 +219,7 @@ class ResolvedBoard:
     passes: int
     source: SourceMap
     pours: tuple[BoardPour, ...] = ()
+    placer: str = "connected"  # connected | shelf
 
 
 @dataclass(frozen=True)

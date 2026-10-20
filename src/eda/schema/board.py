@@ -10,6 +10,8 @@ class Outline(StrictModel):
     height: str | None = None
     margin: str = "3mm"
     spacing: str = "3mm"  # gap between auto-placed parts
+    # connected: keep connected parts together (short tracks); shelf: pack by size
+    placer: Literal["connected", "shelf"] = "connected"
     layers: Literal[2] = 2
 
 

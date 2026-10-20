@@ -15,7 +15,7 @@
 
 - All six open decisions from `PROJECT_SUMMARY.md` §11 are settled (Python, YAML, no tscircuit fork, YAML is the PCB source of truth, RP2040/Pico, 2-layer boards).
 - Repository: https://github.com/TechieQuokka/ai-eda (public, `master`); M4 commits are local until the user approves a push.
-- Quality gates: `ruff format --check`, `ruff check`, `pyright` (strict), and `pytest` (157 tests) all pass; all five example projects pass `eda run`.
+- Quality gates: `ruff format --check`, `ruff check`, `pyright` (strict), and `pytest` (159 tests) all pass; all five example projects pass `eda run`.
 
 ## 2. Resuming on this machine
 
@@ -62,13 +62,14 @@ M4 is finished (`DESIGN_DECISIONS.md` §15): `pico_io` blinks its LED in the emu
 1. ~~Firmware stimulus~~: done (`events:`, §15.6).
 2. ~~Ground plane / copper pours~~: done (`pours:`, §16).
 3. Tighter output→input timing (inputs currently lag one window except after pin mode changes), when a design needs it.
-4. Other carry-overs from earlier milestones (table below).
+4. ~~Connectivity-aware placement~~: done (§17).
+5. Other carry-overs from earlier milestones (table below).
 
 ## 5. Known issues and carry-overs
 
 | Area | Issue | Where noted |
 |---|---|---|
-| Boards | Auto-placement is naive shelf packing; MCU modules need hand placement | §13.5, §14.6 |
+| Boards | Auto-placement is greedy (one part at a time, no later improvement pass); rotations are 90° steps | §17 |
 | Boards | No KiCad schematic (`.kicad_sch`) export | §13.5 |
 | Boards | Freerouting is nondeterministic (handled by a route cache keyed on the `.dsn` hash); one unexplained 10-min hang (now a 180 s timeout) | §13.3, adapters/freerouting.py |
 | Simulation | TLV6001-style vendor models need `.option optran` to converge; not supported | §12.4 |

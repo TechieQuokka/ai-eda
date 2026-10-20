@@ -70,6 +70,7 @@ The CLI never makes design decisions; it only reports.
 
 - Our YAML is the source of truth; never edit files under `out/pcb/` (they are regenerated).
 - `board.yaml` sets outline, rules, optional hand placement, and routing passes (`DESIGN_DECISIONS.md` §13.2). An empty `board: {}` is enough to get a board.
+- Parts without a hand placement are placed next to the parts they connect to (`board.placer: connected`, the default; `shelf` packs by size). Hand-place only what has a mechanical reason (connectors at the edge, a module's orientation); with a fixed `width`/`height`, `no room for X` means the board is too small.
 - Footprints come from each part's `pcb:` default; override per part with `footprint:` (KiCad `Library:Name`) and `pads:` (pin → pad) in `circuit.yaml`. Sources become 2-pin headers.
 - `uv run eda pcb projects/<name>` builds, autoroutes (Freerouting), runs DRC, and exports Gerbers/drill/BOM. DRC issues come back as `drc_<type>` errors pointing at the part; `unrouted` means the router gave up: move parts apart (placement), enlarge the board, or raise `routing.passes`.
 - Read `unused_pads` warnings: unused IC channels usually need tying off.

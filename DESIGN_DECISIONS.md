@@ -389,7 +389,7 @@ routing:
 ### 13.5 Not done in M2 / findings
 
 1. **KiCad schematic (`.kicad_sch`) generation** is not done; the schematic stays netlistsvg. The board is generated straight from the netlist, which is what fabrication needs.
-2. **Placement is naive** (shelf packing in definition order). Connectivity-aware placement would shorten tracks; `placement:` covers hand placement meanwhile.
+2. ~~**Placement is naive**~~ (done in §17) (shelf packing in definition order). Connectivity-aware placement would shorten tracks; `placement:` covers hand placement meanwhile.
 3. ~~**No copper pours / ground plane** yet.~~ Done in §16.
 4. **3D render has no component bodies** because `kicad-packages3d` (several GB) is not installed.
 5. Dual-channel parts: an imported single-channel model on a dual package leaves the other channel floating; the `unused_pads` warning says so, but tying it off is still a manual design step.
@@ -539,3 +539,23 @@ Carry-over from §13.5: boards had no ground plane.
 - **Flow**: route first, then pour. The router sees the same `.dsn` as before (route cache unaffected) and connects every net with tracks; the fill is added afterwards by the `pour` command of `pcbnew_script.py`: a zone over the board outline inset 0.5 mm, thermal reliefs on pads (gap and spoke width at least 0.5 mm), islands not connected to a pad removed, filled with `ZONE_FILLER`. Gerbers and the board images include it; `data.pcb.pours` lists net, layer, and filled area.
 - **DRC**: `starved_thermal` (a pad's thermal spokes reach only a fill island cut off by tracks) is reported as a **warning**: connectivity is already guaranteed by the tracks and checked as `unconnected` items, so it is a soldering/quality note, not a broken board.
 - Examples: `opamp_amp`, `tl072_amp`, and `pico_io` now have a bottom GND pour (861, 980, and 4257 mm² of copper). The first two pass DRC with 0 errors and 0 warnings; `pico_io` has one `starved_thermal` warning at D1's cathode, whose pad sits in a strip enclosed by bottom tracks. `led_demo` stays without a pour.
+
+## 17. Connectivity-aware placement (2026-10-20)
+
+Carry-over from §13.5 / §14.6: auto-placement packed parts by size, so connected parts ended up far apart (long tracks, a via on `pico_io`, a fill island under D1).
+
+- **Algorithm** (`pcbnew_script._connected_place`): greedy and deterministic. Hand-placed parts are fixed first. Then, repeatedly, the unplaced part with the most connections to placed parts (ties: larger, then by reference) is tried at every 0.5 mm grid position and every 90° rotation that does not overlap another part's courtyard plus `spacing`. The cost is the growth of each of its nets' bounding box (half-perimeter wire length) plus 0.5 × the growth of the layout's own half-perimeter, which keeps the board compact. With a fixed `width`/`height` the search stays inside the board minus `margin`; with nothing placed the first part starts at the origin.
+- **Courtyards**: part sizes now come from the footprint courtyard (plus pads) instead of the full bounding box, which for the Pico includes a fabrication drawing 20 mm beyond the module and left an empty strip on the board.
+- `board.placer: shelf` keeps the old packer.
+- Errors: a part that fits nowhere on a fixed-size board fails the build with `no room for <ref> on the board; enlarge it`.
+
+Result (same rules and router; DRC 0 errors on all):
+
+| Board | Track length shelf → connected | Board size (mm) |
+|---|---|---|
+| `led_demo` | 37.9 → 26.5 mm | 18.4 × 27.8 → 18.6 × 21.7 |
+| `opamp_amp` | 167.2 → 127.9 mm | 34.7 × 28.8 → 36.8 × 26.7 |
+| `tl072_amp` | 187.3 → 130.1 mm | 34.7 × 34.0 → 38.0 × 35.0 |
+| `pico_io` | 585.2 → 369.4 mm, 1 → 0 vias | 93.7 × 54.0 → 72.5 × 42.3; the `starved_thermal` warning is gone |
+
+Not done: no improvement pass after the greedy one (swaps, annealing), no rotation other than 90° steps, no awareness of board edges for connectors.

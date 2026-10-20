@@ -194,6 +194,7 @@ def _build_request(board: ResolvedBoard, pcb: Path, dsn: Path) -> dict[str, Any]
             "height": board.height,
             "margin": board.margin,
             "spacing": board.spacing,
+            "placer": board.placer,
         },
         "nets": nets,
         "footprints": footprints,

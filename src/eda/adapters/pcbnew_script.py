@@ -25,6 +25,7 @@ pcbnew: Any = importlib.import_module("pcbnew")
 
 type Request = dict[str, Any]
 type Box = tuple[float, float, float, float]
+type Shape = tuple[float, Box, list[tuple[str, float, float]]]  # rotation, courtyard, pads
 
 FOOTPRINT_DIR = Path(os.environ.get("KICAD10_FOOTPRINT_DIR", "/usr/share/kicad/footprints"))
 
@@ -59,8 +60,21 @@ def _apply_rules(board: Any, rules: Request) -> None:
 
 
 def _courtyard(footprint: Any) -> Box:
-    """Bounding box (mm) of the footprint including courtyard and pads, at its position."""
-    box = footprint.GetBoundingBox(False)
+    """Bounding box (mm) of the footprint's courtyard and pads, at its position.
+
+    Footprints without a courtyard fall back to their full bounding box (which can include
+    fabrication drawings far beyond the part, e.g. the Pico's debug-header outline)."""
+    box = None
+    for layer in (pcbnew.F_CrtYd, pcbnew.B_CrtYd):
+        outline = footprint.GetCourtyard(layer)
+        if outline.OutlineCount():
+            part = outline.BBox()
+            box = part if box is None else box.Merge(part) or box
+    if box is None:
+        box = footprint.GetBoundingBox(False)
+    else:
+        for pad in footprint.Pads():
+            box.Merge(pad.GetBoundingBox())
     return (
         pcbnew.ToMM(box.GetX()),
         pcbnew.ToMM(box.GetY()),
@@ -92,6 +106,155 @@ def _auto_place(
         footprint.SetPosition(_point(x - bx, y - by))
         x += bw + gap
         shelf = max(shelf, bh)
+
+
+ROTATIONS = (0.0, 90.0, 180.0, 270.0)
+GRID_MM = 0.5  # candidate positions are on this grid
+AREA_WEIGHT = 0.5  # cost of growing the layout's half-perimeter, relative to wire length
+
+
+def _shape(footprint: Any, rotation: float) -> tuple[Box, list[tuple[str, float, float]]]:
+    """Courtyard box and (net, x, y) of each connected pad, relative to the footprint origin."""
+    footprint.SetOrientationDegrees(rotation)
+    footprint.SetPosition(_point(0, 0))
+    box = _courtyard(footprint)
+    pads: list[tuple[str, float, float]] = [
+        (
+            str(pad.GetNetname()),
+            float(pcbnew.ToMM(pad.GetPosition().x)),
+            float(pcbnew.ToMM(pad.GetPosition().y)),
+        )
+        for pad in footprint.Pads()
+        if pad.GetNetname()
+    ]
+    return box, pads
+
+
+def _overlaps(box: Box, others: list[Box], gap: float) -> bool:
+    x, y, w, h = box
+    for ox, oy, ow, oh in others:
+        if x < ox + ow + gap and ox < x + w + gap and y < oy + oh + gap and oy < y + h + gap:
+            return True
+    return False
+
+
+def _connected_place(
+    placed: list[tuple[Any, Box]],
+    unplaced: list[Any],
+    gap: float,
+    bounds: Box | None,
+) -> None:
+    """Greedy placement that keeps connected parts together.
+
+    Parts go one at a time, the one with the most connections to already placed parts
+    first (ties: larger first, then by reference). Each takes the grid position and
+    rotation with the lowest cost: the growth of every net's bounding box (half-perimeter
+    wire length) plus AREA_WEIGHT times the growth of the layout's own half-perimeter.
+    `bounds` (x, y, w, h) confines parts to a fixed board; otherwise the layout grows.
+    """
+    boxes = [box for _, box in placed]
+    net_boxes: dict[str, list[float]] = {}
+
+    def add_pad(net: str, x: float, y: float) -> None:
+        b = net_boxes.get(net)
+        if b is None:
+            net_boxes[net] = [x, y, x, y]
+        else:
+            b[0], b[1], b[2], b[3] = min(b[0], x), min(b[1], y), max(b[2], x), max(b[3], y)
+
+    for footprint, _ in placed:
+        for pad in footprint.Pads():
+            if pad.GetNetname():
+                pos = pad.GetPosition()
+                add_pad(pad.GetNetname(), pcbnew.ToMM(pos.x), pcbnew.ToMM(pos.y))
+
+    shapes: dict[int, list[Shape]] = {}
+    for fp in unplaced:
+        variants: list[Shape] = []
+        for rotation in ROTATIONS:
+            box, pads = _shape(fp, rotation)
+            variants.append((rotation, box, pads))
+        shapes[id(fp)] = variants
+    remaining = list(unplaced)
+    while remaining:
+
+        def priority(fp: Any) -> tuple[int, float, str]:
+            _, (_, _, w, h), pads = shapes[id(fp)][0]
+            linked = sum(1 for net, _, _ in pads if net in net_boxes)
+            return (-linked, -w * h, fp.GetReference())
+
+        remaining.sort(key=priority)
+        footprint = remaining.pop(0)
+        layout: Box | None = None  # x0, y0, x1, y1 of everything placed so far
+        if boxes:
+            layout = (
+                float(min(b[0] for b in boxes)),
+                float(min(b[1] for b in boxes)),
+                float(max(b[0] + b[2] for b in boxes)),
+                float(max(b[1] + b[3] for b in boxes)),
+            )
+        best: tuple[float, float, float, float] | None = None  # cost, x, y, rotation
+        for rotation, (bx, by, bw, bh), pads in shapes[id(footprint)]:
+            # Range of footprint origins whose box stays in the allowed area.
+            if bounds is not None:
+                area = (
+                    bounds[0],
+                    bounds[1],
+                    bounds[0] + bounds[2] - bw,
+                    bounds[1] + bounds[3] - bh,
+                )
+            elif layout is not None:
+                area = (
+                    layout[0] - bw - gap,
+                    layout[1] - bh - gap,
+                    layout[2] + gap,
+                    layout[3] + gap,
+                )
+            else:
+                area = (0.0, 0.0, 0.0, 0.0)
+            x_lo, y_lo = float(area[0] - bx), float(area[1] - by)
+            x_hi, y_hi = float(area[2] - bx), float(area[3] - by)
+            steps_x = max(0, int((x_hi - x_lo) / GRID_MM))
+            steps_y = max(0, int((y_hi - y_lo) / GRID_MM))
+            for i in range(steps_x + 1):
+                x = x_lo + i * GRID_MM
+                for j in range(steps_y + 1):
+                    y = y_lo + j * GRID_MM
+                    box = (x + bx, y + by, bw, bh)
+                    if _overlaps(box, boxes, gap):
+                        continue
+                    cost = 0.0
+                    for net, px, py in pads:
+                        nb = net_boxes.get(net)
+                        if nb is None:
+                            continue
+                        ax, ay = x + px, y + py
+                        cost += (max(nb[2], ax) - min(nb[0], ax)) - (nb[2] - nb[0])
+                        cost += (max(nb[3], ay) - min(nb[1], ay)) - (nb[3] - nb[1])
+                    if layout is not None:
+                        grown = (
+                            max(layout[2], box[0] + bw)
+                            - min(layout[0], box[0])
+                            + max(layout[3], box[1] + bh)
+                            - min(layout[1], box[1])
+                        )
+                        cost += AREA_WEIGHT * (
+                            grown - (layout[2] - layout[0] + layout[3] - layout[1])
+                        )
+                    if best is None or cost < best[0] - 1e-9:
+                        best = (cost, x, y, rotation)
+        if best is None:
+            raise ValueError(
+                "no room for " + footprint.GetReference() + " on the board; enlarge it"
+            )
+        _, x, y, rotation = best
+        footprint.SetOrientationDegrees(rotation)
+        footprint.SetPosition(_point(x, y))
+        boxes.append(_courtyard(footprint))
+        for pad in footprint.Pads():
+            if pad.GetNetname():
+                pos = pad.GetPosition()
+                add_pad(pad.GetNetname(), pcbnew.ToMM(pos.x), pcbnew.ToMM(pos.y))
 
 
 def _target_width(footprints: list[Any], gap: float) -> float:
@@ -140,8 +303,20 @@ def build(request: Request) -> Request:
             unplaced.append(footprint)
 
     gap = request["board"]["spacing"]
-    width = request["board"].get("width") or _target_width(unplaced, gap)
-    _auto_place(placed, unplaced, width, gap)
+    if request["board"].get("placer", "connected") == "shelf":
+        width = request["board"].get("width") or _target_width(unplaced, gap)
+        _auto_place(placed, unplaced, width, gap)
+    else:
+        bounds: Box | None = None
+        if request["board"].get("width") and request["board"].get("height"):
+            inset = request["board"]["margin"]
+            bounds = (
+                inset,
+                inset,
+                request["board"]["width"] - 2 * inset,
+                request["board"]["height"] - 2 * inset,
+            )
+        _connected_place(placed, unplaced, gap, bounds)
 
     boxes = [_courtyard(fp) for fp in board.GetFootprints()]
     margin = request["board"]["margin"]

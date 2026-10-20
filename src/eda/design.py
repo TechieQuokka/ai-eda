@@ -460,6 +460,7 @@ def _resolve_board(
         passes=raw.routing.passes,
         source=src,
         pours=tuple(pours),
+        placer=raw.board.placer,
     )
 
 

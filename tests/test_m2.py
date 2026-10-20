@@ -1,3 +1,4 @@
+import shutil
 import zipfile
 from pathlib import Path
 
@@ -7,6 +8,7 @@ from eda import pipeline
 from eda.adapters import freerouting
 from eda.design import load_design
 from eda.footprints import pad_numbers
+from eda.project import REPO_ROOT
 from eda.result import Diagnostics
 from tests.conftest import LED_CIRCUIT, MakeProject, requires_kicad, requires_ngspice
 
@@ -157,3 +159,36 @@ def test_ground_pour(make_project: MakeProject) -> None:
         assert isinstance(area, float) and area > 50
     drc = result.data["drc"]
     assert isinstance(drc, dict) and drc["errors"] == 0
+
+
+@requires_kicad
+def test_connected_placement_shortens_tracks(tmp_path: Path) -> None:
+    if not freerouting.JAR.is_file():
+        pytest.skip("Freerouting is not downloaded (tools/freerouting/fetch.sh)")
+    lengths: dict[str, float] = {}
+    for placer in ("shelf", "connected"):
+        root = tmp_path / placer
+        shutil.copytree(
+            REPO_ROOT / "projects" / "opamp_amp",
+            root,
+            ignore=shutil.ignore_patterns("out", "iterations.jsonl"),
+        )
+        board = root / "design" / "board.yaml"
+        text = board.read_text(encoding="utf-8")
+        board.write_text(text.replace("board:\n", f"board:\n  placer: {placer}\n", 1), "utf-8")
+        result = pipeline.pcb(root)
+        assert result.ok, result.errors
+        routing = result.data["routing"]
+        assert isinstance(routing, dict)
+        length = routing["track_length_mm"]
+        assert isinstance(length, float)
+        lengths[placer] = length
+    assert lengths["connected"] < 0.9 * lengths["shelf"]
+
+
+@requires_kicad
+def test_fixed_board_too_small(make_project: MakeProject) -> None:
+    root = _board(make_project, "board: { width: 8mm, height: 8mm, margin: 1mm }\n")
+    result = pipeline.pcb(root)
+    assert result.tool_error
+    assert "no room for" in result.errors[0].message
