@@ -1,6 +1,6 @@
 # AI-Native EDA — Project Summary (working title)
 
-> Status: planning complete, implementation not started.
+> Status: M0 complete (2026-10-20). Settled decisions and the M0 specification are in `DESIGN_DECISIONS.md`.
 > This document is the reference for all upcoming work. Facts about third-party projects are from memory and should be re-verified before relying on them.
 
 ---
@@ -67,7 +67,7 @@ Rule of thumb: **build the AI-friendly interface; reuse the physics and standard
 | Part database and part model structure | One part, multiple facets (see §8) |
 | Verification rules | ERC, test-file pass/fail evaluation |
 | Unified result/error format (JSON) | Translates the differing outputs of external tools |
-| Schematic SVG renderer | Simple quality is fine; alternatively use KiCad SVG export |
+| Schematic SVG renderer | netlistsvg auto-layout in M0; KiCad-based rendering later. Visual quality is a first-class requirement (`DESIGN_DECISIONS.md` §1) |
 | Read-only viewer and `watch` mode | Lightweight |
 | Cross-domain sync logic | e.g. MCU pin assignment in schematic generates firmware `pins.h` |
 
@@ -157,38 +157,18 @@ Example entry:
 
 ```
 my-project/
- ├─ project.json
+ ├─ project.yaml
  ├─ design/
- │   ├─ circuit.eda     parts, nets, values
- │   ├─ board.eda       placement, layers, rules
- │   └─ test.eda        simulation scenarios + acceptance criteria
- ├─ firmware/           ordinary C / Rust source
- ├─ parts/              user-defined parts and vendor models
- ├─ out/                generated artifacts (netlists, KiCad files, Gerbers, plots)
- └─ CLAUDE.md           AI working rules (edit → check → sim → inspect → fix)
+ │   ├─ circuit.yaml    parts, nets, values
+ │   ├─ board.yaml      placement, layers, rules (M2)
+ │   └─ test.yaml       simulation scenarios + acceptance criteria
+ ├─ firmware/           ordinary C / Rust source (M3)
+ ├─ parts/              project-specific parts and vendor models
+ ├─ iterations.jsonl    iteration log (tracked)
+ └─ out/                generated artifacts (git-ignored)
 ```
 
-Illustrative syntax (format still to be decided, see §11):
-
-```
-circuit led_demo {
-  part V1 = battery(5V)
-  part R1 = resistor(330ohm)
-  part D1 = led(red)
-
-  net VCC = V1.+ , R1.1
-  net N1  = R1.2 , D1.anode
-  net GND = D1.cathode , V1.-
-}
-
-test led_current {
-  run dc
-  expect current(D1) in 8mA..12mA
-  expect voltage(N1) < 3.0V
-}
-```
-
-Design guideline: keep the grammar simple and uniform; LLMs handle regular syntax very well. Prefer an existing syntax (YAML/JSON/TypeScript) over a custom DSL if it avoids writing a parser.
+The syntax is YAML; see `DESIGN_DECISIONS.md` §10 for the M0 schema and `projects/led_demo/` for a working example. The AI working rules live in the repository-level `CLAUDE.md`.
 
 ## 10. Hardware–Firmware Integration Levels
 
@@ -200,24 +180,24 @@ Design guideline: keep the grammar simple and uniform; LLMs handle regular synta
 
 Start with Level 1, aim for Level 2. Generated artifacts such as `pins.h` and peripheral init templates (similar to STM32CubeMX) keep schematic and firmware in sync.
 
-## 11. Open Decisions
+## 11. Decisions
 
-| # | Decision | Options | Leaning |
-|---|---|---|---|
-| 1 | Implementation language | TypeScript (Node) / Python / Rust | Python is strong for CLI + ngspice/KiCad scripting; TypeScript gives type-checked formats. Lightest start: Python |
-| 2 | Design file format | YAML/JSON / custom DSL / TSX (tscircuit style) | YAML/JSON or TS for zero parser cost; DSL only if readability demands it |
-| 3 | Fork tscircuit or build from scratch | — | Evaluate tscircuit first; it already covers part of the format and rendering |
-| 4 | PCB source of truth | Our format generates KiCad files / KiCad files are the source | Our format is the source; KiCad files are build outputs |
-| 5 | Primary target MCU | STM32 / ESP32 / RP2040 / nRF / AVR | Undecided |
-| 6 | Board complexity | 2-layer / multi-layer / high-speed | Undecided; start with 2-layer |
+| # | Decision | Status |
+|---|---|---|
+| 1 | Implementation language | **Python** (strict typing + pydantic) — decided |
+| 2 | Design file format | **YAML** (strict parsing) — decided |
+| 3 | Fork tscircuit or build from scratch | **Build**; tscircuit not forked — decided |
+| 4 | PCB source of truth | Open; leaning: our format is the source, KiCad files are build outputs (M2) |
+| 5 | Primary target MCU | Open (M3) |
+| 6 | Board complexity | Open; start with 2-layer (M2) |
 
-Items 1–3 should be settled before starting M0. If undecided, default to Python + YAML + ngspice subprocess for the first slice and revisit after using it.
+Rationale for each is in `DESIGN_DECISIONS.md` §2 and §7.
 
 ## 12. Roadmap
 
 | Milestone | Scope | Done when |
 |---|---|---|
-| **M0** | Vertical slice: source + resistor + LED defined in text → `sim` → JSON verdict → `render` SVG | Claude Code, given "make LED current 10 mA," edits the file, runs check/sim, and confirms pass on its own |
+| **M0** ✅ | Vertical slice: source + resistor + LED defined in text → `sim` → JSON verdict → `render` SVG | Claude Code, given "make LED current 10 mA," edits the file, runs check/sim, and confirms pass on its own (done 2026-10-20) |
 | **M1** | Part DB, import vendor SPICE models, waveform output, ERC | Real ICs (e.g. an op-amp circuit) simulate with pass/fail tests |
 | **M2** | KiCad format generation, `kicad-cli` DRC and Gerber export, auto-routing | A board is produced from design files with DRC results as JSON |
 | **M3** | Firmware integration: pin header generation, static cross-checks | Changing a pin in the schematic updates `pins.h` and flags conflicts |
@@ -256,8 +236,5 @@ Because the human only watches, provide:
 
 ## 16. Immediate Next Steps
 
-1. Settle open decisions #1–#3 (language, file format, tscircuit fork or not).
-2. Create the project skeleton and a `CLAUDE.md` with the working loop rules.
-3. Implement M0: circuit file → netlist → ngspice → JSON result → test verdict → SVG render.
-4. Run the "LED current to 10 mA" scenario with Claude Code and note friction points.
-5. Revise the format and CLI based on what the AI finds hard, then proceed to M1.
+1. Address the M0 friction points listed in `DESIGN_DECISIONS.md` §11.
+2. Start M1: vendor SPICE model import (`.lib` / subcircuits), an op-amp part, more analyses (AC), and a real-IC example with pass/fail tests.

@@ -1,7 +1,7 @@
 # AI-Native EDA — Design Decisions
 
 > Companion to `PROJECT_SUMMARY.md`. Records what was discussed and decided on 2026-10-20.
-> Status: decisions settled; project skeleton, `CLAUDE.md`, and toolchain set up (2026-10-20). M0 not started.
+> Status: M0 complete (2026-10-20). See §10 for the M0 specification and §11 for results.
 
 ---
 
@@ -152,9 +152,10 @@ Sources:
 
 1. ~~Create the project skeleton and `CLAUDE.md`, initialize git.~~ Done.
 2. ~~Install ngspice and KiCad (kicad-cli); Python dependencies via uv.~~ Done.
-3. Agree on the M0 schemas (`circuit.yaml`, `test.yaml`) and the unified JSON result format.
-4. Implement M0: `circuit.yaml` → netlist → ngspice → JSON result → test verdict → SVG render → viewer.
-5. Run the "LED current to 10 mA" scenario and note friction points.
+3. ~~Agree on the M0 schemas and the unified JSON result format.~~ Done (§10).
+4. ~~Implement M0.~~ Done.
+5. ~~Run the "LED current to 10 mA" scenario and note friction points.~~ Done (§11).
+6. Fix the friction points in §11, then start M1.
 
 ## 10. M0 Specification (decided 2026-10-20)
 
@@ -246,3 +247,34 @@ Exit codes: `0` all passed, `1` design errors (fix the files), `2` tool or envir
 ### 10.8 Viewer
 
 `eda watch` runs a stdlib HTTP server (`127.0.0.1`), pushes updates with Server-Sent Events, and watches files with watchfiles. The page shows the schematic, verdict table, interactive waveforms (zoom and hover), and the iteration log. No external CDN.
+
+## 11. M0 Result (2026-10-20)
+
+### Scenario: "make the LED current 10 mA"
+
+`projects/led_demo/` started from R1 = 470 Ω with the test `current(D1)` in 9.5–10.5 mA.
+
+| Iteration | Change | `eda run` result |
+|---|---|---|
+| 1 | — | fail: `current(D1) = 6.752mA, expected 9.5mA..10.5mA (too low by 2.748mA)` at `design/test.yaml:6`; operating point showed V(N1) = 1.83 V |
+| 2 | R1 = (5 V − 1.85 V) / 10 mA ≈ 315 Ω → E96 316 Ω | pass: 9.969 mA, V(N1) = 1.85 V |
+
+The JSON error and the operating-point table gave everything needed for the fix; no tool change was required mid-loop. The commits `6cbf099` → `bd15ba7` and `projects/led_demo/iterations.jsonl` record the loop.
+
+### What exists
+
+- Commands: `check`, `sim`, `render`, `run`, `part list|show`, `log`, `watch` (§10.6).
+- 7 built-in parts; ERC (unconnected pins, single-pin nets, missing ground, no DC path, shorts, case collisions).
+- ngspice 47 batch runs (`op`, `tran`) with seven reductions; netlistsvg schematics; SVG waveforms; PNG copies via headless Chrome.
+- Live viewer: schematic, verdicts, operating point, interactive waveforms (zoom, pan, hover), iteration log, errors with file:line. `?snapshot` disables the live connection for headless screenshots.
+- Examples: `projects/led_demo/` (op), `projects/rc_filter/` (tran + op).
+- 79 tests; ruff, pyright strict, pytest all pass.
+
+### Friction points (to address before or during M1)
+
+1. **Schematic net names are not shown.** netlistsvg draws only supply and ground symbols, so nets such as `N1` or `OUT` that tests refer to are unlabeled.
+2. **Symbol details are missing.** The voltage-source symbol has no +/− marks, and the LED symbol does not show its color value.
+3. **Iteration notes are manual.** The "why" of a change exists only if `eda log -m` is called; the CLI cannot infer intent.
+4. **Rasterizing uses Chrome.** It works but takes about a second per image; `rsvg-convert` (`librsvg2-bin`) would be faster if installed.
+5. **No standard-value helper.** Picking E-series values (316 Ω) is left to the agent; a part-level `series: E96` hint or a helper could reduce guesswork later.
+6. **Timestamps in the log are UTC**; the viewer converts to local time, raw JSON does not.

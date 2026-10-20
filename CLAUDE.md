@@ -29,21 +29,23 @@ uv run pytest
 
 ## 3. Design Work Loop
 
-For a design task in `projects/<name>/`:
+For a design task in `projects/<name>/` (schema: `DESIGN_DECISIONS.md` §10; examples: `projects/led_demo/`, `projects/rc_filter/`):
 
-1. Edit the design YAML (`design/circuit.yaml`, `design/test.yaml`, ...).
-2. `eda check` — structure and rule validation (ERC).
-3. `eda sim` — simulation and test-criteria verdict.
-4. `eda render` — schematic / waveform / board images.
-5. On failure, read the JSON errors, fix the design files, and repeat.
-6. When everything passes, report the results to the user.
+1. Record the goal: `uv run eda log projects/<name> -m "Goal: ..."`.
+2. Edit the design YAML (`design/circuit.yaml`, `design/test.yaml`). Every requirement becomes an expectation in `test.yaml`.
+3. `uv run eda run projects/<name>` — check → sim → render in one call. Exit code 0 = all pass, 1 = design errors, 2 = tool failure.
+4. On failure, read `errors` in the JSON: each has `rule`, `message`, `file`, `line`, `path`, `details`. Use `data.sim.tests.<name>.operating_point` for node voltages and currents.
+5. Record the fix and its reasoning: `uv run eda log projects/<name> -m "Fix: ..."`. Then edit and repeat from step 3.
+6. Look at `out/schematic.png` and `out/waves/<test>.png` before reporting; when everything passes, report to the user.
 
-## 4. Iteration Log
+Other commands: `eda check`, `eda sim [-t TEST]`, `eda render`, `eda part list`, `eda part show ID`.
+The CLI never makes design decisions; it only reports.
 
-Each loop of the design work loop records:
+## 4. Iteration Log and Viewer
 
-- what changed (files and intent),
-- which check failed (rule, location, values),
-- how it was fixed.
+- `iterations.jsonl` in each project (tracked by git) records every `eda` run (changed files, errors) and every `eda log` note (intent and fix).
+- `uv run eda watch projects/<name>` re-runs on file changes and serves the live viewer at http://127.0.0.1:8765/ (schematic, verdicts, interactive waveforms, iteration log). The user watches it; start it when they want to observe.
 
-The log is shown in the local viewer (`eda watch`).
+## 5. Adding Parts
+
+Built-in parts live in `parts/<id>.yaml` (one file per type, file name = id); project-specific parts go in `projects/<name>/parts/`. Fields: pins, params (`unit` or `choices`, optional `default`), `spice` template and current probe, netlistsvg `symbol`, `dc_path`.
