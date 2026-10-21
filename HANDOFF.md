@@ -1,6 +1,6 @@
 # Handoff — where the work stopped and how to continue
 
-> Written 2026-10-20 after M0–M3; updated after M4 and on 2026-10-21 (stimulus, pours, placement, optran, KiCad schematic, wired schematic, bad-input hardening, playback viewer, NPN/LDR parts and new example designs). Read this first, then
+> Written 2026-10-20 after M0–M3; updated after M4 and on 2026-10-21 (stimulus, pours, placement, optran, KiCad schematic, wired schematic, bad-input hardening, playback viewer, NPN/LDR parts and new example designs, ordering for hand soldering). Read this first, then
 > `CLAUDE.md` (working rules and design loop), then `DESIGN_DECISIONS.md` §10–§15 for detail.
 
 ## 1. Status
@@ -15,7 +15,7 @@
 
 - All six open decisions from `PROJECT_SUMMARY.md` §11 are settled (Python, YAML, no tscircuit fork, YAML is the PCB source of truth, RP2040/Pico, 2-layer boards).
 - Repository: https://github.com/TechieQuokka/ai-eda (public, `master`); the user approves each push (`git status` shows what is local).
-- Quality gates: `ruff format --check`, `ruff check`, `pyright` (strict), and `pytest` (249 tests) all pass; all eight example projects pass `eda run`.
+- Quality gates: `ruff format --check`, `ruff check`, `pyright` (strict), and `pytest` (252 tests) all pass; all eight example projects pass `eda run`.
 - Bad-input hardening (`DESIGN_DECISIONS.md` §21): malformed and extreme input answers in JSON with a rule instead of crashing, hanging, or passing; regression tests in `tests/test_bad_input.py`.
 - Checking the examples: `eda run`/`eda render` append to each project's `iterations.jsonl`; for a status check that should leave no trace, call `eda.pipeline.render(Path("projects/<name>"))` from `uv run python` instead.
 
@@ -69,8 +69,9 @@ M4 is finished (`DESIGN_DECISIONS.md` §15): `pico_io` blinks its LED in the emu
 6. ~~KiCad schematic export~~: done (§19); placed and wired like a hand-drawn schematic (§20).
 7. ~~Bad-input testing~~: done (§21).
 8. ~~Replay a simulation on the schematic~~: done (Playback card, §22).
-9. **DC sweep analysis** (not started): sweep a source or a part parameter (e.g. an LDR's light) and measure where an output crosses a level; `nightlight` finds its switching point only in steps (9–7 lx) through events today.
-10. More example designs the user suggested: PWM dimming from a pot (Pico ADC → PWM, check with `duty()`), a button that toggles an LED, an op-amp low-pass filter.
+9. ~~Ordering a board for hand soldering~~: done (§23: shopping BOM with `mpn:`, `fab: jlcpcb` limits, assembly drawing, `docs/ordering.md`). The user solders by hand; assembly services (LCSC numbers, CPL files, SMD defaults) are out of scope unless they ask.
+10. **DC sweep analysis** (not started): sweep a source or a part parameter (e.g. an LDR's light) and measure where an output crosses a level; `nightlight` finds its switching point only in steps (9–7 lx) through events today.
+11. More example designs the user suggested: PWM dimming from a pot (Pico ADC → PWM, check with `duty()`), a button that toggles an LED, an op-amp low-pass filter.
 
 Working style the user set (2026-10-21): every task must be doable without the GUI (the CLI's JSON is the source of truth); the user checks GUI layout themselves, Claude verifies logic only.
 

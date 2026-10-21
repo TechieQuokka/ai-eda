@@ -145,6 +145,8 @@ $ eda pcb projects/tl072_amp
 
 The YAML stays the source of truth: the KiCad board, routes, and Gerbers are regenerated on every run, and identical designs give identical boards.
 
+To have it made: `fab: jlcpcb` checks the board against the PCB house's limits, the BOM is a shopping list, and `out/assembly.svg` is a true-size soldering guide. [docs/ordering.md](docs/ordering.md) walks through ordering and soldering.
+
 ### Schematic and firmware stay in sync
 
 ```yaml
