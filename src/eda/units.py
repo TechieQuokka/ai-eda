@@ -36,6 +36,7 @@ UNITS: Final[dict[str, tuple[str, float]]] = {
     "V/us": ("V/s", 1e6),
     "m": ("m", 1.0),
     "%": ("%", 1.0),
+    "lx": ("lx", 1.0),  # illuminance (light sensors)
 }
 CANONICAL: Final = frozenset(unit for unit, _ in UNITS.values())
 
@@ -46,7 +47,7 @@ _DISPLAY: Final[dict[str, str]] = {"ohm": "Ω"}
 _QUANTITY_RE: Final = re.compile(
     r"^(?P<number>[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)"
     r" ?(?P<prefix>[pnuµmkMGT])?"
-    r"(?P<unit>V/us|V/ms|V/s|ohm|Ω|Hz|dB|deg|F|H|V|A|s|m|%)$"
+    r"(?P<unit>V/us|V/ms|V/s|ohm|Ω|Hz|dB|deg|lx|F|H|V|A|s|m|%)$"
 )
 
 

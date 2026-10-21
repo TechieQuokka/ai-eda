@@ -1,0 +1,24 @@
+id: ldr
+name: Light-dependent resistor
+category: sensor
+description: >
+  CdS photoresistor like the GL5528 (5 mm): about 15 kΩ at 10 lx, falling as
+  light^-0.7 (gamma 0.7), so 75 kΩ at 1 lx and 3 kΩ at 100 lx; kept within
+  100 Ω..1 MΩ (the dark resistance). `light` is the illuminance on it: about 0.1 lx
+  moonlight, 1-10 lx dusk / a dark room, 100-500 lx indoor light, 10 klx daylight.
+  Current is positive from pin 1 to pin 2.
+pins: ["1", "2"]
+params:
+  light: { unit: lx, default: 100lx, min: 0lx, description: illuminance on the sensor }
+spice:
+  prefix: R
+  template: "<name> <pin:1> <pin:2> {min(max(15e3*pow(max(<param:light>, 1e-3)/10, -0.7), 100), 1e6)}"
+symbol:
+  cell: r_v
+  ports: { "1": A, "2": B }
+  label: "LDR <param:light>"
+kicad:
+  symbol: Sensor_Optical:LDR03
+pcb:
+  footprint: OptoDevice:R_LDR_5.1x4.3mm_P3.4mm_Vertical
+  pads: { "1": "1", "2": "2" }

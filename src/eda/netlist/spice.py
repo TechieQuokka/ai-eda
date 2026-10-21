@@ -1,6 +1,7 @@
 """Resolved circuit → ngspice netlist with a batch `.control` block."""
 
 import ast
+import math
 import re
 from collections.abc import Callable
 from pathlib import Path
@@ -274,14 +275,37 @@ def _abs(value: float) -> float:
     return abs(value)
 
 
-_FUNCTIONS: dict[str, Callable[..., float]] = {"max": _max, "min": _min, "abs": _abs}
+def _pow(base: float, exponent: float) -> float:
+    if base < 0 and not float(exponent).is_integer():
+        raise ValueError(f"pow({base}, {exponent}) has no real value")
+    return float(base**exponent)
+
+
+def _exp(value: float) -> float:
+    return math.exp(value)
+
+
+def _sqrt(value: float) -> float:
+    return math.sqrt(value)
+
+
+# The ngspice expression functions part templates use (same names, same meaning).
+_FUNCTIONS: dict[str, Callable[..., float]] = {
+    "max": _max,
+    "min": _min,
+    "abs": _abs,
+    "pow": _pow,
+    "exp": _exp,
+    "sqrt": _sqrt,
+}
 
 
 def alter_commands(old: ResolvedPart, new: ResolvedPart, circuit: ResolvedCircuit) -> list[str]:
     """ngspice `alter` commands that turn `old`'s elements into `new`'s mid-simulation.
 
     Only R, C, and L values can change (`R1 a b VALUE`); a value may be a `{...}`
-    expression of numbers, + - * /, max, min, and abs. Raises ValueError otherwise.
+    expression of numbers, + - * /, max, min, abs, pow, exp, and sqrt. Raises ValueError
+    otherwise.
     """
     before = element_lines(old, circuit)
     after = element_lines(new, circuit)

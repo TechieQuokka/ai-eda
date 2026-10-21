@@ -1,0 +1,4 @@
+name: nightlight
+description: >
+  Night light: an LED that turns on when it gets dark. A photoresistor (GL5528-like)
+  and a resistor divide 5 V; a Darlington pair of 2N3904 drives the LED. Cheap parts only.

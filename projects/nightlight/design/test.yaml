@@ -1,0 +1,55 @@
+# The LED is off in daylight and room light, comes on at dusk (between 30 lx and 3 lx),
+# and is fully on in the dark, without exceeding the parts' limits.
+tests:
+  room_light:
+    description: Indoor light (300 lx) keeps the LED off and the circuit nearly idle.
+    analysis: { type: op }
+    parts: { LDR1: { light: 300lx } }
+    expect:
+      - { measure: current(D1), max: 10uA }
+      - { measure: current(V1), min: -200uA }
+  dim_room:
+    description: A dim room (30 lx) still keeps the LED off.
+    analysis: { type: op }
+    parts: { LDR1: { light: 30lx } }
+    expect:
+      - { measure: current(D1), max: 0.5mA }
+  dusk:
+    description: At 3 lx the LED is clearly on.
+    analysis: { type: op }
+    parts: { LDR1: { light: 3lx } }
+    expect:
+      - { measure: current(D1), min: 5mA }
+  night:
+    description: At 1 lx the LED is fully on at about 8-12 mA (white LED, 20 mA max).
+    analysis: { type: op }
+    parts: { LDR1: { light: 1lx } }
+    expect:
+      - { measure: current(D1), min: 8mA, max: 15mA }
+      - { measure: current(Q2.c), max: 50mA }
+  moonless:
+    description: In total darkness (LDR at its 1 MΩ dark resistance) nothing changes.
+    analysis: { type: op }
+    parts: { LDR1: { light: 0lx } }
+    expect:
+      - { measure: current(D1), min: 8mA, max: 15mA }
+      - { measure: current(Q1.b), max: 200uA }
+  sunset:
+    description: >
+      The light falls step by step (one step per second, 50 lx to 1 lx). The LED stays
+      dark down to 12 lx, is partly on at 9 lx (about 4 mA), and passes 6 mA no later
+      than the 7 lx step (4 s); from there on it is fully on.
+    analysis: { type: tran, step: 10ms, stop: 8s }
+    parts: { LDR1: { light: 50lx } }
+    events:
+      - { at: 1s, part: LDR1, set: { light: 20lx } }
+      - { at: 2s, part: LDR1, set: { light: 12lx } }
+      - { at: 3s, part: LDR1, set: { light: 9lx } }
+      - { at: 4s, part: LDR1, set: { light: 7lx } }
+      - { at: 5s, part: LDR1, set: { light: 5lx } }
+      - { at: 6s, part: LDR1, set: { light: 3lx } }
+      - { at: 7s, part: LDR1, set: { light: 1lx } }
+    expect:
+      - { measure: max(current(D1)), to: 2.9s, max: 0.5mA }
+      - { measure: "cross(current(D1), 6mA)", min: 3s, max: 4.5s }
+      - { measure: min(current(D1)), from: 4.5s, min: 10mA }

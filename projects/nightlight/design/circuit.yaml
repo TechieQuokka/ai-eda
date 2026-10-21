@@ -1,0 +1,19 @@
+description: >
+  RTOP and the LDR divide 5 V. In light the LDR is a few kΩ and holds BASE low (both
+  transistors off). In the dark its resistance rises, BASE climbs past the Darlington's
+  two base-emitter drops (about 1.2 V) and Q2 sinks the LED current through RL.
+parts:
+  V1: { type: dc_voltage_source, voltage: 5V }
+  RTOP: { type: resistor, resistance: 47kohm }
+  LDR1: { type: ldr, light: 300lx }
+  Q1: { type: npn, model: 2N3904 }
+  Q2: { type: npn, model: 2N3904 }
+  RL: { type: resistor, resistance: 100ohm }
+  D1: { type: led, color: white }
+nets:
+  VCC: [V1.+, RTOP.1, RL.1]
+  BASE: [RTOP.2, LDR1.1, Q1.b]
+  MID: [Q1.e, Q2.b]
+  LED_A: [RL.2, D1.anode]
+  COL: [D1.cathode, Q1.c, Q2.c]
+  GND: [V1.-, LDR1.2, Q2.e]

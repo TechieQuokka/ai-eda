@@ -52,10 +52,10 @@ The CLI never makes design decisions; it only reports.
 - Probes: `voltage(NET)`, `voltage(A, B)`, `current(R1)` (into the first pin), `current(U1.out)` (per pin of multi-pin parts).
 - Functions: `max min initial final avg rms pp`, `at(trace, 1ms | 1kHz)`, `cross(trace, LEVEL)` (time / frequency of the first crossing), `period(trace, LEVEL)` (tran: mean time between rising crossings), `width(trace, LEVEL)` / `gap(trace, LEVEL)` (tran: mean time above / below LEVEL per pulse, whole pulses only), `duty(trace, LEVEL)` (tran: % of the time above LEVEL), and for AC `db mag phase`. Examples: `"at(db(voltage(OUT)), 1kHz)"`, `"cross(db(voltage(OUT)), 17.8dB)"`, `"period(current(D1), 3mA)"`, `"width(current(D1), 3mA)"`.
 - Per-test part parameters: `parts: { SW1: { state: pressed }, RV1: { position: 25% } }`.
-- Events during a `tran` test: `events: [{ at: 1.1s, part: SW1, set: { state: pressed } }, { at: 300ms, serial: UART_RX, send: "rate 100\n" }]`. Part events can change R/C/L values (switches, pots, resistors); serial events need `firmware: true`. Event times are marked on the waveform plots.
+- Events during a `tran` test: `events: [{ at: 1.1s, part: SW1, set: { state: pressed } }, { at: 300ms, serial: UART_RX, send: "rate 100\n" }]`. Part events can change R/C/L values (switches, pots, resistors, an LDR's `light`); serial events need `firmware: true`. Event times are marked on the waveform plots.
 - Time range of a tran measure: `{ measure: "period(current(D1), 3mA)", from: 1.6s, to: 2s, ... }` (either bound may be left out).
 - **Quote any measure that contains a comma** inside `{ ... }`.
-- Units: `V A ohm F H s Hz dB deg V/us`, prefixes `p n u m k M G T` (case-sensitive).
+- Units: `V A ohm F H s Hz dB deg V/us % lx`, prefixes `p n u m k M G T` (case-sensitive).
 - Limits: tran ≤ 1e6 points (stop/step), ac ≤ 1e5 frequencies, firmware tests ≤ 1e5 steps (`too_many_points`). A `singular_matrix` error means the circuit has no unique solution (e.g. a `dc_loop` of sources and inductors): fix the circuit, the numbers are not judged.
 
 ## 6. Parts and Vendor Models
