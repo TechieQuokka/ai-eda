@@ -16,8 +16,8 @@ rules:
   track_width: 0.25mm
 placement:
   LCD1: { x: 12mm, y: 6mm }
-  U1: { x: 89mm, y: 1.5mm }
-  SWP: { x: 109mm, y: 62mm, rotation: 270deg }
+  U1: { x: 89mm, y: 3mm }   # USB socket 0.3 mm inside the edge, silkscreen on the board
+  SWP: { x: 106.5mm, y: 62mm, rotation: 270deg }
   BT1: { x: 109mm, y: 74mm, rotation: 270deg }
   D1: { x: 92mm, y: 86mm }
   U2: { x: 68mm, y: 96mm }
@@ -53,5 +53,5 @@ placement:
 routing:
   passes: 60
 pours:
-  - { net: GND, layer: bottom }
+  - { net: GND, layer: top }
 fab: jlcpcb

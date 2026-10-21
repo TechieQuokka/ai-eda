@@ -756,7 +756,11 @@ LCD top left with the Pico beside it, USB on the top edge (the plug needs the mo
 - **CGRAM characters in the LCD's SVG title** are spelled `\x00`; the raw control characters made the SVG invalid XML and crashed the PNG rendering.
 - **New parts**: `battery` (pack off the board on wire pads; voltage behind internal resistance, negative = reversed), `slide_switch` (SPDT; `<choice:P.T>` lets one choice parameter set several elements), `pololu_u1v11f5` (behavioural boost model `parts/models/eda_boost.lib`: 5 V behind 50 mΩ that only sources, input power = output power / `eta` + 0.5 mA, start/shutdown thresholds), and the `1N5817` Schottky for `diode` (model fitted to the onsemi datasheet's maximum forward voltages; no vendor model could be downloaded).
 
-### 27.6 Not covered
+### 27.6 Warnings cleared (after 1.2.0)
+
+The board had 19 DRC warnings (no errors); the user asked to clear what can be cleared. Silkscreen past the edge (17): the Pico's outline includes its USB socket, 2.78 mm above pin 1, so the Pico moved 1.5 mm down (y 3 mm: the socket's face 0.3 mm inside the edge, which a micro-USB plug's shell still reaches past), and the power switch 2.5 mm in. Single-spoke thermal reliefs (2, then 1): on the bottom layer the key-row tracks hug the Pico's GND pin 18, so even a pour on both layers or a 0.25 mm pour clearance left one spoke there; the GND pour is now on the top layer only (11,700 mm² of the 14,112 mm² board). The board now has no warnings.
+
+### 27.7 Not covered
 
 The boost module's ripple, current limit, and start-up; the battery's discharge curve over time (only static voltages); USB power in simulation (the Pico model has no VBUS → VSYS diode); key legends on the silkscreen (the references `KCLR`, `KDEL`, `KPCT`, `KDIV`, `KMUL`, `KSUB`, `KADD`, `KNEG`, `KDOT`, `KEQ`, `K0`–`K9` name the keys); the U2 module outline on the assembly drawing; an enclosure. Battery life estimated from the 83.5 mA input at 3 V: about a day of use on 2000 mAh alkaline cells, most of it the Pico and the backlight.
 
