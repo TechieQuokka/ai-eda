@@ -32,13 +32,18 @@ def changed_files(paths: ProjectPaths) -> list[str]:
         previous: dict[str, str] = json.loads(state_path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         previous = {}
-    current = {
-        paths.rel(f): hashlib.sha256(f.read_bytes()).hexdigest() for f in paths.design_files()
-    }
+    current = {paths.rel(f): _digest(f) for f in paths.design_files()}
     paths.out_dir.mkdir(parents=True, exist_ok=True)
     state_path.write_text(json.dumps(current, indent=1), encoding="utf-8")
     names = sorted(set(previous) | set(current))
     return [n for n in names if previous.get(n) != current.get(n)]
+
+
+def _digest(path: Path) -> str:
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return "unreadable"  # the run itself reports why
 
 
 def design_changes(paths: ProjectPaths, result: Result) -> list[str] | None:

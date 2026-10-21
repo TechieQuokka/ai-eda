@@ -3,6 +3,7 @@
 import argparse
 import json
 import sys
+import traceback
 from importlib.metadata import version
 from pathlib import Path
 
@@ -21,6 +22,22 @@ def main(argv: list[str] | None = None) -> int:
     if command is None:
         parser.print_help()
         return ExitCode.OK
+    try:
+        return _dispatch(args, command)
+    except Exception as exc:  # a bug in eda must still answer in JSON
+        # The full traceback goes to stderr for whoever debugs eda itself.
+        traceback.print_exc(file=sys.stderr)
+        frame = traceback.extract_tb(exc.__traceback__)[-1]
+        diag = Diagnostics()
+        diag.fail_tool(
+            "internal_error",
+            f"eda failed unexpectedly: {type(exc).__name__}: {exc}",
+            where=f"{Path(frame.filename).name}:{frame.lineno}",
+        )
+        return _emit(diag.to_result(command, "", {}))
+
+
+def _dispatch(args: argparse.Namespace, command: str) -> int:
     if command == "part":
         return _part(args.action, args.id)
     if command == "value":
@@ -32,6 +49,13 @@ def main(argv: list[str] | None = None) -> int:
     if root is None:
         return _emit(_no_project(command, args.project))
     paths = ProjectPaths(root)
+    if paths.out_dir.exists() and not paths.out_dir.is_dir():
+        diag = Diagnostics()
+        diag.fail_tool(
+            "out_not_a_directory",
+            f"{paths.out_dir} exists but is not a directory; eda writes its results there",
+        )
+        return _emit(diag.to_result(command, root.name, {}))
 
     if command == "log":
         entry = history.record_note(paths, args.message)

@@ -116,8 +116,17 @@ class Measure:
 # --- parsing ----------------------------------------------------------------------------
 
 
+MAX_NESTING = 20  # function calls inside one another in a measure
+
+
 def parse_measure(text: str) -> Node:
     tokens = _tokenize(text)
+    depth = deepest = 0
+    for kind, _ in tokens:
+        depth += {"open": 1, "close": -1}.get(kind, 0)
+        deepest = max(deepest, depth)
+    if deepest > MAX_NESTING:
+        raise MeasureSyntaxError(f"{text[:40]!r}...: nested more than {MAX_NESTING} levels deep")
     node, rest = _parse_node(tokens, text)
     if rest:
         raise MeasureSyntaxError(f"unexpected {rest[0][1]!r} in {text!r}")

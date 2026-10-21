@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 from typing import Annotated, Literal, Self
 
@@ -168,6 +169,7 @@ class PartSpec(StrictModel):
             raise ValueError("mcu.gpio keys must be pins of the part")
         if self.pcb is not None and set(self.pcb.pads) != set(self.pins):
             raise ValueError("pcb.pads must map every pin exactly once")
+        self._check_template()
         if self.spice.model_param is not None:
             spec = self.params.get(self.spice.model_param)
             if spec is None or spec.choices is None:
@@ -176,3 +178,33 @@ class PartSpec(StrictModel):
             if missing:
                 raise ValueError(f"spice.models lacks entries for {sorted(missing)}")
         return self
+
+    def _check_template(self) -> None:
+        """Every placeholder in spice.template must name something the part has."""
+        for token in re.findall(r"<([^<>\s]*)>", self.spice.template):
+            kind, sep, key = token.partition(":")
+            if not sep and kind == "name":
+                continue
+            if not sep and kind == "model":
+                if self.spice.model_param is None:
+                    raise ValueError("spice.template uses <model> but there is no model_param")
+                continue
+            if kind == "pin" and key in self.pins:
+                continue
+            if kind == "param" and key in self.params:
+                continue
+            if kind == "choice":
+                spec = self.params.get(key)
+                if spec is None or spec.choices is None:
+                    raise ValueError(f"<choice:{key}> needs a choices parameter {key!r}")
+                missing = set(spec.choices) - set(self.spice.choice_values.get(key, {}))
+                if missing:
+                    raise ValueError(f"spice.choice_values.{key} lacks {sorted(missing)}")
+                continue
+            what = {"pin": "pin", "param": "parameter"}.get(kind)
+            if what is not None:
+                raise ValueError(f"spice.template: <{token}>: the part has no {what} {key!r}")
+            raise ValueError(
+                f"spice.template: unknown placeholder <{token}>; use <name>, <model>, "
+                "<pin:P>, <param:X>, or <choice:X>"
+            )

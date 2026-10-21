@@ -1,6 +1,7 @@
 """Regression tests for bad and extreme input: each case once crashed, hung, or was accepted."""
 
 import json
+import os
 import shutil
 from pathlib import Path
 from textwrap import dedent
@@ -297,3 +298,81 @@ def test_firmware_faults_halts_and_uart_pacing_are_reported(tmp_path: Path) -> N
     assert fault_at == pytest.approx(1200 * 10 / 115200, rel=0.1)
     halted_at = firmware["halted_at"]
     assert isinstance(halted_at, float) and fault_at <= halted_at < 0.2
+
+
+def test_unexpected_exceptions_still_answer_in_json(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], make_project: MakeProject
+) -> None:
+    def boom(*_args: object) -> None:
+        raise RuntimeError("simulated bug")
+
+    monkeypatch.setattr(pipeline, "check", boom)
+    code, result = _cli(["check", str(make_project())], capsys)
+    assert code == 2
+    assert _rules(result) == ["internal_error"]
+    assert "RuntimeError: simulated bug" in str(result["errors"])
+
+
+def test_out_that_is_a_file(make_project: MakeProject, capsys: pytest.CaptureFixture[str]) -> None:
+    root = make_project()
+    (root / "out").write_text("not a directory", encoding="utf-8")
+    code, result = _cli(["run", str(root)], capsys)
+    assert code == 2
+    assert _rules(result) == ["out_not_a_directory"]
+
+
+def test_unreadable_design_file_is_reported(
+    make_project: MakeProject, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = make_project()
+    circuit = root / "design" / "circuit.yaml"
+    circuit.chmod(0)
+    try:
+        if os.access(circuit, os.R_OK):
+            pytest.skip("running as a user who can read anything")
+        code, result = _cli(["check", str(root)], capsys)
+    finally:
+        circuit.chmod(0o644)
+    assert code == 1
+    assert _rules(result) == ["file_unreadable"]
+
+
+def test_deeply_nested_measure(make_project: MakeProject) -> None:
+    measure = "max(" * 10_000 + "voltage(VCC)" + ")" * 10_000
+    tests = f"""
+    tests:
+      t:
+        analysis: {{ type: tran, step: 1us, stop: 1ms }}
+        expect:
+          - {{ measure: "{measure}", max: 10V }}
+    """
+    diag = Diagnostics()
+    assert load_design(make_project(tests=tests), diag) is None
+    assert [e.rule for e in diag.errors] == ["invalid_measure"]
+    assert "nested more than 20" in diag.errors[0].message
+
+
+@pytest.mark.parametrize(
+    ("template", "message"),
+    [
+        ("<name> <pin:1> <pin:2> <param:nope>", "no parameter 'nope'"),
+        ("<name> <pin:1> <pin:9> <param:resistance>", "no pin '9'"),
+        ("<name> <pin:1> <pin:2> <param:resistance> <foo>", "unknown placeholder <foo>"),
+        ("<name> <pin:1> <pin:2> <choice:resistance>", "needs a choices parameter"),
+        ("<name> <pin:1> <pin:2> <model>", "no model_param"),
+    ],
+)
+def test_part_templates_are_checked_when_loaded(
+    make_project: MakeProject, template: str, message: str
+) -> None:
+    root = make_project()
+    (root / "parts").mkdir()
+    spec = (EXAMPLES.parent / "parts" / "resistor.yaml").read_text(encoding="utf-8")
+    spec = spec.replace("id: resistor", "id: odd_r").replace(
+        '"<name> <pin:1> <pin:2> <param:resistance>"', json.dumps(template)
+    )
+    (root / "parts" / "odd_r.yaml").write_text(spec, encoding="utf-8")
+    diag = Diagnostics()
+    load_design(root, diag)
+    assert [e.rule for e in diag.errors] == ["schema"]
+    assert message in diag.errors[0].message
