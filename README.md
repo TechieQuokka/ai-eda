@@ -252,7 +252,7 @@ The repository's [`CLAUDE.md`](CLAUDE.md) is the working contract for an agent s
 | **M3** | Firmware integration: generated `pins.h`, schematic/firmware cross-checks | ✅ Done |
 | **M4** | Firmware build, MCU emulation co-simulated with the analog circuit | ✅ Done |
 
-Since M4: hardening against malformed and extreme input (every answer is JSON with a rule; limits on runaway runs; no simulator commands from part or model files), the playback viewer, and small example designs built and verified with the CLI only: `led_blink` (Pico firmware), `led_blink_bjt` (two-transistor astable), `nightlight` (LDR + Darlington).
+Since M4: hardening against malformed and extreme input (every answer is JSON with a rule; limits on runaway runs; no simulator commands from part or model files), the playback viewer, and small example designs built and verified with the CLI only: `led_blink` (Pico firmware), `led_blink_bjt` (two-transistor astable), `nightlight` (LDR + Darlington), and `water_alarm` (a water detector taken all the way to an orderable board).
 
 Background and decisions: [`PROJECT_SUMMARY.md`](PROJECT_SUMMARY.md), [`DESIGN_DECISIONS.md`](DESIGN_DECISIONS.md).
 

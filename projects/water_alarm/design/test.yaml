@@ -34,3 +34,16 @@ tests:
     expect:
       - { measure: "cross(current(D1), 1mA)", min: 150kohm, max: 600kohm }
       - { measure: max(current(D1)), max: 15mA }
+  splash:
+    description: >
+      Dry for the first second, water bridges the probes at 1 s, the probes dry at 2 s:
+      the LED is dark, lights within a few milliseconds, and goes dark again.
+    analysis: { type: tran, step: 1ms, stop: 3s }
+    events:
+      - { at: 1s, part: J1, set: { water: 100kohm } }
+      - { at: 2s, part: J1, set: { water: 1Gohm } }
+    expect:
+      - { measure: max(current(D1)), to: 0.99s, max: 10uA }
+      - { measure: min(current(D1)), from: 1.01s, to: 1.99s, min: 5mA }
+      - { measure: max(current(D1)), from: 2.01s, max: 10uA }
+      - { measure: "cross(current(D1), 1mA)", min: 1s, max: 1.01s }

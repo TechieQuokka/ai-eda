@@ -1,6 +1,6 @@
 # Handoff — where the work stopped and how to continue
 
-> Written 2026-10-20 after M0–M3; updated after M4 and on 2026-10-21 (stimulus, pours, placement, optran, KiCad schematic, wired schematic, bad-input hardening, playback viewer, NPN/LDR parts and new example designs, ordering for hand soldering, DC sweep). Read this first, then
+> Written 2026-10-20 after M0–M3; updated after M4 and on 2026-10-21 (stimulus, pours, placement, optran, KiCad schematic, wired schematic, bad-input hardening, playback viewer, NPN/LDR parts and new example designs, ordering for hand soldering, DC sweep, `water_alarm` example). Read this first, then
 > `CLAUDE.md` (working rules and design loop), then `DESIGN_DECISIONS.md` §10–§15 for detail.
 
 ## 1. Status
@@ -72,8 +72,12 @@ M4 is finished (`DESIGN_DECISIONS.md` §15): `pico_io` blinks its LED in the emu
 9. ~~Ordering a board for hand soldering~~: done (§23: shopping BOM with `mpn:`, `fab: jlcpcb` limits, assembly drawing, `docs/ordering.md`). The user solders by hand; assembly services (LCSC numbers, CPL files, SMD defaults) are out of scope unless they ask.
 10. ~~DC sweep analysis~~: done (§24: `{ type: dc, sweep: PART.param, ... }`; `nightlight` switching point 10.09 lx).
 11. More example designs the user suggested: PWM dimming from a pot (Pico ADC → PWM, check with `duty()`), a button that toggles an LED, an op-amp low-pass filter.
+12. `water_alarm` follow-ups (§25; the user wrapped the project up on 2026-10-21, none started): a breadboard trial with real water before ordering (the user's step), a tolerance/temperature (corner or Monte Carlo) analysis (a new tool feature), checking the footprints' pinouts against the 2N3904/LED datasheets, protection parts (reverse-polarity diode, a base filter capacitor against mains hum on long probe wires), and, if the user wants finished boards instead of soldering, an assembly (PCBA) path: LCSC part numbers, the house's BOM/CPL formats.
+13. Exploration without editing `test.yaml` (proposed, not agreed): `eda try PROJECT --set J1.water=100k` for one operating point, `--tran 3s --at 1s J1.water=100k` for an ad-hoc scenario. The user does **not** want controls in the viewer.
 
 Working style the user set (2026-10-21): every task must be doable without the GUI (the CLI's JSON is the source of truth); the user checks GUI layout themselves, Claude verifies logic only.
+
+User decisions of 2026-10-21 (later): the viewer stays view-only (no sliders or buttons that change the circuit); the batch simulation with scripted `events` and the Playback replay is the accepted way to show behaviour over time; Claude cannot build hardware, so "seeing the result" means the simulation and the viewer.
 
 ## 5. Known issues and carry-overs
 
@@ -90,6 +94,7 @@ Working style the user set (2026-10-21): every task must be doable without the G
 | YAML | Values with commas inside `{ ... }` must be quoted; the loader explains it when it happens | §12.1, §14.6 |
 | Design | A pulse `width` longer than its `period` is not flagged (needs a cross-parameter rule) | §21 |
 | Simulation | DC sweeps solve each point separately: no hysteresis branches of bistable circuits | §24 |
+| Simulation | Parts are simulated at nominal values only: no tolerance, temperature, or worst-case analysis | §25 |
 | Simulation | Waveform JSON is large (4–8 MB per firmware test; full float precision) | — |
 | Schematic | netlistsvg layout is automatic only; crowded for op-amp/MCU circuits (the wired KiCad view, §20, reads better and could replace it) | §12.4 |
 
