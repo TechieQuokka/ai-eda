@@ -622,3 +622,16 @@ A fuzzing pass (about 265 malformed or extreme inputs over every design file, pa
 - **Templates and messages.** Part templates are checked when loaded (every `<pin:>`, `<param:>`, `<choice:>` with all `choice_values`, `<model>`); empty or non-mapping files say so; `period()` without two rising crossings says so. `eda value` kept 12 decimal places instead of 12 significant digits and offered whole picofarads (5 pF for 4.7 pF).
 
 Left as they are: a pulse `width` longer than its `period` (a cross-parameter rule; ngspice runs it), and YAML anchors and merge keys (allowed; merged keys report the position of the key they are merged into). An untrusted project is still untrusted: its firmware build runs its CMake files.
+
+## 22. Playback, NPN and LDR parts, pulse measures (2026-10-21)
+
+Small designs requested by the user (an LED blinker three ways, a night light) were built with the CLI only and drove these additions:
+
+- **Measures** `width(trace, LEVEL)` / `gap(trace, LEVEL)` (mean time above / below LEVEL per pulse) and `duty(trace, LEVEL)` (% above), tran only, whole pulses only. Before, on/off times needed a script outside the CLI.
+- **Parts**: `npn` (TO-92 E-B-C, models 2N3904 and PN2222A, the common Gummel-Poon sets; KiCad `Transistor_BJT:2N3904`) and `ldr` (GL5528-like: 15 kΩ at 10 lx, gamma 0.7, 100 Ω..1 MΩ; parameter `light` in the new unit `lx`). Event expressions accept `pow`, `exp`, `sqrt`, so a test can change the light during a run.
+- **Playback** in the viewer: a tran test replays in real time (0.1×–10×, scrub); LEDs glow on the KiCad schematic view with their simulated current (full at 10 mA) and a table reads out currents and net voltages; an orange line on the waveforms follows. `eda render` reports `data.kicad.view_box` and `bodies` (each part's symbol body in sheet mm) for this. It is a viewing aid: everything it shows is in the CLI's JSON.
+- **Examples**: `led_blink` (Pico, firmware in the loop: period 2.00 s), `led_blink_bjt` (astable, RB 75k/82k, C 27 µF: on 1.03 s, off 1.02 s; a 1 ms power-on ramp starts the oscillation, because a perfectly balanced operating point took 3.7 s of simulated time to break), `nightlight` (RTOP 47 k over the LDR, Darlington, RL 100 Ω: off at 30 lx, 12.2 mA at 3 lx, partly on at 9 lx).
+
+Measured lessons: the astable's half period was 0.53·RB·C at 5 V, not the textbook 0.69 (0.76 with the 5 V correction), so values came from simulation; a white LED (3.0 V) plus a Darlington (0.75 V) leaves little headroom on 5 V.
+
+Not done: a DC sweep analysis, which would find the night light's switching point directly.

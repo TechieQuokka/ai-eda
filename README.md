@@ -93,16 +93,16 @@ Every run is written to the project's `iterations.jsonl` with the note, the chan
 | Area | What you get |
 |---|---|
 | **Design files** | Strict YAML 1.2 (no `no` → `false` surprises, duplicate keys are errors), validated with pydantic; every error has file, line, column, and path |
-| **ERC** | Unconnected pins, single-pin nets, missing ground, nets with no DC path, shorts between nets, shorted sources, names that collide in case-insensitive SPICE |
+| **ERC** | Unconnected pins, single-pin nets, missing ground, nets with no DC path, loops of voltage sources and inductors, shorts between nets, shorted sources, names that collide in case-insensitive SPICE; parameter ranges (no 0 Ω resistor, no negative capacitor) |
 | **Simulation** | ngspice batch runs: operating point (`op`), transient (`tran`), and frequency response (`ac`) |
-| **Measures** | `voltage(N)`, `voltage(A, B)`, `current(R1)`, `current(U1.out)` inside `max min avg rms pp initial final`, `at(…, 1kHz)`, `cross(…, -3dB)`, `period(…, 3mA)`, and `db mag phase` — type-checked per analysis, with units |
-| **Parts** | One YAML file per part type: pins, typed parameters, SPICE template, schematic symbol. Built in: DC, pulse, and sine sources; R, C, L; diodes (1N4148, 1N4007); LEDs in five colors; a generic op-amp macromodel (gain, GBW, slew rate, swing) |
+| **Measures** | `voltage(N)`, `voltage(A, B)`, `current(R1)`, `current(U1.out)` inside `max min avg rms pp initial final`, `at(…, 1kHz)`, `cross(…, -3dB)`, `period(…, 3mA)`, `width` / `gap` / `duty(…, 3mA)` for pulse trains, and `db mag phase` — type-checked per analysis, with units |
+| **Parts** | One YAML file per part type: pins, typed parameters, SPICE template, schematic symbol. Built in: DC, pulse, and sine sources; R, C, L; diodes (1N4148, 1N4007); LEDs in five colors; NPN transistors (2N3904, PN2222A); a photoresistor (LDR, light in lx); a push button and a potentiometer; a generic op-amp macromodel (gain, GBW, slew rate, swing) |
 | **Vendor models** | `eda model inspect` / `eda model import` turn a manufacturer `.subckt` (e.g. TI TL072, TLV9002) into a part, detecting PSpice-compatibility mode automatically |
 | **Rendering** | Schematic auto-layout via netlistsvg with a custom skin and net labels; waveform SVGs; PNG copies via CairoSVG for the agent to look at; a **KiCad schematic** (`.kicad_sch`) with library symbols and net labels, verified by re-exporting its netlist with `kicad-cli` |
 | **Boards** | `board.yaml` (outline, rules, optional placement, ground pours) → connectivity-aware auto-placement → KiCad 10 board → Freerouting autorouting → copper fill → `kicad-cli` DRC as JSON → Gerbers, drill, positions, and BOM in one zip |
 | **Firmware** | Raspberry Pi Pico (RP2040) part with its full GPIO function table; `firmware.yaml` assigns roles per net; `eda fw` checks functions and conflicts, generates `pins.h` / `pins_init.h`, and scans C sources; `eda fw --build` compiles with the pico-sdk and reports compiler errors by file and line |
 | **Firmware in the loop** | `firmware: true` tests run the compiled firmware in an RP2040 emulator (rp2040js) in lock-step with ngspice: GPIO and PWM outputs drive the circuit, inputs and the ADC read node voltages, UART output is checked with regular expressions |
-| **Live viewer** | `eda watch` re-runs on every save and pushes updates to a local page: schematic, verdicts, operating point, zoomable waveforms, board layout and 3D view, iteration log |
+| **Live viewer** | `eda watch` re-runs on every save and pushes updates to a local page: schematic, verdicts, operating point, zoomable waveforms, board layout and 3D view, iteration log, and a **playback** that replays a transient test in real time with LEDs glowing on the KiCad schematic |
 | **Helpers** | `eda value` for E3 … E192 standard values, `eda part list/show`, `eda log` notes |
 
 ### Frequency response, too
@@ -235,6 +235,8 @@ The repository's [`CLAUDE.md`](CLAUDE.md) is the working contract for an agent s
 | **M3** | Firmware integration: generated `pins.h`, schematic/firmware cross-checks | ✅ Done |
 | **M4** | Firmware build, MCU emulation co-simulated with the analog circuit | ✅ Done |
 
+Since M4: hardening against malformed and extreme input (every answer is JSON with a rule; limits on runaway runs; no simulator commands from part or model files), the playback viewer, and small example designs built and verified with the CLI only: `led_blink` (Pico firmware), `led_blink_bjt` (two-transistor astable), `nightlight` (LDR + Darlington).
+
 Background and decisions: [`PROJECT_SUMMARY.md`](PROJECT_SUMMARY.md), [`DESIGN_DECISIONS.md`](DESIGN_DECISIONS.md).
 
 ## Development
@@ -242,7 +244,7 @@ Background and decisions: [`PROJECT_SUMMARY.md`](PROJECT_SUMMARY.md), [`DESIGN_D
 ```bash
 uv run ruff format --check && uv run ruff check   # style and lint
 uv run pyright                                    # strict static typing
-uv run pytest                                     # 169 tests
+uv run pytest                                     # 249 tests
 ```
 
 ---
