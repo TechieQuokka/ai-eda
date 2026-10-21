@@ -658,3 +658,11 @@ The user solders the parts themselves, so the target is a bare two-layer board f
 - **Agreement.** Each point equals a plain `op` with the parameter set to that value (checked in `tests/test_dc.py`, and at 3 lx and 9 lx for the night light). Operating points still come one by one: a bistable circuit is not traced along a hysteresis branch.
 - **Example.** `nightlight` gains `switching_point`: the LED passes 1 mA at 10.09 lx (the stepped `sunset` test only showed 9–12 lx).
 - **Events gain supply steps.** The same `alter` lets a tran event change a DC source (`{ at: 10ms, part: V1, set: { voltage: 3V } }`; checked: an LED's current follows the new supply).
+
+## 25. Example: water alarm, made to be built (2026-10-21)
+
+The first design meant to be ordered and soldered by the user (`projects/water_alarm`): two probe wires on a header; water between them (100 kΩ and below) feeds a 2N3904 Darlington through RB 10 k, which lights a red LED through RL 270 Ω (8.9 mA); RPD 100 k keeps it dark while dry or damp (1 MΩ: 0.2 nA). A dc sweep of the probe resistance puts the switching point at 303 kΩ. Shorted probes give 0.35 mA of base current and the same LED current.
+
+- **Modelling what is not on the board.** The water is the parameter `water` of a project part, `parts/water_probe.yaml`: a 2-pin header on the board, a resistor between its pins in simulation (1 GΩ by default). Tests set it (`parts: { J1: { water: 100kohm } }`) or sweep it.
+- **`fab: jlcpcb` caught a real problem.** KiCad's `TO-92_Inline` has 0.15 mm pad rings (1.05 mm pads, 0.75 mm holes at 1.27 mm pitch), below JLCPCB's 0.18 mm. The built-in `npn` now defaults to `TO-92_Inline_Wide` (2.54 mm pitch, 1.5 mm pads, 0.35 mm rings), which is also easier to solder by hand.
+- **Headers on the edge.** Hand-placing the two headers on an auto-sized board let the placer put parts to their left; a fixed 40 × 30 mm board keeps them on the edge (36 × 28 mm was `no_room`).

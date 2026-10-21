@@ -1,0 +1,23 @@
+id: water_probe
+name: Water probe header
+category: connector
+description: >
+  2-pin header for the two probe wires. In simulation the pins are joined by `water`, the
+  resistance of whatever bridges the probes: 1 GΩ when dry, tens of kΩ for tap water
+  between wires a few millimetres apart. Current is positive from pin 1 to pin 2.
+pins: ["1", "2"]
+params:
+  water: { unit: ohm, positive: true, default: 1Gohm, description: resistance between the probes }
+spice:
+  prefix: R
+  template: "<name> <pin:1> <pin:2> <param:water>"
+symbol:
+  cell: r_v
+  ports: { "1": A, "2": B }
+  label: "probe <param:water>"
+kicad:
+  symbol: Connector_Generic:Conn_01x02
+pcb:
+  footprint: Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical
+  pads: { "1": "1", "2": "2" }
+  value: probe

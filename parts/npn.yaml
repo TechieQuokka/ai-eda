@@ -30,5 +30,5 @@ symbol:
 kicad:
   symbol: Transistor_BJT:2N3904
 pcb:
-  footprint: Package_TO_SOT_THT:TO-92_Inline
+  footprint: Package_TO_SOT_THT:TO-92_Inline_Wide  # 2.54 mm pitch: easy to hand solder, 0.35 mm pad ring
   pads: { e: "1", b: "2", c: "3" }

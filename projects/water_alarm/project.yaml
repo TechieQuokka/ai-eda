@@ -1,0 +1,4 @@
+name: water_alarm
+description: >
+  Water detector: when water bridges the two probe wires, a Darlington pair (2 x 2N3904)
+  turns on a red LED. Runs from 5 V; no microcontroller.

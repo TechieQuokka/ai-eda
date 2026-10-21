@@ -1,0 +1,36 @@
+# Requirements: dark while the probes are dry or in humid air (1 MΩ and above); clearly
+# lit (5-15 mA, red LED max 20 mA) once water bridges them (100 kΩ and below); safe when
+# the probes touch; the switching point lies between 150 kΩ and 600 kΩ.
+tests:
+  dry:
+    description: Dry probes (1 GΩ) - LED off, almost no supply current.
+    analysis: { type: op }
+    expect:
+      - { measure: current(D1), max: 10uA }
+      - { measure: current(V1), min: -50uA }
+  humid:
+    description: A damp surface between the probes (1 MΩ) must not light the LED.
+    analysis: { type: op }
+    parts: { J1: { water: 1Mohm } }
+    expect:
+      - { measure: current(D1), max: 100uA }
+  wet:
+    description: Tap water between the probes (100 kΩ) lights the LED.
+    analysis: { type: op }
+    parts: { J1: { water: 100kohm } }
+    expect:
+      - { measure: current(D1), min: 5mA, max: 15mA }
+  shorted:
+    description: Probes touching each other - the LED stays within limits, base current is limited.
+    analysis: { type: op }
+    parts: { J1: { water: 1ohm } }
+    expect:
+      - { measure: current(D1), max: 15mA }
+      - { measure: current(Q1.b), max: 1mA }
+      - { measure: current(Q2.c), max: 50mA }
+  threshold:
+    description: Sweeping the probe resistance finds where the LED turns on.
+    analysis: { type: dc, sweep: J1.water, start: 10kohm, stop: 2Mohm, step: 5kohm }
+    expect:
+      - { measure: "cross(current(D1), 1mA)", min: 150kohm, max: 600kohm }
+      - { measure: max(current(D1)), max: 15mA }

@@ -1,0 +1,22 @@
+description: >
+  Water bridging the probes (J1) feeds base current from VCC through RB into a Darlington
+  pair (Q1 drives Q2), which sinks the LED current through RL. RPD holds BASE near ground
+  while the probes are dry, so leakage and humid air do not light the LED. RB limits the
+  base current if the probes touch each other.
+parts:
+  V1: { type: dc_voltage_source, voltage: 5V }
+  J1: { type: water_probe }
+  RB: { type: resistor, resistance: 10kohm }
+  RPD: { type: resistor, resistance: 100kohm }
+  Q1: { type: npn, model: 2N3904 }
+  Q2: { type: npn, model: 2N3904 }
+  RL: { type: resistor, resistance: 270ohm }
+  D1: { type: led, color: red }
+nets:
+  VCC: [V1.+, J1.1, RL.1]
+  PROBE: [J1.2, RB.1]
+  BASE: [RB.2, RPD.1, Q1.b]
+  MID: [Q1.e, Q2.b]
+  LED_A: [RL.2, D1.anode]
+  COL: [D1.cathode, Q1.c, Q2.c]
+  GND: [V1.-, RPD.2, Q2.e]

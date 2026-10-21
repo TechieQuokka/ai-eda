@@ -15,7 +15,7 @@
 
 - All six open decisions from `PROJECT_SUMMARY.md` §11 are settled (Python, YAML, no tscircuit fork, YAML is the PCB source of truth, RP2040/Pico, 2-layer boards).
 - Repository: https://github.com/TechieQuokka/ai-eda (public, `master`); the user approves each push (`git status` shows what is local).
-- Quality gates: `ruff format --check`, `ruff check`, `pyright` (strict), and `pytest` (271 tests) all pass; all eight example projects pass `eda run`.
+- Quality gates: `ruff format --check`, `ruff check`, `pyright` (strict), and `pytest` (271 tests) all pass; all nine example projects pass `eda run`.
 - Bad-input hardening (`DESIGN_DECISIONS.md` §21): malformed and extreme input answers in JSON with a rule instead of crashing, hanging, or passing; regression tests in `tests/test_bad_input.py`.
 - Checking the examples: `eda run`/`eda render` append to each project's `iterations.jsonl`; for a status check that should leave no trace, call `eda.pipeline.render(Path("projects/<name>"))` from `uv run python` instead.
 
@@ -31,7 +31,7 @@ uv run eda run projects/pico_io           # check → fw (+ build) → sim (+ fi
 uv run eda watch projects/pico_io         # live viewer at http://127.0.0.1:8765/
 ```
 
-Example projects: `led_demo` (op, board), `rc_filter` (tran + op), `opamp_amp` (generic op-amp: op/tran/ac, board), `tl072_amp` (TI TL072 vendor model, board), `pico_io` (RP2040: firmware, sim, board), `led_blink` (Pico firmware blinks an LED 1 s on / 1 s off), `led_blink_bjt` (two-2N3904 astable multivibrator, the cheap blinker), `nightlight` (LDR + Darlington; a `sunset` test dims the light with events).
+Example projects: `led_demo` (op, board), `rc_filter` (tran + op), `opamp_amp` (generic op-amp: op/tran/ac, board), `tl072_amp` (TI TL072 vendor model, board), `pico_io` (RP2040: firmware, sim, board), `led_blink` (Pico firmware blinks an LED 1 s on / 1 s off), `led_blink_bjt` (two-2N3904 astable multivibrator, the cheap blinker), `nightlight` (LDR + Darlington; a `sunset` test dims the light with events, `switching_point` sweeps it), `water_alarm` (probe header + Darlington, the first design meant to be ordered and hand-soldered: board 40 × 30 mm, `fab: jlcpcb`).
 
 ## 3. Environment
 

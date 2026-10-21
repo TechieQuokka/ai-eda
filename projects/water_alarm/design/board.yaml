@@ -1,0 +1,7 @@
+# Small board: the two headers sit on the left edge (wires come in there); the other
+# parts are placed automatically next to what they connect to.
+board: { width: 40mm, height: 30mm }
+fab: jlcpcb   # check everything against JLCPCB's limits
+placement:
+  J1: { x: 4mm, y: 5mm }    # probe wires
+  V1: { x: 4mm, y: 15mm }   # 5 V supply (pin 1 = +)
