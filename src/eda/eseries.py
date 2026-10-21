@@ -42,9 +42,11 @@ def nearest(target: float, series: str) -> Pick:
     """Closest standard values at or below / at or above `target` (positive values only)."""
     if not target > 0 or not math.isfinite(target):
         raise ValueError("target must be a positive finite number")
+    if not 1e-15 <= target <= 1e15:
+        raise ValueError("target is outside 1e-15..1e15, where no standard parts exist")
     decade = 10 ** math.floor(math.log10(target))
-    candidates = sorted(
-        {round(m * decade * scale, 12) for m in mantissas(series) for scale in (0.1, 1, 10)}
+    candidates = sorted(  # 12 significant digits: drops float noise at any magnitude
+        {float(f"{m * decade * scale:.12g}") for m in mantissas(series) for scale in (0.1, 1, 10)}
     )
     below = max(c for c in candidates if c <= target * (1 + 1e-12))
     above = min(c for c in candidates if c >= target * (1 - 1e-12))

@@ -75,6 +75,12 @@ def resolve(
             ok = False
         if spec.mode != "output" and spec.initial != "low":
             diag.warning("initial_ignored", f"signals.{net}.initial only applies to outputs", at)
+        if spec.mode == "output" and spec.pull != "none":
+            diag.warning(
+                "pull_on_output",
+                f"signals.{net}.pull: a pull resistor on a driven output only wastes current",
+                at,
+            )
         signals[net] = FirmwareSignal(
             net=net,
             pin=pin,
@@ -256,6 +262,13 @@ def generate(design: Design, diag: Diagnostics) -> dict[str, JsonValue]:
     header.write_text(pins_header(design, firmware), encoding="utf-8")
     init.write_text(init_header(firmware), encoding="utf-8")
     scanned = scan_sources(design, firmware, diag)
+    if not scanned:
+        diag.warning(
+            "no_firmware_sources",
+            f"no C/C++ files in {', '.join(firmware.sources)}; write the firmware there "
+            "(it includes pins.h and calls pins_init())",
+            firmware.source.at("sources"),
+        )
     return {
         "mcu": firmware.mcu,
         "family": firmware.family,

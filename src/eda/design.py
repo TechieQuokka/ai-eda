@@ -316,6 +316,7 @@ def _resolve_board(
         elif value <= 0 and path[-1] not in ("x", "y"):
             diag.error("invalid_value", f"{'.'.join(path)} must be positive", src.at(*path))
             ok = False
+            return None
         elif abs(value) > MAX_BOARD_MM:
             diag.error(
                 "invalid_value",
@@ -323,11 +324,12 @@ def _resolve_board(
                 src.at(*path),
             )
             ok = False
+            return None
         return value
 
     width = mm(raw.board.width, "board", "width")
     height = mm(raw.board.height, "board", "height")
-    if (width is None) != (height is None):
+    if (raw.board.width is None) != (raw.board.height is None):
         diag.error(
             "invalid_board", "give both board.width and board.height, or neither", src.at("board")
         )
@@ -370,8 +372,18 @@ def _resolve_board(
             )
             ok = False
             continue
-        if x is not None and y is not None:
-            placements[ref] = BoardPlacement(x, y, rotation, place.side)
+        if x is None or y is None:
+            continue
+        if width is not None and height is not None and not (0 <= x <= width and 0 <= y <= height):
+            diag.error(
+                "placement_outside",
+                f"placement.{ref} at ({place.x}, {place.y}) is outside the "
+                f"{raw.board.width} x {raw.board.height} board (corner at 0, 0)",
+                src.at("placement", ref),
+            )
+            ok = False
+            continue
+        placements[ref] = BoardPlacement(x, y, rotation, place.side)
 
     parts: list[BoardPart] = []
     for ref, part in circuit.parts.items():
@@ -525,6 +537,12 @@ def _compile_tests(
     diag: Diagnostics,
 ) -> dict[str, CompiledTest]:
     compiled: dict[str, CompiledTest] = {}
+    if not raw.tests:
+        diag.warning(
+            "no_tests",
+            "design/test.yaml has no tests, so nothing checks the design; add one per requirement",
+            src.at("tests"),
+        )
     for name, case in raw.tests.items():
         analysis = _compile_analysis(name, case.analysis, src, diag)
         for net in case.pins:

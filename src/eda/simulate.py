@@ -610,11 +610,10 @@ def _judge(
     display = format_quantity(value, unit) if math.isfinite(value) else "n/a"
     if not passed:
         if not math.isfinite(value):
-            hint = (
-                "the trace never crosses that level"
-                if measure.reduction == "cross"
-                else "outside the simulated range"
-            )
+            hint = {
+                "cross": "the trace never crosses that level",
+                "period": "the trace does not rise through that level twice",
+            }.get(measure.reduction or "", "outside the simulated range")
         elif exp.min is not None and value < exp.min:
             hint = f"too low by {format_quantity(exp.min - value, unit)}"
         else:

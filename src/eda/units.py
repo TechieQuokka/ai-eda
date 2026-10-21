@@ -106,6 +106,8 @@ def format_quantity(value: float, unit: str, digits: int = 4) -> str:
     exponent = max(-12, min(12, exponent))
     prefix = {-12: "p", -9: "n", -6: "u", -3: "m", 0: "", 3: "k", 6: "M", 9: "G", 12: "T"}[exponent]
     scaled = value / 10**exponent
+    if abs(scaled) >= 1000:  # beyond T: an exponent reads better than '1e+18T'
+        return f"{value:.{digits}g}{symbol}"
     return f"{scaled:.{digits}g}{prefix}{symbol}"
 
 

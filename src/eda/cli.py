@@ -6,6 +6,7 @@ import sys
 import traceback
 from importlib.metadata import version
 from pathlib import Path
+from typing import NoReturn
 
 from pydantic import JsonValue
 
@@ -96,8 +97,18 @@ def _run_command(args: argparse.Namespace, command: str, root: Path, paths: Proj
     return result
 
 
+class _JsonParser(argparse.ArgumentParser):
+    """Usage errors are JSON too (exit code 2), like every other answer of `eda`."""
+
+    def error(self, message: str) -> NoReturn:
+        diag = Diagnostics()
+        diag.fail_tool("usage", f"{message} (see {self.prog} --help)", usage=self.format_usage())
+        _emit(diag.to_result(self.prog.removeprefix("eda").strip(), "", {}))
+        sys.exit(ExitCode.TOOL_ERROR)
+
+
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = _JsonParser(
         prog="eda",
         description="AI-native EDA toolchain. Output is JSON; exit code 0 = pass, "
         "1 = design errors, 2 = tool/environment failure.",
@@ -222,9 +233,13 @@ def _model(args: argparse.Namespace) -> int:
     data: dict[str, JsonValue] = {}
     file = Path(args.file)
     if not file.is_file():
-        diag.error("file_missing", f"{file} not found")
+        problem = "is not a regular file" if file.exists() else "not found"
+        diag.error("file_missing", f"{file} {problem}")
         return _emit(diag.to_result(f"model {args.action}", "", data))
     if args.action == "inspect":
+        subckts = vendor.inspect(vendor.read_text(file))
+        if not subckts:
+            diag.error("no_subckt", f"{file.name}: no .subckt found; is it a SPICE model file?")
         data["subckts"] = [
             {
                 "name": s.name,
@@ -233,7 +248,7 @@ def _model(args: argparse.Namespace) -> int:
                 "line": s.line,
                 "comments": list(s.comments),
             }
-            for s in vendor.inspect(vendor.read_text(file))
+            for s in subckts
         ]
     else:
         opamp = [n.strip() for n in args.opamp.split(",")] if args.opamp else None

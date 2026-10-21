@@ -171,6 +171,14 @@ def _position(mapping: object, key: str, parent: tuple[int, int]) -> tuple[int, 
 
 def validate[M: BaseModel](model: type[M], document: Document, diag: Diagnostics) -> M | None:
     """Validate a whole document against a pydantic model; errors point at YAML lines."""
+    if not isinstance(document.data, dict):  # every eda file is a mapping at the top
+        got = "is empty" if document.data is None else f"holds a {_kind(document.data)}"
+        diag.error(
+            "schema",
+            f"{document.source.file} {got}; it should be a mapping of `key: value` lines",
+            document.source.at(),
+        )
+        return None
     try:
         return model.model_validate(document.data, strict=True)
     except ValidationError as exc:
@@ -183,6 +191,10 @@ def validate[M: BaseModel](model: type[M], document: Document, diag: Diagnostics
                 type=err["type"],
             )
         return None
+
+
+def _kind(value: Plain) -> str:
+    return "list" if isinstance(value, list) else f"single value ({value!r})"
 
 
 def _schema_message(kind: str, message: str, loc: DataPath) -> str:

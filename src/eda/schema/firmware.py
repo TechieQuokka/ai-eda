@@ -1,6 +1,7 @@
+from pathlib import PurePosixPath
 from typing import Literal, Self
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from eda.schema.common import Ident, StrictModel
 
@@ -25,5 +26,17 @@ class FirmwareFile(StrictModel):
     """`design/firmware.yaml`: the MCU and the role of every GPIO net."""
 
     mcu: Ident  # part reference of the microcontroller in circuit.yaml
-    sources: list[str] = Field(default_factory=lambda: ["firmware"])  # dirs to scan
+    # Firmware directories, relative to the project; pins.h goes into the first one.
+    sources: list[str] = Field(default_factory=lambda: ["firmware"], min_length=1)
     signals: dict[Ident, SignalSpec]  # net name → use; macros become PIN_<NET>
+
+    @field_validator("sources")
+    @classmethod
+    def _inside_project(cls, sources: list[str]) -> list[str]:
+        for source in sources:
+            path = PurePosixPath(source)
+            if not source or path.is_absolute() or ".." in path.parts or "\\" in source:
+                raise ValueError(
+                    f"{source!r}: sources are directories inside the project, e.g. firmware"
+                )
+        return sources

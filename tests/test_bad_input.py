@@ -12,13 +12,14 @@ from textwrap import dedent
 import pytest
 
 import eda.project
-from eda import pipeline, vendor
+from eda import eseries, pipeline, vendor
 from eda.cli import main
 from eda.design import load_design
 from eda.loader import Document, load_yaml
 from eda.project import ProjectPaths, project_lock
 from eda.result import Diagnostics
 from eda.schema.part import ParamSpec
+from eda.units import format_quantity
 from tests.conftest import LED_CIRCUIT, MakeProject, requires_ngspice
 from tests.test_m1 import MODEL
 from tests.test_m4 import requires_cosim
@@ -538,3 +539,103 @@ def test_models_with_control_blocks_are_refused(
     with pytest.raises(ValueError, match="control block"):
         vendor.plan_import(models / "amp.lib", "amp2", "DEMOAMP", None, None)
     assert not list(tmp_path.rglob("pwned"))
+
+
+def _pico(tmp_path: Path) -> Path:
+    root = tmp_path / "pico_io"
+    shutil.copytree(EXAMPLES / "pico_io", root, ignore=shutil.ignore_patterns("out", "*.jsonl"))
+    return root
+
+
+@pytest.mark.parametrize("sources", ["['../../outside']", "['/etc']", "[]"])
+def test_firmware_sources_stay_in_the_project(tmp_path: Path, sources: str) -> None:
+    root = _pico(tmp_path)
+    firmware = root / "design" / "firmware.yaml"
+    firmware.write_text(
+        firmware.read_text(encoding="utf-8") + f"sources: {sources}\n", encoding="utf-8"
+    )
+    result = pipeline.fw(root)
+    assert result.errors[0].rule == "schema"
+    assert result.errors[0].file == "design/firmware.yaml"
+    assert not (tmp_path.parent / "outside").exists()
+
+
+def test_firmware_warnings(tmp_path: Path) -> None:
+    root = _pico(tmp_path)
+    shutil.rmtree(root / "firmware")
+    firmware = root / "design" / "firmware.yaml"
+    text = firmware.read_text(encoding="utf-8")
+    firmware.write_text(text.replace("mode: output, initial: low", "mode: output, pull: up"))
+    result = pipeline.fw(root)
+    assert result.ok
+    assert sorted(w.rule for w in result.warnings) == ["no_firmware_sources", "pull_on_output"]
+
+
+def test_placement_outside_a_fixed_board(make_project: MakeProject) -> None:
+    board = "board: { width: 30mm, height: 20mm }\nplacement:\n  V1: { x: 50mm, y: 6mm }\n"
+    assert _led_board(make_project, board) == [
+        "placement.V1 at (50mm, 6mm) is outside the 30mm x 20mm board (corner at 0, 0)"
+    ]
+
+
+def test_no_tests_is_a_warning(make_project: MakeProject) -> None:
+    diag = Diagnostics()
+    assert load_design(make_project(tests="tests: {}\n"), diag) is not None
+    assert [w.rule for w in diag.warnings] == ["no_tests"]
+
+
+@pytest.mark.parametrize(
+    ("text", "message"),
+    [("", "is empty"), ("# only a comment\n", "is empty"), ("- a\n- b\n", "holds a list")],
+)
+def test_files_that_are_not_mappings(make_project: MakeProject, text: str, message: str) -> None:
+    root = make_project()
+    (root / "design" / "circuit.yaml").write_text(text, encoding="utf-8")
+    diag = Diagnostics()
+    assert load_design(root, diag) is None
+    assert diag.errors[0].message.startswith(f"design/circuit.yaml {message}")
+
+
+@requires_ngspice
+def test_period_without_two_rising_crossings(make_project: MakeProject) -> None:
+    tests = """
+    tests:
+      t:
+        analysis: { type: tran, step: 10us, stop: 1ms }
+        expect:
+          - { measure: "period(voltage(VCC), 1V)", max: 1ms }
+    """
+    result = pipeline.sim(make_project(tests=tests))
+    assert "does not rise through that level twice" in result.errors[0].message
+
+
+@pytest.mark.parametrize(
+    ("target", "series", "nearest"),
+    [(4.7e-12, "E24", 4.7e-12), (2.2e-12, "E12", 2.2e-12), (1.1e-13, "E24", 1.1e-13)],
+)
+def test_standard_values_in_the_picofarad_range(target: float, series: str, nearest: float) -> None:
+    assert eseries.nearest(target, series).nearest == pytest.approx(nearest, rel=1e-9)
+
+
+def test_values_beyond_tera_use_an_exponent() -> None:
+    assert format_quantity(1e30, "ohm") == "1e+30Ω"
+    assert format_quantity(4.7e12, "ohm") == "4.7TΩ"
+
+
+@pytest.mark.parametrize("argv", [["frob"], ["value"], ["sim", ".", "--bogus"]])
+def test_usage_errors_are_json(argv: list[str], capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(argv)
+    assert exc.value.code == 2
+    result = json.loads(capsys.readouterr().out)
+    assert _rules(result) == ["usage"]
+
+
+def test_inspecting_a_file_without_subcircuits(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    other = tmp_path / "notes.txt"
+    other.write_text("not a model\n", encoding="utf-8")
+    code, result = _cli(["model", "inspect", str(other)], capsys)
+    assert code == 1
+    assert _rules(result) == ["no_subckt"]
