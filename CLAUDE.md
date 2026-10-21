@@ -64,6 +64,7 @@ The CLI never makes design decisions; it only reports.
   1. `uv run eda model inspect FILE` — find the `.subckt` and read its pin comments.
   2. `uv run eda model import FILE --id <id> [--subckt NAME] [--opamp IN+,IN-,V+,V-,OUT]`.
 - Imported models go to `parts/vendor/`, which is git-ignored: **never commit vendor model files** (their licenses usually forbid redistribution).
+- Model files with a `.control` / `.exec` block (also in files they include) are refused as `unsafe_model`: ngspice would run its commands, `shell` among them. Part templates hold element lines only.
 - Only test what a model claims to model (vendor files list it in their header); e.g. the old TL072 model's supply current is not realistic.
 - `op_via_transient` warning: the model's operating point did not converge directly, so ngspice found it by a transient run from power-up; `eda` lengthens that run until the net voltages stop changing and reports the time. Put it on the part (`--optran 1ms` at import, or `spice: { optran: { stop: 1ms } }`) to skip the search. `op_not_settled` means even 1 s was not enough: do not trust that operating point.
 

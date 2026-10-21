@@ -1,6 +1,7 @@
 """Project layout and the part database."""
 
 import fcntl
+import re
 from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -88,6 +89,33 @@ def project_lock(paths: ProjectPaths) -> Generator[None]:
         yield
 
 
+_CONTROL = re.compile(r"^\s*\.(control|exec)\b", re.IGNORECASE | re.MULTILINE)
+_NESTED = re.compile(r"^\s*\.(?:include|inc|lib)\s+[\"']?([^\s\"']+)", re.IGNORECASE | re.MULTILINE)
+
+
+def model_hazard(path: Path, depth: int = 0) -> str | None:
+    """Why a SPICE model file must not be simulated, or None. A .control or .exec block in
+    a model runs ngspice commands, `shell` among them, so a downloaded model could run
+    anything; files it includes are checked too."""
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        return f"cannot read model file {path.name}: {exc}"
+    found = _CONTROL.search(text)
+    if found:
+        line = text.count("\n", 0, found.start()) + 1
+        return (
+            f"{path.name} line {line} has a .{found[1].lower()} block, which would run "
+            "simulator commands; remove it from the model file"
+        )
+    if depth < 5:
+        for name in _NESTED.findall(text):
+            nested = path.parent / name
+            if nested.is_file() and (problem := model_hazard(nested, depth + 1)):
+                return problem
+    return None
+
+
 def find_project(start: Path) -> Path | None:
     """The nearest directory at or above `start` containing `project.yaml`."""
     current = start.resolve()
@@ -133,6 +161,14 @@ def load_parts(
             diag.error(
                 "model_missing",
                 f"part {spec.id!r}: model file {spec.spice.include!r} not found",
+                doc.source.at("spice", "include"),
+            )
+            continue
+        hazard = model_hazard(Path(str(spec.include_path()))) if spec.spice.include else None
+        if hazard is not None:
+            diag.error(
+                "unsafe_model",
+                f"part {spec.id!r}: {hazard}",
                 doc.source.at("spice", "include"),
             )
             continue

@@ -211,7 +211,15 @@ class PartSpec(StrictModel):
         return self
 
     def _check_template(self) -> None:
-        """Every placeholder in spice.template must name something the part has."""
+        """Every placeholder in spice.template must name something the part has, and the
+        template holds element lines only: a dot card such as .control would let a part
+        file run commands (ngspice's `shell`) when it is simulated."""
+        for number, line in enumerate(self.spice.template.split("\n"), start=1):
+            if line.strip().startswith("."):
+                raise ValueError(
+                    f"spice.template line {number} is a control card ({line.split()[0]}); "
+                    "templates hold element lines only"
+                )
         for token in re.findall(r"<([^<>\s]*)>", self.spice.template):
             kind, sep, key = token.partition(":")
             if not sep and kind == "name":

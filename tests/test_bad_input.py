@@ -497,3 +497,44 @@ def test_commands_on_one_project_take_turns(make_project: MakeProject) -> None:
     stdout, _ = proc.communicate(timeout=60)
     assert proc.returncode == 0
     assert json.loads(stdout)["ok"] is True
+
+
+def test_template_cannot_smuggle_control_cards(make_project: MakeProject) -> None:
+    root = make_project()
+    (root / "parts").mkdir()
+    spec = (EXAMPLES.parent / "parts" / "resistor.yaml").read_text(encoding="utf-8")
+    spec = spec.replace("id: resistor", "id: odd_r").replace(
+        '"<name> <pin:1> <pin:2> <param:resistance>"',
+        json.dumps("<name> <pin:1> <pin:2> <param:resistance>\n.control\nshell touch x\n.endc"),
+    )
+    (root / "parts" / "odd_r.yaml").write_text(spec, encoding="utf-8")
+    diag = Diagnostics()
+    load_design(root, diag)
+    assert [e.rule for e in diag.errors] == ["schema"]
+    assert "line 2 is a control card (.control)" in diag.errors[0].message
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_models_with_control_blocks_are_refused(
+    make_project: MakeProject, tmp_path: Path, nested: bool
+) -> None:
+    root = make_project()
+    models = root / "parts" / "models"
+    models.mkdir(parents=True)
+    evil = ".control\nshell touch pwned\n.endc\n"
+    if nested:
+        (models / "inner.lib").write_text(evil, encoding="utf-8")
+        evil = '.include "inner.lib"\n'
+    (models / "amp.lib").write_text(MODEL + evil, encoding="utf-8")
+    spec = (EXAMPLES.parent / "parts" / "opamp.yaml").read_text(encoding="utf-8")
+    (root / "parts" / "amp.yaml").write_text(
+        spec.replace("id: opamp", "id: amp").replace("eda_opamp.lib", "amp.lib"),
+        encoding="utf-8",
+    )
+    diag = Diagnostics()
+    load_design(root, diag)
+    assert [e.rule for e in diag.errors] == ["unsafe_model"]
+    assert ".control block" in diag.errors[0].message
+    with pytest.raises(ValueError, match="control block"):
+        vendor.plan_import(models / "amp.lib", "amp2", "DEMOAMP", None, None)
+    assert not list(tmp_path.rglob("pwned"))

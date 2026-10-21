@@ -16,7 +16,7 @@ from typing import cast
 from pydantic import ValidationError
 
 from eda.adapters import ngspice
-from eda.project import BUILTIN_PARTS_DIR, VENDOR_PARTS_DIR
+from eda.project import BUILTIN_PARTS_DIR, VENDOR_PARTS_DIR, model_hazard
 from eda.schema.common import IDENT_PATTERN
 from eda.schema.part import PartSpec
 
@@ -116,6 +116,9 @@ def plan_import(
         )
     if (BUILTIN_PARTS_DIR / f"{part_id}.yaml").is_file():
         raise ValueError(f"part id {part_id!r} is a built-in part; choose another id")
+    hazard = model_hazard(file)
+    if hazard is not None:
+        raise ValueError(hazard)
     subckts = inspect(read_text(file))
     if not subckts:
         raise ValueError(f"{file.name}: no .subckt found")
