@@ -189,6 +189,19 @@ def test_opamp_schematic_matches_in_kicad(make_project: MakeProject) -> None:
     assert isinstance(kicad["view"], str)
     view = (root / kicad["view"]).read_text(encoding="utf-8")
     assert 'viewBox="0.0000 0.0000' not in view  # cropped to the drawing
+    # The viewer draws on top of the view: its box and every part's body, in sheet mm.
+    view_box = kicad["view_box"]
+    assert isinstance(view_box, list)
+    vx, vy, vw, vh = (float(str(v)) for v in view_box)
+    assert f'viewBox="{vx:.4f} {vy:.4f} {vw:.4f} {vh:.4f}"' in view
+    bodies = kicad["bodies"]
+    assert isinstance(bodies, dict) and set(bodies) == {"VCC", "VEE", "VIN", "U1", "RF", "RG", "RL"}
+    for box in bodies.values():
+        assert isinstance(box, list)
+        x0, y0, x1, y1 = box
+        assert isinstance(x0, float) and isinstance(y0, float)
+        assert isinstance(x1, float) and isinstance(y1, float)
+        assert vx <= x0 < x1 <= vx + vw and vy <= y0 < y1 <= vy + vh
 
 
 @requires_symbols

@@ -28,7 +28,7 @@ function fmt(value, unit) {
   if (value === null || value === undefined || !Number.isFinite(value)) return String(value);
   const symbol = unit === "ohm" ? "Ω" : unit;
   if (unit === "dB" || unit === "deg") return `${+value.toPrecision(4)}${symbol}`;
-  if (value === 0) return `0${symbol}`;
+  if (Math.abs(value) < 1e-15) return `0${symbol}`; // below anything a simulation resolves
   const abs = Math.abs(value);
   for (const [scale, prefix] of PREFIXES) {
     if (abs >= scale * 0.9995) return `${+(value / scale).toPrecision(4)}${prefix}${symbol}`;
@@ -223,27 +223,33 @@ function renderLog(state) {
 
 // --- interactive waveforms ------------------------------------------------------------
 
-const chartState = new Map(); // test name → { enabled: Set, view: [t0, t1] | null }
+const chartState = new Map(); // test name → { enabled: Set, view: [t0, t1] | null, play }
+const playheads = new Map(); // test name → (time | null) => void, set by buildChart
 
+// Fetches every test's waveform once; returns test name → data (for playback too).
 async function renderWaveforms(state, version) {
   const tests = state.sim?.data?.tests || {};
   const tran = Object.entries(tests).filter(([, t]) => t.waveform);
   const box = $("waveforms");
+  const loaded = new Map();
+  playheads.clear();
   if (tran.length === 0) {
     box.replaceChildren(el("p", { class: "muted" }, "No transient tests."));
-    return;
+    return loaded;
   }
   const charts = [];
   for (const [name, test] of tran) {
     try {
       const response = await fetch(`/${test.waveform}?v=${version}`);
       const data = await response.json();
+      loaded.set(name, data);
       charts.push(buildChart(name, test, data));
     } catch (err) {
       charts.push(el("p", { class: "bad" }, `${name}: cannot load waveform (${err})`));
     }
   }
   box.replaceChildren(...charts);
+  return loaded;
 }
 
 function probeNames(measure) {
@@ -320,6 +326,13 @@ function buildChart(name, test, data) {
   const xUnit = freq ? "Hz" : "s";
   const xValue = (v) => (freq ? 10 ** v : v);
   const W = 900, PANEL = 200, L = 70, R = 16, T = 10, GAP = 34;
+  let placePlayhead = () => {};
+  if (!freq) {
+    playheads.set(name, (t) => {
+      st.play = t;
+      placePlayhead();
+    });
+  }
 
   function draw() {
     const view = st.view || [time[0], time[time.length - 1]];
@@ -372,6 +385,20 @@ function buildChart(name, test, data) {
       }
       panels.push({ top, bottom, sy, inPanel, unit });
     });
+    // Playback position (see renderPlayback), moved without redrawing the traces.
+    const playLine = svg("line", { y1: T, y2: H - GAP + 4, stroke: "#f59e0b", "stroke-width": 2, visibility: "hidden" });
+    plot.append(playLine);
+    placePlayhead = () => {
+      const t = st.play;
+      if (t === null || t === undefined || t < view[0] || t > view[1]) {
+        playLine.setAttribute("visibility", "hidden");
+        return;
+      }
+      playLine.setAttribute("x1", sx(t));
+      playLine.setAttribute("x2", sx(t));
+      playLine.setAttribute("visibility", "visible");
+    };
+    placePlayhead();
     const cursor = svg("g", { visibility: "hidden" });
     plot.append(cursor);
     plot.onmousemove = (ev) => {
@@ -441,6 +468,170 @@ function lowerBound(array, value) {
   return lo;
 }
 
+// --- playback -------------------------------------------------------------------------
+// Replays a transient test in real time (or slower/faster): LEDs on the KiCad schematic
+// glow with their simulated current, and the waveform charts show where the replay is.
+
+const LED_COLORS = { red: "#ff3030", yellow: "#ffd60a", green: "#2ee65a", blue: "#3b82f6", white: "#f8fafc" };
+const LED_FULL_A = 10e-3; // current drawn at full brightness
+const LED_ON_A = 0.1e-3; // below this the LED is dark
+const SPEEDS = [0.1, 0.25, 0.5, 1, 2, 5, 10];
+const player = { test: null, t: 0, end: 0, speed: 1, playing: false, running: false, last: null, show: () => {} };
+
+function sampleAt(xs, ys, t) {
+  const i = lowerBound(xs, t);
+  if (i <= 0) return ys[0];
+  if (i >= xs.length) return ys[ys.length - 1];
+  const f = (t - xs[i - 1]) / (xs[i] - xs[i - 1] || 1);
+  return ys[i - 1] + f * (ys[i] - ys[i - 1]);
+}
+
+function renderPlayback(state, version, waves) {
+  const section = $("playback-section");
+  const tests = state.sim?.data?.tests || {};
+  const names = [...waves.keys()].filter((n) => waves.get(n).axis === "time");
+  if (names.length === 0) {
+    section.hidden = true;
+    player.playing = false;
+    return;
+  }
+  section.hidden = false;
+  if (!names.includes(player.test)) {
+    player.test = names.find((n) => tests[n]?.firmware) ?? names[0];
+    player.t = 0;
+  }
+  const data = waves.get(player.test);
+  const xs = data.x;
+  const end = xs[xs.length - 1];
+  player.end = end;
+  player.t = Math.min(player.t, end);
+
+  const parts = state.check?.data?.parts || {};
+  const leds = Object.entries(parts)
+    .filter(([ref, p]) => p.type === "led" && data.signals[`current(${ref})`])
+    .map(([ref, p]) => ({ ref, color: LED_COLORS[p.params?.color] ?? "#ffd60a" }));
+
+  // Schematic with a glow on every LED.
+  const kicad = state.render?.data?.kicad;
+  const stage = el("div", { class: "stage" });
+  if (kicad?.view && kicad.view_box && kicad.bodies) {
+    const [vx, vy, vw, vh] = kicad.view_box;
+    stage.style.maxWidth = `calc(78vh * ${(vw / vh).toFixed(4)})`; // the whole sheet fits the screen
+    stage.append(el("img", { src: `/${kicad.view}?v=${version}`, alt: "KiCad schematic" }));
+    for (const led of leds) {
+      const box = kicad.bodies[led.ref];
+      if (!box) continue;
+      const [x0, y0, x1, y1] = box;
+      const size = Math.max(x1 - x0, y1 - y0) * 2.4;
+      led.glow = el("div", { class: "glow" });
+      led.glow.style.cssText =
+        `left:${((x0 + x1) / 2 - vx) / vw * 100}%;top:${((y0 + y1) / 2 - vy) / vh * 100}%;` +
+        `width:${size / vw * 100}%;--led:${led.color}`;
+      led.tag = el("div", { class: "glow-tag" });
+      led.tag.style.cssText = `left:${((x0 + x1) / 2 - vx) / vw * 100}%;top:${(y1 - vy) / vh * 100}%`;
+      stage.append(led.glow, led.tag);
+    }
+  } else {
+    const why = kicad?.view ? "run eda render again to place the parts on it"
+      : "it needs the KiCad schematic view (kicad-cli)";
+    stage.append(el("p", { class: "muted" }, `No schematic to animate: ${why}.`));
+  }
+
+  // Controls.
+  const select = el("select", {}, ...names.map((n) => {
+    const option = el("option", { value: n }, n + (tests[n]?.firmware ? " (firmware)" : ""));
+    option.selected = n === player.test;
+    return option;
+  }));
+  select.addEventListener("change", () => {
+    player.test = select.value;
+    player.t = 0;
+    renderPlayback(state, version, waves);
+  });
+  const play = el("button", { type: "button" });
+  const restart = el("button", { type: "button", title: "back to 0" }, "⏮");
+  const speed = el("select", {}, ...SPEEDS.map((v) => {
+    const option = el("option", { value: v }, `${v}×`);
+    option.selected = v === player.speed;
+    return option;
+  }));
+  const slider = el("input", { type: "range", min: 0, max: 1000, step: 1, class: "scrub" });
+  const clock = el("span", { class: "clock" });
+  play.addEventListener("click", () => {
+    if (!player.playing && player.t >= end) player.t = 0;
+    player.playing = !player.playing;
+    if (player.playing) startTicking();
+    player.show();
+  });
+  restart.addEventListener("click", () => { player.t = 0; player.show(); });
+  speed.addEventListener("change", () => { player.speed = Number(speed.value); });
+  slider.addEventListener("input", () => { player.t = Number(slider.value) / 1000 * end; player.show(); });
+
+  // Readouts: LED currents, then every net voltage.
+  const rows = [];
+  const readouts = [];
+  for (const led of leds) {
+    const cell = el("td");
+    rows.push(el("tr", {}, el("td", {}, el("code", {}, `current(${led.ref})`)), cell));
+    readouts.push([cell, `current(${led.ref})`, "A"]);
+  }
+  for (const [signal, s] of Object.entries(data.signals)) {
+    if (!signal.startsWith("voltage(")) continue;
+    const cell = el("td");
+    rows.push(el("tr", {}, el("td", {}, el("code", {}, signal)), cell));
+    readouts.push([cell, signal, s.unit]);
+  }
+
+  player.show = () => {
+    const t = player.t;
+    play.textContent = player.playing ? "⏸ pause" : "▶ play";
+    slider.value = String(Math.round(t / end * 1000));
+    clock.textContent = `${fmt(t, "s")} / ${fmt(end, "s")}`;
+    for (const led of leds) {
+      const amps = sampleAt(xs, data.signals[`current(${led.ref})`].values, t);
+      const level = amps <= LED_ON_A ? 0 : Math.min(1, amps / LED_FULL_A) ** 0.5;
+      if (led.glow) led.glow.style.opacity = String(level);
+      if (led.tag) led.tag.textContent = `${led.ref} ${level ? "ON" : "off"} · ${fmt(amps, "A")}`;
+    }
+    for (const [cell, signal, unit] of readouts) {
+      cell.textContent = fmt(sampleAt(xs, data.signals[signal].values, t), unit);
+    }
+    for (const [name, place] of playheads) place(name === player.test ? t : null);
+  };
+
+  const controls = el("div", { class: "player" }, select, restart, play, speed, slider, clock);
+  const side = el("table", { class: "readouts" }, el("tbody", {}, ...rows));
+  section.querySelector("#playback").replaceChildren(
+    controls,
+    el("div", { class: "player-body" }, stage, side),
+    el("p", { class: "muted" },
+      "Replays the simulated waveforms; LEDs glow with their current " +
+      `(full at ${fmt(LED_FULL_A, "A")}). The orange line on the waveforms follows the replay.`));
+  player.show();
+  if (player.playing) startTicking();
+}
+
+function startTicking() {
+  if (player.running) return; // one animation loop at a time
+  player.running = true;
+  player.last = null;
+  requestAnimationFrame(tick);
+}
+
+function tick(now) {
+  if (player.playing && player.last !== null) {
+    player.t += (now - player.last) / 1000 * player.speed;
+    if (player.t >= player.end) {
+      player.t = player.end;
+      player.playing = false;
+    }
+  }
+  player.last = now;
+  player.show();
+  if (player.playing) requestAnimationFrame(tick);
+  else player.running = false;
+}
+
 // --- refresh loop ---------------------------------------------------------------------
 
 async function refresh() {
@@ -455,7 +646,8 @@ async function refresh() {
   renderFirmware(state);
   renderBoard(state, state.version);
   renderLog(state);
-  await renderWaveforms(state, state.version);
+  const waves = await renderWaveforms(state, state.version);
+  renderPlayback(state, state.version, waves);
   $("updated").textContent = `updated ${new Date().toLocaleTimeString()}`;
 }
 

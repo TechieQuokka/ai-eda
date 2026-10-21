@@ -105,3 +105,23 @@ pre.serial {
   background: var(--code-bg, rgba(127, 127, 127, 0.1));
   font-size: 0.8rem;
 }
+
+.player { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+.player button, .player select { font: inherit; padding: 3px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); cursor: pointer; }
+.player .scrub { flex: 1 1 200px; }
+.player .clock { font-variant-numeric: tabular-nums; min-width: 9em; }
+.player-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(200px, 280px); gap: 16px; align-items: start; }
+@media (max-width: 800px) { .player-body { grid-template-columns: 1fr; } }
+.stage { position: relative; background: #fff; border-radius: 6px; margin: 0 auto; width: 100%; overflow: hidden; }
+.stage img { display: block; width: 100%; height: auto; }
+.stage .glow {
+  position: absolute; transform: translate(-50%, -50%); aspect-ratio: 1; border-radius: 50%;
+  pointer-events: none; opacity: 0; mix-blend-mode: multiply;
+  background: radial-gradient(circle, var(--led) 0%, var(--led) 22%, transparent 70%);
+  filter: saturate(1.4);
+}
+.stage .glow-tag {
+  position: absolute; transform: translate(-50%, 6px); font: 600 11px/1.2 ui-monospace, monospace;
+  color: #111; background: rgba(255, 255, 255, .85); padding: 1px 4px; border-radius: 4px; white-space: nowrap;
+}
+.readouts td:last-child { font-variant-numeric: tabular-nums; text-align: right; }

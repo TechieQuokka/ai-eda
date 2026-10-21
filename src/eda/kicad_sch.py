@@ -69,6 +69,7 @@ class Schematic:
     unrouted: list[str] = field(default_factory=lambda: list[str]())  # nets joined by labels
     drawing: Box = (0.0, 0.0, 0.0, 0.0)  # the area drawn on, sheet millimetres
     references: dict[str, str] = field(default_factory=lambda: dict[str, str]())  # renamed
+    bodies: dict[str, Box] = field(default_factory=lambda: dict[str, Box]())  # ref → body, mm
 
 
 # --- library symbols ---------------------------------------------------------------------
@@ -1481,7 +1482,14 @@ def build(design: Design) -> Schematic:
     paper = layout.paper[0]
     renamed = {ref: kicad_ref for ref, kicad_ref in references.items() if ref != kicad_ref}
     return Schematic(
-        writer.document(paper), paper, expected, symbols, unrouted, _union(areas), renamed
+        writer.document(paper),
+        paper,
+        expected,
+        symbols,
+        unrouted,
+        _union(areas),
+        renamed,
+        {item.part.ref: item.body() for item in items},
     )
 
 
@@ -1527,7 +1535,10 @@ def compare(
 PX_PER_MM = 12  # the PNG preview's resolution
 
 
-def crop_svg(svg: Path, out: Path, area: Box, margin: float = 5.0) -> Path:
+VIEW_MARGIN = 5.0  # mm around the drawing in the cropped view
+
+
+def crop_svg(svg: Path, out: Path, area: Box, margin: float = VIEW_MARGIN) -> Path:
     """A copy of KiCad's sheet SVG showing only `area` (millimetres, as the SVG's viewBox
     is): the drawing without the empty sheet around it."""
     x0, y0, x1, y1 = _grow(area, margin)
@@ -1608,6 +1619,11 @@ def export(design: Design, diag: Diagnostics) -> dict[str, JsonValue]:
         data["svg"] = paths.rel(svg)
         view = crop_svg(svg, out / f"{design.project.name}.view.svg", schematic.drawing)
         data["view"] = paths.rel(view)
+        # Where each part sits in the view (sheet mm, like the view's viewBox), so the
+        # viewer can draw on top of it (e.g. light up LEDs while replaying a simulation).
+        vx0, vy0, vx1, vy1 = _grow(schematic.drawing, VIEW_MARGIN)
+        data["view_box"] = [round(v, 3) for v in (vx0, vy0, vx1 - vx0, vy1 - vy0)]
+        data["bodies"] = {ref: [round(v, 3) for v in box] for ref, box in schematic.bodies.items()}
         if rasterize.available() is not None:
             png = svg.with_suffix(".png")
             width = min(round((schematic.drawing[2] - schematic.drawing[0] + 10) * PX_PER_MM), 4000)
