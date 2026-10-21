@@ -15,6 +15,7 @@ from eda.loader import Document, load_yaml
 from eda.result import Diagnostics
 from tests.conftest import LED_CIRCUIT, MakeProject, requires_ngspice
 from tests.test_m1 import MODEL
+from tests.test_m4 import requires_cosim
 
 EXAMPLES = Path(__file__).resolve().parent.parent / "projects"
 
@@ -241,3 +242,58 @@ def test_singular_matrix_results_are_not_evaluated(make_project: MakeProject) ->
     result = pipeline.sim(root)
     assert [e.rule for e in result.errors] == ["singular_matrix"]
     assert "near node mid" in result.errors[0].message
+
+
+@requires_cosim
+def test_firmware_faults_halts_and_uart_pacing_are_reported(tmp_path: Path) -> None:
+    root = tmp_path / "pico_io"
+    shutil.copytree(EXAMPLES / "pico_io", root, ignore=shutil.ignore_patterns("out", "*.jsonl"))
+    (root / "design" / "board.yaml").unlink()
+    (root / "firmware" / "main.c").write_text(
+        dedent("""
+        #include <stdio.h>
+        #include "pico/stdlib.h"
+        #include "pins.h"
+        #include "pins_init.h"
+
+        int main(void) {
+            pins_init();
+            stdio_init_all();
+            for (int i = 0; i < 100; i++) printf("0123456789\\n");  // 1200 bytes: ~104 ms
+            *(volatile int *)0xFFFFFFF0 = 1;
+            return 0;
+        }
+        """),
+        encoding="utf-8",
+    )
+    (root / "design" / "test.yaml").write_text(
+        dedent("""
+        tests:
+          crash:
+            analysis: { type: tran, step: 1ms, stop: 200ms }
+            firmware: true
+            expect:
+              - { measure: max(voltage(V3V3)), min: 3V }
+        """),
+        encoding="utf-8",
+    )
+    assert pipeline.fw(root, build=True).ok
+    result = pipeline.sim(root)
+    assert [e.rule for e in result.errors] == ["firmware_fault"]
+    assert [w.rule for w in result.warnings] == ["firmware_halted"]
+    tests = result.data["tests"]
+    assert isinstance(tests, dict)
+    crash = tests["crash"]
+    assert isinstance(crash, dict) and crash["passed"] is False
+    firmware = crash["firmware"]
+    assert isinstance(firmware, dict)
+    faults = firmware["faults"]
+    assert isinstance(faults, list) and len(faults) == 1
+    fault = faults[0]
+    assert isinstance(fault, list)
+    fault_at, message = fault
+    assert isinstance(fault_at, float) and "fffffff0" in str(message)
+    # Printing waits for the UART like on the chip: 1200 characters at 115200 baud.
+    assert fault_at == pytest.approx(1200 * 10 / 115200, rel=0.1)
+    halted_at = firmware["halted_at"]
+    assert isinstance(halted_at, float) and fault_at <= halted_at < 0.2

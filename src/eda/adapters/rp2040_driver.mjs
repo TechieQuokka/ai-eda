@@ -7,12 +7,18 @@
 //   {"cmd":"run","until":NANOS,"inputs":{"14":true},"adc":{"0":2048},"break_on_mode":true,
 //    "send":{"0":"text"}}
 //     -> {"ok":true,"t":NANOS,"pins":{"15":[[NANOS,"high"],...]},"uart":{"0":"text"},
-//         "halted":null|CODE,"early":false}
+//         "halted":null|CODE,"halted_at":null|NANOS,"faults":[[NANOS,"message"],...],
+//         "early":false}
 //   Each pin's list starts with its state at the start of the window, followed by changes.
 //   With break_on_mode the run returns early ("early": true) right after a watched pin
 //   changes mode (anything but a high<->low output toggle), so the circuit can respond.
 //   `send` queues bytes for a UART's receiver; they arrive one character time apart at the
 //   baud rate the firmware configured (115200 until it sets one).
+//   Transmission is paced the same way: the UART reports its TX FIFO full and busy until
+//   the bytes written to it would have been shifted out, so firmware that prints waits as
+//   long as on the real chip (rp2040js itself reports an always-empty FIFO).
+//   `faults` lists accesses to unmapped memory during the window (a HardFault on the real
+//   chip; rp2040js carries on). `halted_at` is when the core stopped on a BKPT.
 //   States: high, low, hiz, pullup, pulldown, keeper.
 import { readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
@@ -40,6 +46,9 @@ const quiet = {
   debug() {},
   info() {},
   warn(component, message) {
+    if (component === 'RP2040' && /undefined address|invalid memory address/i.test(message)) {
+      if (faults.length < 10) faults.push([clock.nanos, message]);
+    }
     process.stderr.write(`[${component}] ${message}\n`);
   },
   error(component, message) {
@@ -53,6 +62,8 @@ let watched = [];
 let segments = {};
 let uart = {};
 let halted = null;
+let haltedAt = null;
+let faults = [];
 let modeChanged = false;
 const rxQueue = {}; // UART index -> bytes still to arrive
 let nextRx = 0; // nanos at which the next queued byte arrives
@@ -92,8 +103,10 @@ function init(request) {
     mcu.uart[index].onByte = (value) => {
       uart[index] = (uart[index] ?? '') + String.fromCharCode(value);
     };
+    paceTransmit(mcu.uart[index]);
   }
   mcu.onBreak = (code) => {
+    if (halted === null) haltedAt = clock.nanos;
     halted = code;
   };
   mcu.core.PC = FLASH_START;
@@ -115,6 +128,7 @@ function run(request) {
   segments = {};
   for (const index of watched) segments[index] = [[clock.nanos, STATE[mcu.gpio[index].value]]];
   uart = {};
+  faults = [];
   modeChanged = false;
   const until = request.until;
   const breakOnMode = Boolean(request.break_on_mode);
@@ -130,7 +144,43 @@ function run(request) {
     }
   }
   const early = breakOnMode && modeChanged && clock.nanos < until;
-  return { ok: true, t: Math.min(clock.nanos, until), pins: segments, uart, halted, early };
+  const t = Math.min(clock.nanos, until);
+  return { ok: true, t, pins: segments, uart, halted, halted_at: haltedAt, faults, early };
+}
+
+const UARTDR = 0x0;
+const TXFF = 1 << 5;
+const TXFE = 1 << 7;
+const BUSY = 1 << 3;
+
+function baudOf(port) {
+  return port.baudRate > 0 && Number.isFinite(port.baudRate) ? port.baudRate : 115200;
+}
+
+// Make a UART's flag register say "TX FIFO full / busy" until the bytes written to UARTDR
+// would have left the wire at the configured baud rate.
+function paceTransmit(port) {
+  let idleAt = 0; // nanos when the last written character has been shifted out
+  const charNanos = () => {
+    const lcr = port.lineCtrlRegister;
+    const bits = 1 + port.wordLength + (lcr & (1 << 3) ? 2 : 1) + (lcr & (1 << 1) ? 1 : 0);
+    return (1e9 * bits) / baudOf(port);
+  };
+  const flags = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(port), 'flags').get;
+  Object.defineProperty(port, 'flags', {
+    get() {
+      let value = flags.call(port);
+      const queued = Math.ceil((idleAt - clock.nanos) / charNanos());
+      if (queued > 0) value = (value & ~TXFE) | BUSY;
+      if (queued >= (port.fifosEnabled ? 32 : 1)) value |= TXFF;
+      return value;
+    },
+  });
+  const write = port.writeUint32.bind(port);
+  port.writeUint32 = (offset, value) => {
+    if (offset === UARTDR) idleAt = Math.max(idleAt, clock.nanos) + charNanos();
+    write(offset, value);
+  };
 }
 
 function pendingRx() {

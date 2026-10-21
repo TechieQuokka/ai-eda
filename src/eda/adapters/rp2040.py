@@ -7,6 +7,7 @@ The RP2040 boot ROM is fetched separately (`tools/rp2040/fetch-bootrom.sh`).
 
 import json
 import os
+import select
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -19,7 +20,7 @@ TOOL_DIR = REPO_ROOT / "tools" / "rp2040"
 PACKAGE_DIR = TOOL_DIR / "node_modules" / "rp2040js"
 BOOTROM = TOOL_DIR / "dl" / "bootrom-b2.bin"
 DRIVER = Path(__file__).with_name("rp2040_driver.mjs")
-TIMEOUT_S = 60
+TIMEOUT_S = 60  # longest one request may take
 
 type Segments = list[tuple[float, str]]  # (start time in s, pin state), first at window start
 
@@ -34,6 +35,8 @@ class Window:
     pins: dict[int, Segments]  # GPIO number → states over the window
     uart: dict[int, str]  # UART index → text sent during the window
     halted: int | None  # BKPT code once the firmware stopped (e.g. returned from main)
+    halted_at: float | None  # s, when it stopped
+    faults: list[tuple[float, str]]  # (s, message): accesses to unmapped memory
     early: bool  # stopped before `until` because a pin changed mode (see run)
 
 
@@ -114,11 +117,14 @@ class Emulator:
         }
         uart = {int(k): str(v) for k, v in reply["uart"].items()}
         halted = reply.get("halted")
+        halted_at = reply.get("halted_at")
         return Window(
             end=float(reply["t"]) * 1e-9,
             pins=pins,
             uart=uart,
             halted=int(halted) if halted is not None else None,
+            halted_at=float(halted_at) * 1e-9 if halted_at is not None else None,
+            faults=[(float(t) * 1e-9, str(m)) for t, m in reply.get("faults", [])],
             early=bool(reply.get("early")),
         )
 
@@ -128,6 +134,11 @@ class Emulator:
         try:
             stdin.write(json.dumps(request) + "\n")
             stdin.flush()
+            # One reply line per request, so nothing is left in stdout's buffer meanwhile.
+            ready, _, _ = select.select([stdout], [], [], TIMEOUT_S)
+            if not ready:
+                self._proc.kill()
+                raise EmulatorError(f"emulator did not answer within {TIMEOUT_S} s")
             line = stdout.readline()
         except (BrokenPipeError, OSError) as exc:
             raise EmulatorError(f"emulator stopped: {self._stderr()}") from exc

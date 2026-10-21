@@ -307,10 +307,30 @@ def _run_cosim(
         checks.append(check)
         if check["passed"] is not True:
             outcome["passed"] = False
+    if result.faults:
+        t, message = result.faults[0]
+        diag.error(
+            "firmware_fault",
+            f"{test.name}: at {format_quantity(t, 's')} the firmware accessed unmapped memory "
+            f"({message}); the real chip would take a HardFault, the emulator carried on",
+            test.location,
+            faults=[[ft, fm] for ft, fm in result.faults],
+        )
+        outcome["passed"] = False
+    if result.halted is not None:
+        at = f" at {format_quantity(result.halted_at, 's')}" if result.halted_at is not None else ""
+        diag.warning(
+            "firmware_halted",
+            f"{test.name}: the firmware stopped{at} on a breakpoint (code {result.halted}): "
+            "main() returned, panic(), or __breakpoint()",
+            test.location,
+        )
     outcome["firmware"] = {
         "image": design.paths.rel(image),
         "windows": result.windows,
         "halted": result.halted,
+        "halted_at": result.halted_at,
+        "faults": [[t, m] for t, m in result.faults],
         "serial": {net: text[-2000:] for net, text in serial.items()},
         "serial_file": design.paths.rel(uart_path),
     }

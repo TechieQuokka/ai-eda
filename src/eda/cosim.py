@@ -55,6 +55,8 @@ class CosimResult:
     windows: int
     uart: dict[int, str]  # UART index → everything the firmware sent
     halted: int | None
+    halted_at: float | None = None  # s
+    faults: list[tuple[float, str]] = field(default_factory=lambda: list[tuple[float, str]]())
     warnings: list[str] = field(default_factory=lambda: list[str]())
     op_via_transient: bool = False
 
@@ -96,6 +98,8 @@ def run(design: Design, test: CompiledTest, image: Path | None, raw_path: Path) 
     uart: dict[int, str] = {}
     send: dict[int, str] = {}
     halted: int | None = None
+    halted_at: float | None = None
+    faults: list[tuple[float, str]] = []
     count = 0
 
     try:
@@ -167,7 +171,9 @@ def run(design: Design, test: CompiledTest, image: Path | None, raw_path: Path) 
                 send = {}
                 for index, text in result.uart.items():
                     uart[index] = uart.get(index, "") + text
-                halted = result.halted if halted is None else halted
+                if halted is None and result.halted is not None:
+                    halted, halted_at = result.halted, result.halted_at
+                faults += result.faults[: 10 - len(faults)]
                 for pin in pins.values():
                     segments = result.pins.get(pin.gpio, [])
                     apply(pin, *thevenin.average(segments, result.end, inputs[pin.gpio]))
@@ -192,6 +198,8 @@ def run(design: Design, test: CompiledTest, image: Path | None, raw_path: Path) 
         windows=count,
         uart=uart,
         halted=halted,
+        halted_at=halted_at,
+        faults=faults,
         warnings=warnings,
         op_via_transient=via_transient,
     )
