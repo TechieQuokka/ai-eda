@@ -2,3 +2,4 @@ board:
   spacing: 4mm
 pours:
   - { net: GND, layer: bottom }   # ground plane on the bottom copper
+fab: jlcpcb   # PCB house whose limits the board must meet

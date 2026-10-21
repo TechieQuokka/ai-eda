@@ -6,3 +6,4 @@ rules:
   track_width: 0.3mm
 pours:
   - { net: GND, layer: bottom }   # ground plane on the bottom copper
+fab: jlcpcb   # PCB house whose limits the board must meet

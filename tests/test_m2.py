@@ -167,6 +167,42 @@ def test_bom_groups_parts(make_project: MakeProject, tmp_path: Path) -> None:
     assert [w.details["part"] for w in generic] == ["U1"]
 
 
+@pytest.mark.skipif(pad_numbers("LED_THT:LED_D5.0mm") is None, reason="needs KiCad footprints")
+def test_fab_limits(make_project: MakeProject) -> None:
+    root = _board(make_project, "fab: jlcpcb\n")
+    assert _issues(root)[0] == []
+    root = _board(
+        make_project,
+        "fab: jlcpcb\nboard: { width: 2mm, height: 900mm }\n"
+        "rules: { track_width: 0.08mm, via_diameter: 0.3mm, via_drill: 0.25mm }\n",
+        name="tight",
+    )
+    diag = Diagnostics()
+    assert load_design(root, diag) is None
+    limits = sorted(str(e.details["limit"]) for e in diag.errors)
+    assert limits == ["max_size", "min_size", "min_track", "min_via_ring"]
+    root = _board(make_project, "fab: nowhere\n", name="unknown")
+    assert _issues(root)[0] == ["unknown_fab"]
+    root = _board(
+        make_project,
+        "fab: { base: jlcpcb, min_track: 0.5mm }\nrules: { track_width: 0.4mm }\n",
+        name="custom",
+    )
+    assert _issues(root)[0] == ["fab_limit"]
+
+
+@pytest.mark.skipif(pad_numbers("LED_THT:LED_D5.0mm") is None, reason="needs KiCad footprints")
+def test_fab_checks_footprint_holes(make_project: MakeProject) -> None:
+    root = _board(make_project, "fab: { base: jlcpcb, min_pad_ring: 0.4mm }\n")
+    diag = Diagnostics()
+    design = load_design(root, diag)
+    assert design is not None and design.board is not None and design.board.fab is not None
+    stats = {"footprints": {"R1": {"drill_mm": 0.8, "ring_mm": 0.4}, "D1": {"ring_mm": 0.3}}}
+    layout = {"outline": [0, 0, 20, 10]}
+    pcb._check_fab(design, design.board.fab, layout, stats, diag)  # pyright: ignore[reportPrivateUsage]
+    assert [(e.rule, e.details["part"]) for e in diag.errors] == [("fab_limit", "D1")]
+
+
 def test_pour_rules(make_project: MakeProject) -> None:
     root = _board(
         make_project,

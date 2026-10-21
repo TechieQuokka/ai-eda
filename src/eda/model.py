@@ -3,6 +3,7 @@
 import re
 from dataclasses import dataclass, field, replace
 
+from eda.fab import Fab
 from eda.loader import SourceMap
 from eda.project import ProjectPaths
 from eda.result import Location
@@ -222,6 +223,7 @@ class ResolvedBoard:
     source: SourceMap
     pours: tuple[BoardPour, ...] = ()
     placer: str = "connected"  # connected | shelf
+    fab: Fab | None = None  # PCB house limits, checked when set
 
 
 @dataclass(frozen=True)

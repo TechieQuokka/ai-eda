@@ -473,8 +473,33 @@ def _footprint_report(board: Any) -> Request:
             "rotation": footprint.GetOrientationDegrees(),
             "side": "bottom" if footprint.IsFlipped() else "top",
             "box": [round(x, 3), round(y, 3), round(w, 3), round(h, 3)],
+            **_holes(footprint),
         }
     return report
+
+
+def _holes(footprint: Any) -> Request:
+    """Smallest plated drill, its copper ring, and smallest non-plated drill, in mm."""
+    plated: list[tuple[float, float]] = []
+    npth: list[float] = []
+    for pad in footprint.Pads():
+        drill = pad.GetDrillSize()
+        hole = float(pcbnew.ToMM(min(drill.x, drill.y)))
+        if hole <= 0:
+            continue
+        if pad.GetAttribute() == pcbnew.PAD_ATTRIB_NPTH:
+            npth.append(hole)
+        elif pad.GetAttribute() == pcbnew.PAD_ATTRIB_PTH:
+            size = pad.GetSize()
+            copper = float(pcbnew.ToMM(min(size.x, size.y)))
+            plated.append((hole, (copper - hole) / 2))
+    holes: Request = {}
+    if plated:
+        holes["drill_mm"] = round(min(h for h, _ in plated), 3)
+        holes["ring_mm"] = round(min(r for _, r in plated), 3)
+    if npth:
+        holes["npth_mm"] = round(min(npth), 3)
+    return holes
 
 
 def main() -> None:

@@ -200,6 +200,8 @@ function renderBoard(state, version) {
       r.unrouted ? el("span", { class: "bad" }, ` · ${r.unrouted} unrouted`) : el("span", { class: "ok" }, " · fully routed"))),
     el("tr", {}, el("td", {}, "DRC"), el("td", { class: d.errors ? "bad" : "ok" },
       `${d.errors} errors, ${d.warnings} warnings`)),
+    el("tr", {}, el("td", {}, "PCB house"), el("td", {},
+      data.fab ? `limits of ${data.fab} checked` : "none set (add fab: jlcpcb to board.yaml)")),
     el("tr", {}, el("td", {}, "fabrication"), el("td", {},
       el("a", { href: `/${data.outputs.fabrication}` }, "Gerbers + drill + BOM (.zip)")))));
   const images = el("div", { class: "board-images" });

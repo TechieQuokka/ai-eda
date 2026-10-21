@@ -80,6 +80,7 @@ The CLI never makes design decisions; it only reports.
 - `uv run eda pcb projects/<name>` builds, autoroutes (Freerouting), runs DRC, and exports Gerbers/drill/BOM. DRC issues come back as `drc_<type>` errors pointing at the part; `unrouted` means the router gave up: move parts apart (placement), enlarge the board, or raise `routing.passes`.
 - Read `unused_pads` warnings: unused IC channels usually need tying off.
 - The BOM (`out/pcb/fab/<name>-bom.csv`) is a shopping list grouped by item. Give each part to buy an `mpn:` (part number) in `circuit.yaml` when its value alone does not name it; the generic `opamp` must have one (`bom_generic_part` warning).
+- PCB house: `fab: jlcpcb` checks rules, pours, size, and footprint holes against the house's limits (`fab_limit` errors); `fab: { base: jlcpcb, min_track: 0.15mm }` overrides, and limits without `base` describe another house.
 - Ground plane: `pours: [{ net: GND, layer: bottom }]` (`top`, `bottom`, or `both`; optional `clearance`, `min_width`) fills the board with copper on that net after routing; `data.pcb.pours` reports the filled area. A `drc_starved_thermal` warning means a pad's thermal relief reaches only a small fill island (it is still connected by its tracks); moving parts or pouring both layers usually clears it.
 - Freerouting must be installed once: `tools/freerouting/fetch.sh`.
 

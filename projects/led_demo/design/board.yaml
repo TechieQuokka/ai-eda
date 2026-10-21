@@ -6,3 +6,4 @@ rules:
   track_width: 0.5mm
 placement:
   V1: { x: 5mm, y: 6mm, rotation: 0deg }
+fab: jlcpcb   # PCB house whose limits the board must meet

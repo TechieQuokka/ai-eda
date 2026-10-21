@@ -15,7 +15,9 @@ from typing import Any
 
 from pydantic import JsonValue
 
+from eda import fab as fabs
 from eda.adapters import freerouting, kicad, rasterize
+from eda.fab import Fab
 from eda.model import Design, ResolvedBoard
 from eda.result import Diagnostics, Location
 
@@ -80,6 +82,9 @@ def build(design: Design, diag: Diagnostics) -> dict[str, JsonValue]:
         diag.fail_tool("autoroute", f"autorouting failed: {exc}")
         return {"pcb": rel(pcb), "layout": _json(layout)}
 
+    if board.fab is not None:
+        _check_fab(design, board.fab, layout, stats, diag)
+
     unrouted = int(stats.get("unrouted", 0))
     if unrouted:
         diag.error(
@@ -136,6 +141,7 @@ def build(design: Design, diag: Diagnostics) -> dict[str, JsonValue]:
         },
         "pours": poured,
         "drc": drc_summary,
+        "fab": board.fab.name if board.fab is not None else None,
         "outputs": outputs,
     }
 
@@ -257,6 +263,26 @@ def _locate(texts: list[str], design: Design) -> Location | None:
             if ref in design.circuit.parts:
                 return design.circuit.source.at("parts", ref)
     return None
+
+
+def _check_fab(
+    design: Design, fab: Fab, layout: dict[str, Any], stats: dict[str, Any], diag: Diagnostics
+) -> None:
+    """What only the built board shows: its size and the holes of its footprints."""
+    board = design.board
+    assert board is not None
+    _, _, width, height = (float(v) for v in layout.get("outline", [0, 0, 0, 0]))
+    fabs.check_size(fab, width, height, diag, board.source.at("board"))
+    footprints: dict[str, dict[str, Any]] = stats.get("footprints", {})
+    for ref, report in sorted(footprints.items()):
+        at = design.circuit.source.at("parts", ref) if ref in design.circuit.parts else None
+        for key, limit, what in (
+            ("drill_mm", "min_drill", "smallest plated hole"),
+            ("ring_mm", "min_pad_ring", "thinnest pad ring"),
+            ("npth_mm", "min_npth_drill", "smallest non-plated hole"),
+        ):
+            if key in report:
+                fabs.below(fab, diag, f"{ref}'s {what}", float(report[key]), limit, at, part=ref)
 
 
 def _write_bom(design: Design, board: ResolvedBoard, path: Path, diag: Diagnostics) -> Path:

@@ -42,6 +42,23 @@ class Pour(StrictModel):
     min_width: str = "0.25mm"  # thinnest copper the fill keeps
 
 
+class FabSpec(StrictModel):
+    """A PCB house's limits: a preset (`base`) with overrides, or limits of its own.
+    Limits left out come from `base`, or are not checked."""
+
+    base: str | None = None  # e.g. jlcpcb
+    name: str | None = None
+    min_track: str | None = None
+    min_clearance: str | None = None
+    min_drill: str | None = None
+    min_via_ring: str | None = None
+    min_pad_ring: str | None = None
+    min_npth_drill: str | None = None
+    min_size: str | None = None
+    max_width: str | None = None
+    max_height: str | None = None
+
+
 class BoardFile(StrictModel):
     """`design/board.yaml`."""
 
@@ -50,3 +67,4 @@ class BoardFile(StrictModel):
     placement: dict[Ident, Placement] = Field(default_factory=dict[Ident, Placement])
     routing: Routing = Routing()
     pours: list[Pour] = Field(default_factory=list[Pour])
+    fab: str | FabSpec | None = None  # PCB house whose limits the board must meet

@@ -9,6 +9,7 @@ import re
 from dataclasses import replace
 from pathlib import Path
 
+from eda import fab as fabs
 from eda import firmware as fw
 from eda.footprints import pad_numbers
 from eda.loader import Document, SourceMap, load_yaml, validate
@@ -37,7 +38,7 @@ from eda.model import (
 from eda.netlist.spice import alter_commands
 from eda.project import ProjectPaths, load_parts
 from eda.result import Diagnostics, Location
-from eda.schema.board import BoardFile
+from eda.schema.board import BoardFile, FabSpec
 from eda.schema.circuit import Circuit
 from eda.schema.common import Scalar
 from eda.schema.firmware import FirmwareFile
@@ -511,6 +512,42 @@ def _resolve_board(
     if not ok or margin is None or spacing is None or any(r is None for r in rules):
         return None
     clearance, track, via_d, via_drill = (float(r or 0) for r in rules)
+    fab = _resolve_fab(raw.fab, src, diag)
+    if raw.fab is not None and fab is None:
+        return None
+    if fab is not None:
+        checks = [
+            ("rules.track_width", track, "min_track", src.at("rules", "track_width")),
+            ("rules.clearance", clearance, "min_clearance", src.at("rules", "clearance")),
+            ("rules.via_drill", via_drill, "min_drill", src.at("rules", "via_drill")),
+            (
+                "the via ring",
+                (via_d - via_drill) / 2,
+                "min_via_ring",
+                src.at("rules", "via_diameter"),
+            ),
+        ]
+        for index, pour in enumerate(pours):
+            checks.append(
+                (
+                    f"pours[{index}].clearance",
+                    pour.clearance,
+                    "min_clearance",
+                    src.at("pours", index),
+                )
+            )
+            checks.append(
+                (f"pours[{index}].min_width", pour.min_width, "min_track", src.at("pours", index))
+            )
+        failed = [
+            fabs.below(fab, diag, what, value, limit, at) for what, value, limit, at in checks
+        ]
+        if width is not None and height is not None:
+            before = len(diag.errors)
+            fabs.check_size(fab, width, height, diag, src.at("board"))
+            failed.append(len(diag.errors) > before)
+        if any(failed):
+            return None
     return ResolvedBoard(
         width=width,
         height=height,
@@ -523,7 +560,42 @@ def _resolve_board(
         source=src,
         pours=tuple(pours),
         placer=raw.board.placer,
+        fab=fab,
     )
+
+
+def _resolve_fab(raw: str | FabSpec | None, src: SourceMap, diag: Diagnostics) -> fabs.Fab | None:
+    if raw is None:
+        return None
+    spec = FabSpec(base=raw) if isinstance(raw, str) else raw
+    at = src.at("fab")
+    base: fabs.Fab | None = None
+    if spec.base is not None:
+        base = fabs.PRESETS.get(spec.base)
+        if base is None:
+            diag.error(
+                "unknown_fab",
+                f"no PCB house preset {spec.base!r}; presets: {', '.join(sorted(fabs.PRESETS))}, "
+                "or give the limits yourself (fab: { min_track: 0.15mm, ... })",
+                at if isinstance(raw, str) else src.at("fab", "base"),
+            )
+            return None
+    values: dict[str, float] = {}
+    for field in fabs.FIELDS:
+        text: str | None = getattr(spec, field)
+        if text is None:
+            fallback = MAX_BOARD_MM if field.startswith("max_") else 0.0
+            values[field] = float(getattr(base, field)) if base is not None else fallback
+            continue
+        value = _mm(text, src.at("fab", field), f"fab.{field}", diag)
+        if value is None:
+            return None
+        if value < 0:
+            diag.error("invalid_value", f"fab.{field} cannot be negative", src.at("fab", field))
+            return None
+        values[field] = value
+    name = spec.name or (base.name if base is not None else "the PCB house")
+    return fabs.Fab(name=name, **values)
 
 
 # --- tests -------------------------------------------------------------------------------

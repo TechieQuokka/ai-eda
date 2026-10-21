@@ -7,3 +7,4 @@ placement:
   U1: { x: 40mm, y: 15mm, rotation: 90deg }
 pours:
   - { net: GND, layer: bottom }   # ground plane on the bottom copper
+fab: jlcpcb   # PCB house whose limits the board must meet
