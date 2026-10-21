@@ -4,6 +4,12 @@ All notable changes to ai-eda. Versions follow [Semantic Versioning](https://sem
 MAJOR for changes that break existing design files or the CLI's JSON, MINOR for new
 features that keep them working, PATCH for fixes. Each release is tagged `vX.Y.Z`.
 
+## [1.1.1] - 2026-10-21
+
+### Fixed
+- `calculator`: the division sign is a CGRAM glyph. ROM code 0xFD is a division sign only on
+  A00-ROM LCD modules (not on A02 ones), and the viewer drew it as a box.
+
 ## [1.1.0] - 2026-10-21
 
 ### Added
