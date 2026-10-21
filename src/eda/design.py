@@ -411,6 +411,7 @@ def _resolve_board(
         placements[ref] = BoardPlacement(x, y, rotation, place.side)
 
     parts: list[BoardPart] = []
+    board_only: dict[str, list[str]] = {}  # net → pads tied by board_pads
     for ref, part in circuit.parts.items():
         inst = raw_circuit.parts[ref]
         default = part.spec.pcb
@@ -481,6 +482,28 @@ def _resolve_board(
             continue
         intended = set(default.nc) if default and inst.footprint is None else set[str]()
         used = {p for group in pads.values() for p in group}
+        tied: dict[str, str] = {}
+        for pad, net in (inst.board_pads or {}).items():
+            where = csrc.at("parts", ref, "board_pads", pad)
+            if pad not in available:
+                diag.error(
+                    "invalid_pads",
+                    f"{ref}: board_pads: pad {pad} is not in {footprint}",
+                    where,
+                    footprint_pads=sorted(available, key=_pad_order),
+                )
+                ok = False
+            elif pad in used:
+                diag.error(
+                    "invalid_pads",
+                    f"{ref}: board_pads: pad {pad} already belongs to a pin of the part",
+                    where,
+                )
+                ok = False
+            else:
+                tied[pad] = net
+                board_only.setdefault(net, []).append(f"{ref}.{pad}")
+        used |= set(tied)
         optional = set(part.spec.optional_pins)
         unused = sorted(available - used - intended, key=_pad_order)
         if unused and part.spec.category not in ("passive", "source") and not optional:
@@ -497,11 +520,22 @@ def _resolve_board(
             if (net := circuit.net_of(ref, pin)) is not None
             for pad in pads[pin]
         }
+        pad_nets |= tied
         value = part.label(default.value if default else None) or part.spec.id
         if part.spec.generic and part.mpn:
             value = part.mpn  # the chip that will be soldered, not the model's figures
         joined = default is not None and default.joined_pads and inst.footprint is None
         parts.append(BoardPart(ref, value, footprint, pad_nets, placements.get(ref), joined))
+
+    for net, tied_pads in board_only.items():
+        if net not in circuit.nets and len(tied_pads) < 2:
+            diag.error(
+                "board_net",
+                f"board_pads: net {net!r} is not in the circuit and joins only {tied_pads[0]}; "
+                "use a circuit net (e.g. GND) or tie at least two pads to it",
+                csrc.at("parts", tied_pads[0].split(".")[0], "board_pads"),
+            )
+            ok = False
 
     board_nets = {net for part in parts for net in part.pads.values()}
     pours: list[BoardPour] = []

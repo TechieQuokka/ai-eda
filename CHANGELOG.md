@@ -4,6 +4,17 @@ All notable changes to ai-eda. Versions follow [Semantic Versioning](https://sem
 MAJOR for changes that break existing design files or the CLI's JSON, MINOR for new
 features that keep them working, PATCH for fixes. Each release is tagged `vX.Y.Z`.
 
+## [Unreleased]
+
+### Added
+- `board_pads:` on a part in circuit.yaml connects footprint pads its model does not have
+  (board only), e.g. to tie off the unused channel of a dual op-amp; `tl072_amp` does so
+  and has no `unused_pads` warning any more.
+
+### Changed
+- `calculator` board: no DRC warnings (Pico 1.5 mm down, power switch 2.5 mm in, GND
+  poured on the top layer).
+
 ## [1.2.0] - 2026-10-21
 
 ### Added

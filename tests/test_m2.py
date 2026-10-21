@@ -326,3 +326,57 @@ def test_joined_pads_are_routed_once(make_project: MakeProject) -> None:
     size = result.data["size_mm"]
     assert isinstance(size, list)
     assert max(xs) - min(xs) == pytest.approx(float(str(size[0])) * 1000 - 600, abs=1)
+
+
+DUAL_OPAMP = """
+parts:
+  VCC: {{ type: dc_voltage_source, voltage: 5V }}
+  RA: {{ type: resistor, resistance: 10kohm }}
+  RB: {{ type: resistor, resistance: 10kohm }}
+  U1:
+    type: opamp
+    mpn: LM358
+    footprint: Package_DIP:DIP-8_W7.62mm
+    pads: {{ out: 1, in-: 2, in+: 3, v-: 4, v+: 8 }}
+{extra}
+nets:
+  VP: [VCC.+, U1.v+, RA.1]
+  MID: [RA.2, RB.1, U1.in+]
+  OUT: [U1.out, U1.in-]
+  GND: [VCC.-, U1.v-, RB.2]
+"""
+
+
+def _dual(make_project: MakeProject, extra: str) -> tuple[list[str], list[str]]:
+    root = _board(make_project, "board: {}\n", DUAL_OPAMP.format(extra=extra))
+    errors, warnings = _issues(root)
+    return errors, [w for w in warnings if w != "no_tests"]
+
+
+@pytest.mark.skipif(pad_numbers("Package_DIP:DIP-8_W7.62mm") is None, reason="needs KiCad")
+def test_board_pads_tie_off_an_unused_channel(make_project: MakeProject) -> None:
+    errors, warnings = _dual(make_project, "")
+    assert errors == [] and warnings == ["unused_pads"]
+    tied = '    board_pads: { "5": MID, "6": UB_OUT, "7": UB_OUT }'
+    root = _board(make_project, "board: {}\n", DUAL_OPAMP.format(extra=tied), name="tied")
+    diag = Diagnostics()
+    design = load_design(root, diag)
+    assert design is not None and design.board is not None, diag.errors
+    assert [w.rule for w in diag.warnings if w.rule != "no_tests"] == []
+    (u1,) = [p for p in design.board.parts if p.ref == "U1"]
+    assert u1.pads["5"] == "MID" and u1.pads["6"] == u1.pads["7"] == "UB_OUT"
+    assert "UB_OUT" not in design.circuit.nets  # the board only, not the simulation
+
+
+@pytest.mark.skipif(pad_numbers("Package_DIP:DIP-8_W7.62mm") is None, reason="needs KiCad")
+@pytest.mark.parametrize(
+    ("extra", "rule"),
+    [
+        ('    board_pads: { "9": GND }', "invalid_pads"),  # no such pad
+        ('    board_pads: { "1": GND }', "invalid_pads"),  # pad 1 is the output pin
+        ('    board_pads: { "5": GND, "6": LONELY, "7": GND }', "board_net"),
+    ],
+)
+def test_board_pads_errors(make_project: MakeProject, extra: str, rule: str) -> None:
+    errors, _ = _dual(make_project, extra)
+    assert errors == [rule]
