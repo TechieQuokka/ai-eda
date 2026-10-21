@@ -123,6 +123,9 @@ class PcbSpec(StrictModel):
     footprint: str
     pads: dict[str, str | list[str]]  # a pin may own several pads (e.g. GND)
     nc: list[str] = Field(default_factory=list[str])  # pads that are meant to stay open
+    # Value on the silkscreen and in the BOM (template like symbol.label, which is the
+    # default); leaves out simulation-only state such as a switch position.
+    value: str | None = None
 
 
 class GpioSpec(StrictModel):
@@ -176,6 +179,7 @@ class PartSpec(StrictModel):
     mcu: McuSpec | None = None
     optional_pins: list[str] = Field(default_factory=list[str])  # may stay unconnected
     dc_path: bool = True
+    generic: bool = False  # a behavioural model, no real part: the BOM needs an `mpn:`
     datasheet: str | None = None
     source_dir: str | None = Field(
         default=None, description="Directory of the definition file; set by the loader."

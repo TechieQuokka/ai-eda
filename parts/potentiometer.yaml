@@ -23,3 +23,4 @@ kicad:
 pcb:
   footprint: Potentiometer_THT:Potentiometer_Bourns_3386P_Vertical
   pads: { "1": "1", "2": "2", "3": "3" }
+  value: "<param:resistance>"

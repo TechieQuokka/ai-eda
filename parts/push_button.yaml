@@ -20,3 +20,4 @@ kicad:
 pcb:
   footprint: Button_Switch_THT:SW_PUSH_6mm
   pads: { "1": "1", "2": "2" }
+  value: SW_PUSH

@@ -151,6 +151,7 @@ def _resolve_circuit(
             values=values,
             labels=labels,
             spice_name=_spice_name(spec.spice.prefix, ref),
+            mpn=inst.mpn,
         )
 
     nets: dict[str, tuple[PinKey, ...]] = {}
@@ -472,9 +473,8 @@ def _resolve_board(
             if (net := circuit.net_of(ref, pin)) is not None
             for pad in pads[pin]
         }
-        parts.append(
-            BoardPart(ref, part.label() or part.spec.id, footprint, pad_nets, placements.get(ref))
-        )
+        value = part.label(default.value if default else None) or part.spec.id
+        parts.append(BoardPart(ref, value, footprint, pad_nets, placements.get(ref)))
 
     board_nets = {net for part in parts for net in part.pads.values()}
     pours: list[BoardPour] = []

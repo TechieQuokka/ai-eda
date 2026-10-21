@@ -8,14 +8,16 @@ PinRef = Annotated[str, StringConstraints(pattern=r"^[A-Za-z_][A-Za-z0-9_]*\.[^.
 
 
 class PartInstance(StrictModel):
-    """One entry under `parts:`. Keys other than `type`, `footprint`, and `pads` are part
-    parameters. `footprint` / `pads` override the part's default PCB footprint."""
+    """One entry under `parts:`. Keys other than `type`, `footprint`, `pads`, and `mpn` are
+    part parameters. `footprint` / `pads` override the part's default PCB footprint; `mpn`
+    is the manufacturer part number to buy (shown in the BOM)."""
 
     model_config = ConfigDict(extra="allow")
 
     type: Ident
     footprint: str | None = None
     pads: dict[str, str | int | list[str]] | None = None
+    mpn: str | None = None
 
     @property
     def params(self) -> dict[str, object]:

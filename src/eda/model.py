@@ -26,10 +26,12 @@ class ResolvedPart:
     values: dict[str, float | str]  # SI floats for quantities, strings for choices
     labels: dict[str, str]  # human-readable parameter values
     spice_name: str
+    mpn: str | None = None  # manufacturer part number to buy
 
-    def label(self) -> str:
-        """The symbol label with parameter values filled in, e.g. `330Ω`."""
-        return _LABEL.sub(lambda m: self.labels.get(m[1], "?"), self.spec.symbol.label)
+    def label(self, template: str | None = None) -> str:
+        """The symbol label (or `template`) with parameter values filled in, e.g. `330Ω`."""
+        text = self.spec.symbol.label if template is None else template
+        return _LABEL.sub(lambda m: self.labels.get(m[1], "?"), text)
 
 
 @dataclass(frozen=True)

@@ -100,7 +100,7 @@ def build(design: Design, diag: Diagnostics) -> dict[str, JsonValue]:
     outputs: dict[str, JsonValue] = {}
     try:
         fab = kicad.export_fabrication(pcb, out / "fab")
-        bom = _write_bom(design, board, out / "fab" / f"{name}-bom.csv")
+        bom = _write_bom(design, board, out / "fab" / f"{name}-bom.csv", diag)
         archive = out / f"{name}-fab.zip"
         with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
             for file in [*fab, bom]:
@@ -259,13 +259,34 @@ def _locate(texts: list[str], design: Design) -> Location | None:
     return None
 
 
-def _write_bom(design: Design, board: ResolvedBoard, path: Path) -> Path:
+def _write_bom(design: Design, board: ResolvedBoard, path: Path, diag: Diagnostics) -> Path:
+    """A shopping list: one row per distinct item to buy, with its quantity and references."""
+    groups: dict[tuple[str, str, str, str, str], list[str]] = {}
+    for part in board.parts:
+        resolved = design.circuit.parts[part.ref]
+        spec = resolved.spec
+        mpn = resolved.mpn or ""
+        if spec.category == "source":
+            # On a board a source is the connector where the supply or signal comes in.
+            row = ("Connector", "", mpn, part.footprint, "supply / signal input")
+        else:
+            note = ""
+            if spec.generic and not mpn:
+                note = "generic model: choose a real part"
+                diag.warning(
+                    "bom_generic_part",
+                    f"{part.ref} is a generic {spec.name} model, not a real part; set `mpn:` "
+                    "(the part number to buy) on it in circuit.yaml",
+                    design.circuit.source.at("parts", part.ref),
+                    part=part.ref,
+                )
+            row = (spec.name, part.value, mpn, part.footprint, note)
+        groups.setdefault(row, []).append(part.ref)
     with path.open("w", newline="", encoding="utf-8") as fh:
         writer = csv.writer(fh)
-        writer.writerow(["Reference", "Value", "Part", "Footprint"])
-        for part in board.parts:
-            spec = design.circuit.parts[part.ref].spec
-            writer.writerow([part.ref, part.value, spec.name, part.footprint])
+        writer.writerow(["Qty", "References", "Part", "Value", "MPN", "Footprint", "Note"])
+        for (name, value, mpn, footprint, note), refs in sorted(groups.items()):
+            writer.writerow([len(refs), " ".join(refs), name, value, mpn, footprint, note])
     return path
 
 

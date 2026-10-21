@@ -1,10 +1,11 @@
+import csv
 import shutil
 import zipfile
 from pathlib import Path
 
 import pytest
 
-from eda import pipeline
+from eda import pcb, pipeline
 from eda.adapters import freerouting
 from eda.design import load_design
 from eda.footprints import pad_numbers
@@ -129,6 +130,41 @@ def test_pcb_end_to_end(make_project: MakeProject) -> None:
 def test_pcb_without_board_file(make_project: MakeProject) -> None:
     result = pipeline.pcb(make_project())
     assert [e.rule for e in result.errors] == ["no_board"]
+
+
+BOM_CIRCUIT = """
+parts:
+  V1: { type: dc_voltage_source, voltage: 12V }
+  V2: { type: dc_voltage_source, voltage: 12V }
+  U1: { type: opamp }
+  U2: { type: opamp, mpn: NE5532 }
+  R1: { type: resistor, resistance: 10kohm }
+  R2: { type: resistor, resistance: 10kohm }
+  RV1: { type: potentiometer, resistance: 10kohm, position: 25% }
+nets:
+  VP: [V1.+, U1.v+, U2.v+]
+  VN: [V2.-, U1.v-, U2.v-]
+  A: [U1.in+, U1.in-, U1.out, R1.1, RV1.1]
+  B: [U2.in+, U2.in-, U2.out, R2.1, RV1.3]
+  GND: [V1.-, V2.+, R1.2, R2.2, RV1.2]
+"""
+
+
+@pytest.mark.skipif(pad_numbers("LED_THT:LED_D5.0mm") is None, reason="needs KiCad footprints")
+def test_bom_groups_parts(make_project: MakeProject, tmp_path: Path) -> None:
+    root = _board(make_project, "board: {}\n", circuit=BOM_CIRCUIT)
+    diag = Diagnostics()
+    design = load_design(root, diag)
+    assert design is not None and design.board is not None, diag.errors
+    bom = pcb._write_bom(design, design.board, tmp_path / "bom.csv", diag)  # pyright: ignore[reportPrivateUsage]
+    rows = {r["References"]: r for r in csv.DictReader(bom.open(encoding="utf-8"))}
+    assert rows["V1 V2"]["Qty"] == "2" and rows["V1 V2"]["Part"] == "Connector"
+    assert rows["R1 R2"]["Qty"] == "2" and rows["R1 R2"]["Value"] == "10kΩ"
+    assert rows["RV1"]["Value"] == "10kΩ"  # the wiper position is simulation state
+    assert rows["U1"]["Note"].startswith("generic model")
+    assert rows["U2"]["MPN"] == "NE5532" and rows["U2"]["Note"] == ""
+    generic = [w for w in diag.warnings if w.rule == "bom_generic_part"]
+    assert [w.details["part"] for w in generic] == ["U1"]
 
 
 def test_pour_rules(make_project: MakeProject) -> None:

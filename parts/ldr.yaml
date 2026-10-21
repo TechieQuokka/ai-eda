@@ -22,3 +22,4 @@ kicad:
 pcb:
   footprint: OptoDevice:R_LDR_5.1x4.3mm_P3.4mm_Vertical
   pads: { "1": "1", "2": "2" }
+  value: "LDR 15kΩ@10lx"  # the model's curve (GL5528 class)

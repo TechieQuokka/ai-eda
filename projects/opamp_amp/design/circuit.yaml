@@ -5,7 +5,7 @@ parts:
   VCC: { type: dc_voltage_source, voltage: 12V }
   VEE: { type: dc_voltage_source, voltage: 12V }
   VIN: { type: sine_voltage_source, amplitude: 0.5V, frequency: 1kHz, ac: 1V }
-  U1: { type: opamp, gbw: 1MHz }
+  U1: { type: opamp, gbw: 1MHz, mpn: UA741 }  # a real single op-amp with GBW 1 MHz
   RF: { type: resistor, resistance: 10kohm }
   RG: { type: resistor, resistance: 1kohm }
   RL: { type: resistor, resistance: 10kohm }

@@ -635,3 +635,10 @@ Small designs requested by the user (an LED blinker three ways, a night light) w
 Measured lessons: the astable's half period was 0.53·RB·C at 5 V, not the textbook 0.69 (0.76 with the 5 V correction), so values came from simulation; a white LED (3.0 V) plus a Darlington (0.75 V) leaves little headroom on 5 V.
 
 Not done: a DC sweep analysis, which would find the night light's switching point directly.
+
+## 23. Ordering a board for hand soldering (2026-10-21)
+
+The user solders the parts themselves, so the target is a bare two-layer board from a PCB house plus a list of parts to buy (no assembly service: no LCSC numbers or CPL files).
+
+- **Shopping BOM** (`out/pcb/fab/<name>-bom.csv`): one row per distinct item with `Qty, References, Part, Value, MPN, Footprint, Note`. Sources are rows of `Connector` (where the supply or signal comes in), grouped by footprint. A part may give `mpn:` (the part number to buy) in `circuit.yaml`. A part definition with `generic: true` (the built-in `opamp`) is a behavioural model of no real chip: without an `mpn` its row says so and `bom_generic_part` warns.
+- **Board values**: `pcb.value` in a part definition is the value on the silkscreen and in the BOM (a template like `symbol.label`, which stays the default); it leaves out simulation-only state, so a pot reads `10kΩ` instead of `10kΩ @50%` and a button `SW_PUSH` instead of `open`.
