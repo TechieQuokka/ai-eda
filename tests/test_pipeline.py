@@ -3,6 +3,7 @@ import json
 import pytest
 
 from eda import pipeline
+from eda.project import BUILTIN_PARTS_DIR
 from eda.result import ExitCode
 from tests.conftest import MakeProject, requires_ngspice, requires_node
 
@@ -80,21 +81,27 @@ def test_run_renders(make_project: MakeProject) -> None:
 
 @requires_ngspice
 def test_simulation_failure_is_reported(make_project: MakeProject) -> None:
-    # Two ideal voltage sources in parallel with different values cannot be solved.
-    circuit = """
-    parts:
-      V1: { type: dc_voltage_source, voltage: 5V }
-      V2: { type: dc_voltage_source, voltage: 3V }
-      R1: { type: resistor, resistance: 1kohm }
-    nets:
-      A: [V1.+, V2.+, R1.1]
-      GND: [V1.-, V2.-, R1.2]
-    """
-    tests = (
-        "tests:\n  t:\n    analysis: { type: op }\n    expect:\n"
-        "      - { measure: voltage(A), max: 10V }\n"
+    # A part whose SPICE line ngspice cannot read: the run fails, and that is reported.
+    root = make_project(
+        tests=(
+            "tests:\n  t:\n    analysis: { type: op }\n    expect:\n"
+            "      - { measure: voltage(VCC), max: 10V }\n"
+        )
     )
-    result = pipeline.sim(make_project(circuit, tests))
+    (root / "parts").mkdir()
+    (root / "parts" / "odd_r.yaml").write_text(
+        (BUILTIN_PARTS_DIR / "resistor.yaml")
+        .read_text(encoding="utf-8")
+        .replace("id: resistor", "id: odd_r")
+        .replace('<param:resistance>"', 'banana"'),
+        encoding="utf-8",
+    )
+    circuit = root / "design" / "circuit.yaml"
+    circuit.write_text(
+        circuit.read_text(encoding="utf-8").replace("type: resistor", "type: odd_r"),
+        encoding="utf-8",
+    )
+    result = pipeline.sim(root)
     assert not result.ok
     assert result.errors[0].rule == "simulation_failed"
 

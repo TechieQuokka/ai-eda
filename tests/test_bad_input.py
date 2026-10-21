@@ -8,7 +8,7 @@ from textwrap import dedent
 import pytest
 
 import eda.project
-from eda import vendor
+from eda import pipeline, vendor
 from eda.cli import main
 from eda.design import load_design
 from eda.loader import Document, load_yaml
@@ -162,3 +162,82 @@ def test_board_beyond_one_metre_is_refused(make_project: MakeProject) -> None:
         "board.width = 5000mm is beyond 1000 mm",
         "placement.V1.x = -2m is beyond 1000 mm",
     ]
+
+
+@pytest.mark.parametrize(
+    ("extra_part", "extra_pins"),
+    [
+        ("V2: { type: dc_voltage_source, voltage: 3V }", ("V2.+", "V2.-")),
+        ("L1: { type: inductor, inductance: 1mH }", ("L1.1", "L1.2")),
+    ],
+)
+def test_source_or_inductor_across_a_source_is_a_dc_loop(
+    make_project: MakeProject, extra_part: str, extra_pins: tuple[str, str]
+) -> None:
+    circuit = (
+        LED_CIRCUIT.replace("  D1:", f"  {extra_part}\n  D1:")
+        .replace("[V1.+, R1.1]", f"[V1.+, R1.1, {extra_pins[0]}]")
+        .replace("[D1.cathode, V1.-]", f"[D1.cathode, V1.-, {extra_pins[1]}]")
+    )
+    diag = Diagnostics()
+    assert load_design(make_project(circuit), diag) is None
+    assert [e.rule for e in diag.errors] == ["dc_loop"]
+    assert diag.errors[0].details["parts"] == ["V1", extra_pins[0].split(".")[0]]
+
+
+def test_series_sources_and_lc_filters_are_not_loops(make_project: MakeProject) -> None:
+    circuit = """
+    parts:
+      V1: { type: dc_voltage_source, voltage: 5V }
+      V2: { type: dc_voltage_source, voltage: 1V }
+      L1: { type: inductor, inductance: 1mH }
+      C1: { type: capacitor, capacitance: 1uF }
+      R1: { type: resistor, resistance: 1kohm }
+    nets:
+      A: [V1.+, V2.-]
+      B: [V2.+, L1.1]
+      OUT: [L1.2, C1.1, R1.1]
+      GND: [V1.-, C1.2, R1.2]
+    """
+    tests = """
+    tests:
+      dc:
+        analysis: { type: op }
+        expect:
+          - { measure: voltage(OUT), min: 5.9V, max: 6.1V }
+    """
+    diag = Diagnostics()
+    assert load_design(make_project(circuit, tests), diag) is not None, diag.errors
+
+
+@requires_ngspice
+def test_singular_matrix_results_are_not_evaluated(make_project: MakeProject) -> None:
+    # A resistor template with a capacitor's element letter: ngspice reads "C... 1000", so
+    # the node between two of them is held by nothing at DC.
+    circuit = """
+    parts:
+      V1: { type: dc_voltage_source, voltage: 5V }
+      R1: { type: bad_r, resistance: 1kohm }
+      R2: { type: bad_r, resistance: 1kohm }
+    nets:
+      IN: [V1.+, R1.1]
+      MID: [R1.2, R2.1]
+      GND: [R2.2, V1.-]
+    """
+    tests = """
+    tests:
+      dc:
+        analysis: { type: op }
+        expect:
+          - { measure: voltage(MID), min: 2.4V, max: 2.6V }
+    """
+    root = make_project(circuit, tests)
+    (root / "parts").mkdir()
+    spec = (EXAMPLES.parent / "parts" / "resistor.yaml").read_text(encoding="utf-8")
+    (root / "parts" / "bad_r.yaml").write_text(
+        spec.replace("id: resistor", "id: bad_r").replace("prefix: R", "prefix: C"),
+        encoding="utf-8",
+    )
+    result = pipeline.sim(root)
+    assert [e.rule for e in result.errors] == ["singular_matrix"]
+    assert "near node mid" in result.errors[0].message

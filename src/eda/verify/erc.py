@@ -45,6 +45,8 @@ def run_erc(circuit: ResolvedCircuit, diag: Diagnostics) -> None:
         )
         return
 
+    _check_dc_loops(circuit, diag)
+
     # Union nets joined by parts that conduct at DC; anything not reaching GND floats.
     parent = {net: net for net in circuit.nets}
 
@@ -70,3 +72,41 @@ def run_erc(circuit: ResolvedCircuit, diag: Diagnostics) -> None:
                 "the simulator cannot solve its operating point",
                 src.at("nets", net),
             )
+
+
+# SPICE element letters of two-terminal parts with no resistance at DC.
+_ZERO_OHM_AT_DC = {"V", "L"}
+
+
+def _check_dc_loops(circuit: ResolvedCircuit, diag: Diagnostics) -> None:
+    """A loop made only of voltage sources and inductors is a short circuit at DC: the
+    simulator either fails or returns a meaningless current (singular matrix)."""
+    parent = {net: net for net in circuit.nets}
+    members: dict[str, list[str]] = {net: [] for net in circuit.nets}
+
+    def find(net: str) -> str:
+        while parent[net] != net:
+            parent[net] = parent[parent[net]]
+            net = parent[net]
+        return net
+
+    for ref, part in circuit.parts.items():
+        spice = part.spec.spice
+        if spice.prefix not in _ZERO_OHM_AT_DC or spice.generator or len(part.spec.pins) != 2:
+            continue
+        a, b = (circuit.net_of(ref, pin) for pin in part.spec.pins)
+        if a is None or b is None or a == b:
+            continue  # unconnected or shorted parts are reported above
+        root_a, root_b = find(a), find(b)
+        if root_a == root_b:
+            loop = [*members[root_a], ref]
+            diag.error(
+                "dc_loop",
+                f"{ref} closes a loop of voltage sources and inductors ({', '.join(loop)}) "
+                f"between nets {a!r} and {b!r}: at DC that is a short circuit",
+                circuit.source.at("parts", ref),
+                parts=loop,
+            )
+            continue
+        parent[root_b] = root_a
+        members[root_a] += [*members[root_b], ref]

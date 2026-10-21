@@ -162,12 +162,36 @@ def _run_one(
             netlist=design.paths.rel(netlist_path),
         )
         return None
+    if _singular(test, output.warnings, diag):
+        return None
     for warning in output.warnings[:5]:
         diag.warning("simulator_warning", f"{test.name}: {warning}", test.location, log=rel_log)
     if output.op_via_transient:
         _warn_transient_op(design, test, diag, settled)
 
     return _evaluate(design, test, sim_dir, raw_path, diag, netlist_path)
+
+
+def _singular(test: CompiledTest, warnings: list[str], diag: Diagnostics) -> bool:
+    """A singular matrix means the circuit has no unique solution (a loop of sources and
+    inductors, a node held by nothing); ngspice still prints numbers, but they mean
+    nothing, so the test is not evaluated."""
+    hits = [w for w in warnings if "singular matrix" in w.lower()]
+    if not hits:
+        return False
+    nodes = sorted({m[1] for w in hits if (m := _SINGULAR_NODE.search(w))})
+    where = f" near node {', '.join(nodes)}" if nodes else ""
+    diag.error(
+        "singular_matrix",
+        f"{test.name}: the circuit has no unique solution{where} (e.g. a loop of voltage "
+        "sources and inductors, or a node that nothing defines); results not evaluated",
+        test.location,
+        warnings=hits[:5],
+    )
+    return True
+
+
+_SINGULAR_NODE = re.compile(r"check node (\S+)", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -257,6 +281,8 @@ def _run_cosim(
         result = cosim.run(design, test, image, raw_path)
     except cosim.CosimError as exc:
         diag.fail_tool("cosim_failed", f"{test.name}: {exc}")
+        return None
+    if _singular(test, result.warnings, diag):
         return None
     for warning in result.warnings[:5]:
         diag.warning("simulator_warning", f"{test.name}: {warning}", test.location)
