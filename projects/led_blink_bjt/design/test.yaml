@@ -1,0 +1,14 @@
+tests:
+  blink:
+    description: >
+      After start-up the LED blinks with a 2 s period (about 1 s on, 1 s off) at about
+      8 mA, fully off in between; the bases never go below -5.5 V (2N3904 VEBO is 6 V).
+    analysis: { type: tran, step: 1ms, stop: 8s }
+    expect:
+      - { measure: "period(current(D1), 3mA)", from: 2s, min: 1.9s, max: 2.1s }
+      - { measure: max(current(D1)), from: 2s, min: 6mA, max: 12mA }
+      - { measure: min(current(D1)), from: 2s, max: 100uA }
+      - { measure: avg(current(D1)), from: 2s, min: 3mA, max: 5.5mA }
+      - { measure: min(voltage(BASE1)), min: -5.5V }
+      - { measure: min(voltage(BASE2)), min: -5.5V }
+      - { measure: max(current(Q2.c)), max: 50mA }

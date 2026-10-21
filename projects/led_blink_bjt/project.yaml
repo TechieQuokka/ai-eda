@@ -1,0 +1,4 @@
+name: led_blink_bjt
+description: >
+  The cheapest way to blink an LED: a two-transistor astable multivibrator (2 x 2N3904,
+  RC timing) on 5 V; the LED is on for about 1 s and off for about 1 s.

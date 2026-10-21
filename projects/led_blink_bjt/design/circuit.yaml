@@ -1,0 +1,25 @@
+description: >
+  Astable multivibrator. Each transistor is held off while the capacitor on its base
+  recharges through RB: about 0.53 * RB * C here (5 V supply, measured in simulation), so
+  RB1/C2 set the LED-on time and RB2/C1 the LED-off time. The LED and RL are Q2's
+  collector load.
+parts:
+  # 5 V switched on at t = 0 (1 ms ramp), as when the supply is plugged in.
+  V1: { type: pulse_voltage_source, high: 5V, rise: 1ms, width: 1000s, period: 2000s }
+  Q1: { type: npn, model: 2N3904 }
+  Q2: { type: npn, model: 2N3904 }
+  RC1: { type: resistor, resistance: 330ohm }   # Q1 collector load
+  RL: { type: resistor, resistance: 330ohm }    # LED current limit (Q2 collector load)
+  D1: { type: led, color: green }
+  RB1: { type: resistor, resistance: 75kohm }
+  RB2: { type: resistor, resistance: 82kohm }
+  C1: { type: capacitor, capacitance: 27uF }
+  C2: { type: capacitor, capacitance: 27uF }
+nets:
+  VCC: [V1.+, RC1.1, RL.1, RB1.1, RB2.1]
+  COL1: [RC1.2, Q1.c, C1.1]
+  BASE2: [C1.2, RB2.2, Q2.b]
+  LED_A: [RL.2, D1.anode]
+  COL2: [D1.cathode, Q2.c, C2.1]
+  BASE1: [C2.2, RB1.2, Q1.b]
+  GND: [V1.-, Q1.e, Q2.e]

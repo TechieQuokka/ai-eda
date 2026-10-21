@@ -1,0 +1,34 @@
+id: npn
+name: NPN transistor
+category: semiconductor
+description: >
+  Small-signal NPN bipolar transistor in TO-92 with the E-B-C pinout (2N3904, PN2222A).
+  The models are the widely used Gummel-Poon parameter sets for these parts. Keep the
+  collector current below about 100 mA (2N3904) / 500 mA (PN2222A) and the reverse
+  base-emitter voltage below 6 V. Pin currents: current(Q1.c), current(Q1.b), current(Q1.e).
+pins: [c, b, e]
+params:
+  model: { choices: [2N3904, PN2222A], default: 2N3904 }
+spice:
+  prefix: Q
+  template: "<name> <pin:c> <pin:b> <pin:e> <model>"
+  pin_currents: true
+  model_param: model
+  models:
+    2N3904: >-
+      NPN(IS=6.734f XTI=3 EG=1.11 VAF=74.03 BF=416.4 NE=1.259 ISE=6.734f IKF=66.78m XTB=1.5
+      BR=0.7371 NC=2 ISC=0 IKR=0 RC=1 CJC=3.638p MJC=0.3085 VJC=0.75 FC=0.5 CJE=4.493p
+      MJE=0.2593 VJE=0.75 TR=239.5n TF=301.2p ITF=0.4 VTF=4 XTF=2 RB=10)
+    PN2222A: >-
+      NPN(IS=14.34f XTI=3 EG=1.11 VAF=74.03 BF=255.9 NE=1.307 ISE=14.34f IKF=0.2847 XTB=1.5
+      BR=6.092 NC=2 ISC=0 IKR=0 RC=1 CJC=7.306p MJC=0.3416 VJC=0.75 FC=0.5 CJE=22.01p
+      MJE=0.377 VJE=0.75 TR=46.91n TF=411.1p ITF=0.6 VTF=1.7 XTF=3 RB=10)
+symbol:
+  cell: q_npn
+  ports: { c: C, b: B, e: E }
+  label: "<param:model>"
+kicad:
+  symbol: Transistor_BJT:2N3904
+pcb:
+  footprint: Package_TO_SOT_THT:TO-92_Inline
+  pads: { e: "1", b: "2", c: "3" }
