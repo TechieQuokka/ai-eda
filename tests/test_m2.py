@@ -192,5 +192,7 @@ def test_connected_placement_shortens_tracks(tmp_path: Path) -> None:
 def test_fixed_board_too_small(make_project: MakeProject) -> None:
     root = _board(make_project, "board: { width: 8mm, height: 8mm, margin: 1mm }\n")
     result = pipeline.pcb(root)
-    assert result.tool_error
+    assert not result.tool_error  # the design's fault: exit code 1
+    assert [e.rule for e in result.errors] == ["no_room"]
     assert "no room for" in result.errors[0].message
+    assert result.errors[0].file == "design/board.yaml"

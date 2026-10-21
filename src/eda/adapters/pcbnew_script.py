@@ -109,6 +109,14 @@ def _auto_place(
         shelf = max(shelf, bh)
 
 
+class DesignProblem(Exception):
+    """The board as specified cannot be built (a fault of the design, not of the tool)."""
+
+    def __init__(self, message: str, ref: str) -> None:
+        super().__init__(message)
+        self.ref = ref
+
+
 ROTATIONS = (0.0, 90.0, 180.0, 270.0)
 GRID_MM = 0.5  # candidate positions are on this grid
 # A large area coarsens the grid (in GRID_MM multiples) so one part never tries more than
@@ -250,8 +258,9 @@ def _connected_place(
                     if best is None or cost < best[0] - 1e-9:
                         best = (cost, x, y, rotation)
         if best is None:
-            raise ValueError(
-                "no room for " + footprint.GetReference() + " on the board; enlarge it"
+            raise DesignProblem(
+                "no room for " + footprint.GetReference() + " on the board; enlarge it",
+                footprint.GetReference(),
             )
         _, x, y, rotation = best
         footprint.SetOrientationDegrees(rotation)
@@ -480,6 +489,8 @@ def main() -> None:
     result: Request
     try:
         result = {"ok": True, "result": commands[request["command"]](request)}
+    except DesignProblem as exc:
+        result = {"ok": False, "error": str(exc), "design": True, "ref": exc.ref}
     except Exception as exc:  # report every failure as JSON for the caller
         result = {"ok": False, "error": type(exc).__name__ + ": " + str(exc)}
     sys.stdout.write("\n@@EDA-JSON@@" + json.dumps(result) + "\n")

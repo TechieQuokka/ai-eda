@@ -18,6 +18,14 @@ class KicadError(RuntimeError):
     pass
 
 
+class KicadDesignError(KicadError):
+    """pcbnew_script could not build the board because of the design (e.g. no room)."""
+
+    def __init__(self, message: str, ref: str) -> None:
+        super().__init__(message)
+        self.ref = ref
+
+
 def python() -> str:
     """KiCad's Python: the interpreter that can import `pcbnew` (system python3)."""
     found = os.environ.get("EDA_KICAD_PYTHON") or "/usr/bin/python3"
@@ -47,6 +55,8 @@ def pcbnew(request: dict[str, Any]) -> dict[str, Any]:
         if line.startswith(_MARKER):
             reply: dict[str, Any] = json.loads(line.removeprefix(_MARKER))
             if not reply.get("ok"):
+                if reply.get("design"):
+                    raise KicadDesignError(str(reply.get("error")), str(reply.get("ref")))
                 raise KicadError(str(reply.get("error")))
             result: dict[str, Any] = reply["result"]
             return result

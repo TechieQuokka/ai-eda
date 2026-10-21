@@ -45,6 +45,15 @@ def build(design: Design, diag: Diagnostics) -> dict[str, JsonValue]:
 
     try:
         layout = kicad.pcbnew(_build_request(board, pcb, dsn))
+    except kicad.KicadDesignError as exc:
+        diag.error(
+            "no_room",
+            f"{exc}: give board.width / board.height more room, move hand-placed parts, "
+            "or leave the size out so the board fits the parts",
+            board.source.at("board"),
+            part=exc.ref,
+        )
+        return {}
     except (kicad.KicadError, OSError, subprocess.TimeoutExpired) as exc:
         diag.fail_tool("pcb_build", f"could not create the KiCad board: {exc}")
         return {}
