@@ -9,12 +9,18 @@ from eda.units import CANONICAL, parse_quantity
 
 
 class ParamSpec(StrictModel):
-    """A part parameter: either a quantity with `unit` or one of `choices`."""
+    """A part parameter: either a quantity with `unit` or one of `choices`.
+
+    Quantities may be limited: `positive: true` (greater than zero, e.g. a resistance) and
+    inclusive `min` / `max` in the same unit (e.g. a wiper position 0 %..100 %)."""
 
     description: str = ""
     unit: str | None = None
     choices: list[str] | None = None
     default: str | None = None
+    positive: bool = False
+    min: str | None = None
+    max: str | None = None
 
     @model_validator(mode="after")
     def _unit_xor_choices(self) -> Self:
@@ -22,13 +28,38 @@ class ParamSpec(StrictModel):
             raise ValueError("exactly one of 'unit' or 'choices' is required")
         if self.unit is not None and self.unit not in CANONICAL:
             raise ValueError(f"unknown unit {self.unit!r}")
-        if (
-            self.choices is not None
-            and self.default is not None
-            and (self.default not in self.choices)
-        ):
-            raise ValueError(f"default {self.default!r} is not one of the choices")
+        if self.choices is not None:
+            if self.positive or self.min is not None or self.max is not None:
+                raise ValueError("positive / min / max apply to quantities, not choices")
+            if self.default is not None and self.default not in self.choices:
+                raise ValueError(f"default {self.default!r} is not one of the choices")
+            return self
+        bounds = self.bounds  # parses min and max
+        if self.default is not None:
+            problem = self.out_of_range(parse_quantity(self.default, self.unit or ""))
+            if problem:
+                raise ValueError(f"default {self.default}: {problem}")
+        if bounds[0] is not None and bounds[1] is not None and bounds[0] > bounds[1]:
+            raise ValueError("min is greater than max")
         return self
+
+    @property
+    def bounds(self) -> tuple[float | None, float | None]:
+        unit = self.unit or ""
+        low = parse_quantity(self.min, unit) if self.min is not None else None
+        high = parse_quantity(self.max, unit) if self.max is not None else None
+        return low, high
+
+    def out_of_range(self, value: float) -> str | None:
+        """Why `value` is not allowed, or None if it is."""
+        low, high = self.bounds
+        if self.positive and value <= 0:
+            return "must be greater than zero"
+        if low is not None and value < low:
+            return f"must be at least {self.min}"
+        if high is not None and value > high:
+            return f"must be at most {self.max}"
+        return None
 
 
 class OptranSpec(StrictModel):

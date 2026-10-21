@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 from textwrap import dedent
@@ -14,6 +15,7 @@ from eda.cli import main
 from eda.design import load_design
 from eda.loader import Document, load_yaml
 from eda.result import Diagnostics
+from eda.schema.part import ParamSpec
 from tests.conftest import LED_CIRCUIT, MakeProject, requires_ngspice
 from tests.test_m1 import MODEL
 from tests.test_m4 import requires_cosim
@@ -376,3 +378,107 @@ def test_part_templates_are_checked_when_loaded(
     load_design(root, diag)
     assert [e.rule for e in diag.errors] == ["schema"]
     assert message in diag.errors[0].message
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "message"),
+    [
+        ("resistance: 330ohm", "resistance: 0ohm", "R1.resistance = 0Ω must be greater than zero"),
+        (
+            "resistance: 330ohm",
+            "resistance: -1kohm",
+            "R1.resistance = -1kΩ must be greater than zero",
+        ),
+        (
+            "R1: { type: resistor, resistance: 330ohm }",
+            "R1: { type: potentiometer, resistance: 1kohm, position: 120% }",
+            "R1.position = 120% must be at most 100%",
+        ),
+    ],
+)
+def test_parameter_ranges(make_project: MakeProject, old: str, new: str, message: str) -> None:
+    circuit = LED_CIRCUIT.replace(old, new)
+    if "potentiometer" in new:
+        circuit = circuit.replace("N1: [R1.2, D1.anode]", "N1: [R1.2, R1.3, D1.anode]")
+    diag = Diagnostics()
+    assert load_design(make_project(circuit), diag) is None
+    assert [e.message for e in diag.errors if e.rule == "invalid_value"] == [message]
+
+
+def test_parameter_ranges_apply_to_test_overrides(make_project: MakeProject) -> None:
+    tests = """
+    tests:
+      t:
+        analysis: { type: op }
+        parts: { R1: { resistance: -5ohm } }
+        expect:
+          - { measure: current(D1), min: 9mA }
+    """
+    diag = Diagnostics()
+    assert load_design(make_project(tests=tests), diag) is None
+    assert [e.rule for e in diag.errors] == ["invalid_value"]
+
+
+@pytest.mark.parametrize(
+    ("param", "message"),
+    [
+        ({"unit": "ohm", "default": "banana"}, "invalid quantity 'banana'"),
+        (
+            {"unit": "ohm", "positive": True, "default": "0ohm"},
+            "default 0ohm: must be greater than zero",
+        ),
+        ({"unit": "ohm", "min": "2ohm", "max": "1ohm"}, "min is greater than max"),
+        ({"choices": ["a", "b"], "positive": True}, "apply to quantities"),
+    ],
+)
+def test_parameter_specs_are_checked(param: dict[str, object], message: str) -> None:
+    with pytest.raises(ValueError, match=re.escape(message)):
+        ParamSpec.model_validate(param)
+
+
+def _led_board(make_project: MakeProject, board: str, circuit: str = LED_CIRCUIT) -> list[str]:
+    root = make_project(circuit)
+    (root / "design" / "board.yaml").write_text(board, encoding="utf-8")
+    diag = Diagnostics()
+    load_design(root, diag)
+    return [e.message for e in diag.errors]
+
+
+def test_via_drill_must_leave_a_ring(make_project: MakeProject) -> None:
+    messages = _led_board(make_project, "rules: { via_diameter: 0.4mm, via_drill: 0.8mm }\n")
+    assert messages == [
+        "rules.via_drill (0.8mm) must be smaller than rules.via_diameter (0.4mm), "
+        "or the via has no copper ring"
+    ]
+
+
+def test_two_nets_on_one_pad(make_project: MakeProject) -> None:
+    circuit = LED_CIRCUIT.replace("330ohm }", "330ohm, pads: { '1': '1', '2': '1' } }")
+    assert _led_board(make_project, "board: {}\n", circuit) == [
+        "R1: pad 1 is given to pins 1, 2 on different nets"
+    ]
+
+
+@requires_ngspice
+def test_reversed_opamp_supply(make_project: MakeProject) -> None:
+    circuit = """
+    parts:
+      VCC: { type: dc_voltage_source, voltage: 12V }
+      VEE: { type: dc_voltage_source, voltage: 12V }
+      U1: { type: opamp }
+      R1: { type: resistor, resistance: 10kohm }
+    nets:
+      VP: [VCC.+, U1.v-]
+      VN: [VEE.-, U1.v+]
+      OUT: [U1.out, U1.in-, R1.1]
+      GND: [VCC.-, VEE.+, U1.in+, R1.2]
+    """
+    tests = """
+    tests:
+      dc:
+        analysis: { type: op }
+        expect:
+          - { measure: voltage(OUT), max: 1V }
+    """
+    result = pipeline.sim(make_project(circuit, tests))
+    assert "supply_reversed" in [e.rule for e in result.errors]

@@ -8,13 +8,13 @@ description: >
   (`eda model import`) when a specific chip matters. Pin currents: current(U1.out) etc.
 pins: [in+, in-, v+, v-, out]
 params:
-  aol: { unit: dB, default: 100dB, description: open-loop DC gain }
-  gbw: { unit: Hz, default: 1MHz, description: gain-bandwidth product }
-  slew: { unit: V/s, default: 0.5V/us, description: slew rate }
-  rin: { unit: ohm, default: 1Tohm, description: differential input resistance }
-  rout: { unit: ohm, default: 50ohm, description: open-loop output resistance }
-  iq: { unit: A, default: 1mA, description: quiescent supply current }
-  swing: { unit: V, default: 100mV, description: output headroom to each rail }
+  aol: { unit: dB, default: 100dB, positive: true, description: open-loop DC gain }
+  gbw: { unit: Hz, default: 1MHz, positive: true, description: gain-bandwidth product }
+  slew: { unit: V/s, default: 0.5V/us, positive: true, description: slew rate }
+  rin: { unit: ohm, default: 1Tohm, positive: true, description: differential input resistance }
+  rout: { unit: ohm, default: 50ohm, positive: true, description: open-loop output resistance }
+  iq: { unit: A, default: 1mA, min: 0A, description: quiescent supply current }
+  swing: { unit: V, default: 100mV, min: 0V, description: output headroom to each rail }
 spice:
   prefix: X
   template: >-

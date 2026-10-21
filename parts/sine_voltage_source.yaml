@@ -8,8 +8,8 @@ pins: ["+", "-"]
 params:
   offset: { unit: V, default: 0V }
   amplitude: { unit: V }
-  frequency: { unit: Hz }
-  delay: { unit: s, default: 0s }
+  frequency: { unit: Hz, positive: true }
+  delay: { unit: s, default: 0s, min: 0s }
   ac: { unit: V, default: 0V, description: AC analysis magnitude }
 spice:
   prefix: V

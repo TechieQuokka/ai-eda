@@ -4,7 +4,7 @@ category: passive
 description: Ideal resistor. Current is positive from pin 1 to pin 2.
 pins: ["1", "2"]
 params:
-  resistance: { unit: ohm }
+  resistance: { unit: ohm, positive: true }
 spice:
   prefix: R
   template: "<name> <pin:1> <pin:2> <param:resistance>"

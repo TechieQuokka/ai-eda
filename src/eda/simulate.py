@@ -469,6 +469,8 @@ def _evaluate(
         check = _judge(exp, traces, test, diag)
         all_passed = all_passed and check["passed"] is True
         checks.append(check)
+    if not isinstance(test.analysis, Ac) and _reversed_supplies(design, test, traces, diag):
+        all_passed = False
 
     outcome: dict[str, JsonValue] = {
         "analysis": domain_of(test.analysis),
@@ -489,6 +491,41 @@ def _evaluate(
         wave_path.write_text(_waveform_json(axis, traces), encoding="utf-8")
         outcome["waveform"] = design.paths.rel(wave_path)
     return outcome
+
+
+REVERSED_SUPPLY_V = 0.1  # v- this far above v+ means the rails are swapped
+
+
+def _reversed_supplies(
+    design: Design, test: CompiledTest, traces: Traces, diag: Diagnostics
+) -> bool:
+    """An op-amp whose v- rail sits above its v+ rail: models still compute an output, a
+    real part would not work (or burn). Checked over the whole run."""
+
+    def volts(net: str | None) -> Values | None:
+        if net == GROUND:
+            return [0.0] * traces.points
+        found = traces.signals.get(f"voltage({net})")
+        return found[1] if found else None
+
+    reversed_any = False
+    for ref, part in design.circuit.parts.items():
+        if part.spec.category != "opamp" or not {"v+", "v-"} <= set(part.spec.pins):
+            continue
+        plus = volts(design.circuit.net_of(ref, "v+"))
+        minus = volts(design.circuit.net_of(ref, "v-"))
+        if plus is None or minus is None:
+            continue
+        worst = max(_real(m) - _real(p) for p, m in zip(plus, minus, strict=True))
+        if worst > REVERSED_SUPPLY_V:
+            diag.error(
+                "supply_reversed",
+                f"{test.name}: {ref}'s v- supply is {format_quantity(worst, 'V')} above its v+ "
+                "supply; check the rail connections (v+ to the positive rail)",
+                design.circuit.source.at("parts", ref),
+            )
+            reversed_any = True
+    return reversed_any
 
 
 def _drives(design: Design, test: CompiledTest) -> dict[str, dict[str, str]]:

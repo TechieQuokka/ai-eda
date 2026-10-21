@@ -238,6 +238,11 @@ def _param_value(
         except QuantityError as exc:
             diag.error("invalid_value", f"{ref}.{name}: {exc}", at)
             return None
+        problem = param.out_of_range(value)
+        if problem is not None:
+            shown = format_quantity(value, param.unit)
+            diag.error("invalid_value", f"{ref}.{name} = {shown} {problem}", at)
+            return None
         return value, format_quantity(value, param.unit)
     choices = param.choices or []
     if not isinstance(raw, str) or raw not in choices:
@@ -333,6 +338,15 @@ def _resolve_board(
         mm(getattr(raw.rules, f), "rules", f)
         for f in ("clearance", "track_width", "via_diameter", "via_drill")
     ]
+    via_diameter, via_drill = rules[2], rules[3]
+    if via_diameter is not None and via_drill is not None and via_drill >= via_diameter:
+        diag.error(
+            "invalid_value",
+            f"rules.via_drill ({raw.rules.via_drill}) must be smaller than "
+            f"rules.via_diameter ({raw.rules.via_diameter}), or the via has no copper ring",
+            src.at("rules", "via_drill"),
+        )
+        ok = False
 
     placements: dict[str, BoardPlacement] = {}
     for ref, place in raw.placement.items():
@@ -404,6 +418,27 @@ def _resolve_board(
                 f"{ref}: " + "; ".join(problems),
                 at,
                 footprint_pads=sorted(available),
+            )
+            ok = False
+            continue
+        owners: dict[str, list[str]] = {}
+        for pin, group in pads.items():
+            for pad in group:
+                owners.setdefault(pad, []).append(pin)
+        shared = {
+            pad: pins
+            for pad, pins in owners.items()
+            if len({circuit.net_of(ref, pin) for pin in pins}) > 1
+        }
+        if shared:
+            diag.error(
+                "invalid_pads",
+                f"{ref}: "
+                + "; ".join(
+                    f"pad {pad} is given to pins {', '.join(pins)} on different nets"
+                    for pad, pins in sorted(shared.items())
+                ),
+                csrc.at("parts", ref, "pads") if inst.pads is not None else at,
             )
             ok = False
             continue

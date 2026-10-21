@@ -6,8 +6,8 @@ description: >
   (100 %). Pin 2 is the wiper. Pin currents: current(RV1.1), current(RV1.2), current(RV1.3).
 pins: ["1", "2", "3"]
 params:
-  resistance: { unit: ohm, description: total track resistance }
-  position: { unit: "%", default: 50%, description: wiper position from pin 1 }
+  resistance: { unit: ohm, positive: true, description: total track resistance }
+  position: { unit: "%", default: 50%, min: 0%, max: 100%, description: wiper position from pin 1 }
 spice:
   prefix: R
   template: |

@@ -59,7 +59,7 @@ The CLI never makes design decisions; it only reports.
 
 ## 6. Parts and Vendor Models
 
-- Built-in parts: `parts/<id>.yaml` (one file per type, file name = id); project-specific parts in `projects/<name>/parts/`. Fields: pins, params (`unit` or `choices`, optional `default`), `spice` template (`include`, `compat`, `pin_currents`), netlistsvg `symbol`, `dc_path`. List them with `eda part list` / `eda part show ID`.
+- Built-in parts: `parts/<id>.yaml` (one file per type, file name = id); project-specific parts in `projects/<name>/parts/`. Fields: pins, params (`unit` or `choices`, optional `default`; quantities may set `positive: true` and inclusive `min` / `max`), `spice` template (`include`, `compat`, `pin_currents`), netlistsvg `symbol`, `dc_path`. List them with `eda part list` / `eda part show ID`.
 - `opamp` is a generic macromodel (aol, gbw, slew, rin, rout, iq, swing) and is the default choice. For a specific chip, import the vendor model:
   1. `uv run eda model inspect FILE` — find the `.subckt` and read its pin comments.
   2. `uv run eda model import FILE --id <id> [--subckt NAME] [--opamp IN+,IN-,V+,V-,OUT]`.

@@ -4,7 +4,7 @@ category: passive
 description: Ideal inductor. Current is positive from pin 1 to pin 2.
 pins: ["1", "2"]
 params:
-  inductance: { unit: H }
+  inductance: { unit: H, positive: true }
 spice:
   prefix: L
   template: "<name> <pin:1> <pin:2> <param:inductance>"

@@ -8,11 +8,11 @@ pins: ["+", "-"]
 params:
   low: { unit: V, default: 0V }
   high: { unit: V }
-  delay: { unit: s, default: 0s }
-  rise: { unit: s, default: 1ns }
-  fall: { unit: s, default: 1ns }
-  width: { unit: s }
-  period: { unit: s }
+  delay: { unit: s, default: 0s, min: 0s }
+  rise: { unit: s, default: 1ns, positive: true }
+  fall: { unit: s, default: 1ns, positive: true }
+  width: { unit: s, positive: true }
+  period: { unit: s, positive: true }
   ac: { unit: V, default: 0V, description: AC analysis magnitude }
 spice:
   prefix: V
