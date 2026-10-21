@@ -56,6 +56,7 @@ The CLI never makes design decisions; it only reports.
 - Time range of a tran measure: `{ measure: "period(current(D1), 3mA)", from: 1.6s, to: 2s, ... }` (either bound may be left out).
 - **Quote any measure that contains a comma** inside `{ ... }`.
 - Units: `V A ohm F H s Hz dB deg V/us`, prefixes `p n u m k M G T` (case-sensitive).
+- Limits: tran ≤ 1e6 points (stop/step), ac ≤ 1e5 frequencies, firmware tests ≤ 1e5 steps (`too_many_points`). A `singular_matrix` error means the circuit has no unique solution (e.g. a `dc_loop` of sources and inductors): fix the circuit, the numbers are not judged.
 
 ## 6. Parts and Vendor Models
 
@@ -90,4 +91,5 @@ The CLI never makes design decisions; it only reports.
 - `uv run eda fw projects/<name> --build` also compiles `firmware/` with the pico-sdk into `out/fw-build/` (`eda run` does it whenever the SDK is installed). Compiler and linker messages come back as `fw_compile_error` / `fw_compile_warning` / `fw_link_error` with file and line; `data.build.size` gives flash/RAM use. SDK setup: `tools/fetch-pico-sdk.sh` plus `gcc-arm-none-eabi`.
 - Simulation follows firmware.yaml (outputs drive, pulls pull, others are high-Z). Test each output state with `pins: { LED: high }` in a test.
 - **Firmware in the loop**: a `tran` test with `firmware: true` runs the compiled firmware in the RP2040 emulator against the circuit (`DESIGN_DECISIONS.md` §15). The firmware drives GPIO/PWM pins, reads inputs and ADC channels from node voltages, and its UART output is captured. Check it with `period(...)`/`at(...)` measures and serial expectations: `{ serial: UART_TX, match: 'pot=(\d+)', min: 1900, max: 2200 }` (number in the last match; without a group, the number of matches). The output is in `data.sim.tests.<name>.firmware.serial` and `out/sim/<test>.uart.txt`. Values are exchanged every `step`, so pick `step` well below the timing you test; `pins:` overrides do not apply.
+- Firmware faults: `firmware_fault` (unmapped memory access, a HardFault on the chip) fails the test; `firmware_halted` warns that the firmware stopped (main returned, panic). UART output is paced at the baud rate, as on the chip.
 - Emulator setup: `npm --prefix tools/rp2040 ci` and `tools/rp2040/fetch-bootrom.sh`; co-simulation also needs libngspice.
