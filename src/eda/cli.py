@@ -210,10 +210,12 @@ def _model(args: argparse.Namespace) -> int:
         opamp = [n.strip() for n in args.opamp.split(",")] if args.opamp else None
         try:
             plan = vendor.plan_import(file, args.id, args.subckt, opamp, args.category)
+            target = vendor.VENDOR_PARTS_DIR / f"{plan.part_id}.yaml"
+            previous = target.read_bytes() if target.is_file() else None
+            written = vendor.write_part(plan, file, args.name, target.parent, args.optran)
         except ValueError as exc:
             diag.error("import_failed", str(exc))
         else:
-            written = vendor.write_part(plan, file, args.name, optran=args.optran)
             data = {
                 "part": plan.part_id,
                 "file": str(written),
@@ -223,7 +225,12 @@ def _model(args: argparse.Namespace) -> int:
             }
             loaded = load_parts(diag)
             if plan.part_id not in loaded:
-                diag.error("import_failed", f"written part {plan.part_id!r} did not load")
+                # A part file that does not load breaks every project: put back what was there.
+                if previous is None:
+                    written.unlink()
+                else:
+                    written.write_bytes(previous)
+                diag.error("import_failed", f"written part {plan.part_id!r} did not load; removed")
     return _emit(diag.to_result(f"model {args.action}", "", data))
 
 
