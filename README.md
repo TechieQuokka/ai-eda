@@ -215,12 +215,54 @@ Display parts show what the firmware writes to them, and tests read it back as t
 <td align="center"><img src="docs/images/lcd_message_screen.png" alt="16x2 LCD showing Pico LCD and Uptime 1 s" height="110"><br><sub>16×2 HD44780 LCD (<code>lcd_message</code>)</sub></td>
 <td align="center"><img src="docs/images/oled_meter_screen.png" alt="OLED showing a pot reading and a bar" height="110"><br><sub>128×64 SSD1306 OLED on I2C (<code>oled_meter</code>)</sub></td>
 </tr>
-<tr>
-<td align="center" colspan="3"><img src="docs/images/calculator_screen.png" alt="16x2 LCD showing 2+3×4= and 20" height="110"><br><sub>A pocket calculator on batteries, keys pressed by test events (<code>calculator</code>)</sub></td>
-</tr>
 </table>
 
 The models catch the usual mistakes: an LCD instruction sent before the previous one finished (*"instruction 0x06 came 54 µs after the previous write, which needs 1.52 ms"*), an OLED left dark because the charge pump was never enabled, or an I2C bus without pull-ups (*"the bus idles at SDA 0 V … nothing answers"*).
+
+### A whole device: a pocket calculator
+
+`projects/calculator` is a battery-powered calculator taken from a one-line goal to a board to order: a Raspberry Pi Pico scans 20 keys in a 5 × 4 matrix and shows the expression and the result on a 16×2 LCD; two AA cells feed a 5 V boost module through a power switch and reverse-polarity protection, and a battery mark appears when the cells run down. The same files hold everything that was checked: 14 tests, from the boost module holding 5 V down to 0.8 V per cell to key bounce and division by zero, all with the compiled firmware running against the circuit.
+
+Keys are named once, in `design/inputs.yaml` (`"+": KADD`, `"=": KEQ`, ...), so a test presses them as a string, and `eda try` presses them without touching any test:
+
+```yaml
+  add:
+    analysis: { type: tran, step: 1ms, stop: 660ms }
+    firmware: true
+    events:
+      - { at: 150ms, keys: "12+34=" }                 # each key held 40 ms, 40 ms apart
+    expect:
+      - { display: LCD1, match: '^12\+34=\n +46$' }
+```
+
+```console
+$ eda try projects/calculator --keys "250*4%="
+{ "ok": true, "data": { "try": {
+    "displays": { "LCD1": { "text": "250\u00004%=\n              10", ... } },   # \u0000: the × glyph
+    "firmware": { "serial": { "UART_TX": "calculator ready\r\nkey 2: 2 | 2\r\n ... key =: 250*4%= | 10\r\n" } },
+    "events": [ { "display": "150ms", "event": "key 2 down (K2: state=pressed)" }, ... ] } } }
+```
+
+<table>
+<tr>
+<td align="center"><img src="docs/images/calculator_try_screen.png" alt="LCD showing 250×4%= and 10" height="90"><br><sub><code>eda try --keys "250*4%="</code></sub></td>
+<td align="center"><img src="docs/images/calculator_divide_screen.png" alt="LCD showing 1÷3= and 0.333333333" height="90"><br><sub>× and ÷ are glyphs the firmware defines</sub></td>
+<td align="center"><img src="docs/images/calculator_low_battery_screen.png" alt="LCD with the battery mark" height="90"><br><sub>Cells at 1.0 V each: battery mark</sub></td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td align="center"><img src="docs/images/calculator_board.png" alt="Calculator board: LCD, Pico, 20 keys, power section" height="420"><br><sub>112 × 126 mm, routed, DRC clean, no warnings</sub></td>
+<td align="center"><img src="docs/images/calculator_assembly.png" alt="Assembly drawing of the calculator board" height="420"><br><sub>True-size soldering guide</sub></td>
+</tr>
+<tr>
+<td align="center"><img src="docs/images/calculator_schematic.png" alt="KiCad schematic of the calculator" height="420"><br><sub>KiCad schematic, checked against the design's nets</sub></td>
+<td align="center"><img src="docs/images/calculator_battery_sweep.png" alt="VSYS and the boost module's input current against the battery voltage" height="300"><br><sub>Sweeping the battery: VSYS holds, input current stays below the module's limit</sub></td>
+</tr>
+</table>
+
+Along the way the simulation caught what a desk check would not: the pico-sdk's `printf` printing `0.00000000` for `%g`, the RP2040's reset pull-downs left on inputs declared without a pull, and an LCD division sign that only some modules have in their ROM.
 
 ### Vendor models
 
