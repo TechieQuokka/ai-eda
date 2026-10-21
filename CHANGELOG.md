@@ -4,7 +4,7 @@ All notable changes to ai-eda. Versions follow [Semantic Versioning](https://sem
 MAJOR for changes that break existing design files or the CLI's JSON, MINOR for new
 features that keep them working, PATCH for fixes. Each release is tagged `vX.Y.Z`.
 
-## [Unreleased]
+## [1.3.0] - 2026-10-21
 
 ### Added
 - `board_pads:` on a part in circuit.yaml connects footprint pads its model does not have
