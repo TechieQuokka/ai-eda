@@ -62,6 +62,7 @@ def state(paths: ProjectPaths, version: int) -> dict[str, JsonValue]:
         "sim": _read_json(out / "sim.json"),
         "render": _read_json(out / "render.json"),
         "pcb": _read_json(out / "pcb.json"),
+        "has_board": paths.board_file.exists(),
         "fw": _read_json(out / "fw.json"),
         "log": history.read_log(paths),
     }

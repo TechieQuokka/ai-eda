@@ -37,6 +37,7 @@ def test_http_routes(make_project: MakeProject) -> None:
             state = json.loads(resp.read())
         assert state["project"] == "demo"
         assert state["sim"]["ok"] is True
+        assert state["has_board"] is False
         with urllib.request.urlopen(f"{base}/") as resp:
             assert b"eda viewer" in resp.read()
         with urllib.request.urlopen(f"{base}/out/sim.json") as resp:

@@ -179,12 +179,18 @@ function renderFirmware(state) {
 
 function renderBoard(state, version) {
   const data = state.pcb?.data;
-  const section = $("board-section");
-  if (!data || !data.outputs) {
-    section.hidden = true;
+  $("board-section").hidden = false;
+  if (!state.has_board) {
+    $("board").replaceChildren(el("p", { class: "muted" },
+      "No board for this project. Add ", el("code", {}, "design/board.yaml"), " with ",
+      el("code", {}, "board: {}"), " and the next run places, routes, and exports one."));
     return;
   }
-  section.hidden = false;
+  if (!data || !data.outputs) {
+    $("board").replaceChildren(el("p", { class: "muted" },
+      state.pcb ? "The board was not built; see the issues above." : "Board not built yet."));
+    return;
+  }
   const r = data.routing || {};
   const d = data.drc || {};
   const facts = el("table", {}, el("tbody", {},
