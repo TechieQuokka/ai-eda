@@ -26,7 +26,9 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from eda.adapters import ngspice_shared, rp2040
-from eda.model import GROUND, CompiledTest, Design, Tran
+from eda.display import Screen
+from eda.display.hd44780 import Hd44780Device
+from eda.model import GROUND, CompiledTest, Design, ResolvedCircuit, Tran
 from eda.netlist.spice import (
     alter_commands,
     build_netlist,
@@ -35,7 +37,7 @@ from eda.netlist.spice import (
     optran_command,
     voltage_vector,
 )
-from eda.schema.part import McuSpec
+from eda.schema.part import Hd44780DisplaySpec, McuSpec
 
 HIZ_OHM = 1e8
 # RP2040 input thresholds at IOVDD = 3.3 V: VIH 2.0 V, VIL 0.8 V (datasheet §5.5.3).
@@ -59,6 +61,8 @@ class CosimResult:
     faults: list[tuple[float, str]] = field(default_factory=lambda: list[tuple[float, str]]())
     warnings: list[str] = field(default_factory=lambda: list[str]())
     op_via_transient: bool = False
+    screens: dict[str, Screen] = field(default_factory=lambda: dict[str, Screen]())
+    display_issues: list[tuple[str, str]] = field(default_factory=lambda: list[tuple[str, str]]())
 
 
 @dataclass(frozen=True)
@@ -114,6 +118,8 @@ def run(design: Design, test: CompiledTest, image: Path | None, raw_path: Path) 
                 )
             mcu = design.circuit.parts[mcu_ref].spec.mcu if mcu_ref else None
             thevenin = _Thevenin(mcu) if mcu else None
+            devices = _devices(circuit, pins, mcu.vio) if mcu and emulator else []
+            sampled = sorted({net for device in devices for net in device.nets})
             applied: dict[str, tuple[float, float]] = {}
 
             def apply(pin: _Pin, volts: float, ohms: float) -> None:
@@ -178,8 +184,14 @@ def run(design: Design, test: CompiledTest, image: Path | None, raw_path: Path) 
                     segments = result.pins.get(pin.gpio, [])
                     apply(pin, *thevenin.average(segments, result.end, inputs[pin.gpio]))
                 count += 1
+                window_start = now
                 if result.end > now:
                     now = advance(result.end)
+                if devices:
+                    volts = {net: _volts(sim, net) for net in sampled}
+                    gpio = {p.net: result.pins.get(p.gpio, []) for p in pins.values()}
+                    for device in devices:
+                        device.window(window_start, now, gpio, volts)
                 if result.early:
                     # A pin changed mode: let the circuit settle on the new state before the
                     # firmware reads its inputs again.
@@ -192,6 +204,8 @@ def run(design: Design, test: CompiledTest, image: Path | None, raw_path: Path) 
             sim.write_raw(raw_path)
             warnings = sim.warnings()
             via_transient = sim.op_via_transient
+            screens: dict[str, Screen] = {d.ref: d.screen(analysis.stop) for d in devices}
+            issues = [issue for device in devices for issue in device.issues()]
     except (ngspice_shared.SharedSpiceError, rp2040.EmulatorError, ValueError) as exc:
         raise CosimError(str(exc)) from exc
     return CosimResult(
@@ -202,6 +216,8 @@ def run(design: Design, test: CompiledTest, image: Path | None, raw_path: Path) 
         faults=faults,
         warnings=warnings,
         op_via_transient=via_transient,
+        screens=screens,
+        display_issues=issues,
     )
 
 
@@ -230,6 +246,16 @@ def _firmware_pins(design: Design) -> _McuSetup:
         elif function.startswith("UART") and function.endswith("_TX"):
             uarts.append(int(function[4]))
     return firmware.mcu, drives, pins, adc, uarts
+
+
+def _devices(circuit: ResolvedCircuit, pins: dict[str, _Pin], vio: float) -> list[Hd44780Device]:
+    """The display controllers the firmware writes to, fed after every window."""
+    driven = {p.net for p in pins.values()}
+    return [
+        Hd44780Device(part, circuit, vio, driven)
+        for part in circuit.parts.values()
+        if isinstance(part.spec.display, Hd44780DisplaySpec)
+    ]
 
 
 def _volts(sim: ngspice_shared.Session, net: str) -> float:

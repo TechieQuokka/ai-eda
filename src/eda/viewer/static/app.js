@@ -558,7 +558,42 @@ function drawSegments(file, frame) {
   return root;
 }
 
-const DRAWERS = { segments: drawSegments };
+// HD44780 character LCD: dots from the frame's character codes, the font and colours
+// from the frames file, CGRAM characters from the frame; a blinking cursor blinks.
+function drawLcd(file, frame, t) {
+  const { rows, cgram, cursor, underline, blink, contrast } = frame.state;
+  const on = frame.state.powered && frame.state.on;
+  const colors = file.meta.colors;
+  const pitch = 3.6;
+  const cellW = 5 * pitch + 3;
+  const cellH = 8 * pitch + 3;
+  const width = 24 + rows[0].length * cellW;
+  const height = 24 + rows.length * cellH;
+  const ink = contrast === "faint" ? colors.faint : colors.lit;
+  const unlit = contrast === "dark" ? colors.dark : colors.unlit;
+  const blinkOn = blink && Math.floor((t ?? 0) / 0.4096) % 2 === 0;
+  const root = svg("svg", { viewBox: `0 0 ${width} ${height}`, class: "screen-svg" });
+  root.append(svg("rect", { width, height, rx: 4, fill: colors.glass }));
+  rows.forEach((row, r) => row.forEach((code, c) => {
+    let dots = [0, 0, 0, 0, 0, 0, 0, 0];
+    if (on && code < 16 && cgram) dots = cgram.slice((code & 7) * 8, (code & 7) * 8 + 8).map((v) => v & 31);
+    else if (on) dots = file.meta.font[String(code)] ?? [31, 17, 17, 17, 17, 17, 31, 0];
+    const here = cursor && cursor[0] === r && cursor[1] === c;
+    if (here && blinkOn) dots = [31, 31, 31, 31, 31, 31, 31, 31];
+    else if (here && underline) dots = [...dots.slice(0, 7), 31];
+    for (let y = 0; y < 8; y++) {
+      for (let x = 0; x < 5; x++) {
+        root.append(svg("rect", {
+          x: 12 + c * cellW + x * pitch, y: 12 + r * cellH + y * pitch, width: 3, height: 3,
+          fill: dots[y] & (1 << (4 - x)) ? ink : unlit,
+        }));
+      }
+    }
+  }));
+  return root;
+}
+
+const DRAWERS = { segments: drawSegments, hd44780: drawLcd };
 
 // One screen in the playback: shows the frame at time t, redrawn only when it changes.
 function screenView(ref, path, version) {
@@ -570,11 +605,14 @@ function screenView(ref, path, version) {
   view.show = (t) => {
     if (!view.file) return;
     const index = frameIndex(view.file.frames, t);
-    if (index === view.shown) return;
-    view.shown = index;
     const frame = view.file.frames[index];
+    const blinking = Boolean(frame.state.blink && frame.state.cursor);
+    const phase = blinking ? Math.floor(t / 0.4096) % 2 : 0;
+    if (index === view.shown && phase === view.phase) return;
+    view.shown = index;
+    view.phase = phase;
     const draw = DRAWERS[view.file.kind];
-    holder.replaceChildren(draw ? draw(view.file, frame) : el("pre", {}, frame.text));
+    holder.replaceChildren(draw ? draw(view.file, frame, t) : el("pre", {}, frame.text));
     caption.replaceChildren(el("code", {}, ref), " ", el("code", { class: "screen-text" }, frame.text));
   };
   return view;

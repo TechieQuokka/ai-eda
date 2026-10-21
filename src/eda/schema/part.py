@@ -193,7 +193,67 @@ class SegmentDisplaySpec(StrictModel):
         return [*self.digits, *self.segments.values()]
 
 
-type DisplaySpec = SegmentDisplaySpec
+HD44780_ROLES = (
+    "rs",
+    "rw",
+    "e",
+    "d0",
+    "d1",
+    "d2",
+    "d3",
+    "d4",
+    "d5",
+    "d6",
+    "d7",
+    "vdd",
+    "vss",
+    "v0",
+)
+HD44780_OPTIONAL = ("d0", "d1", "d2", "d3")  # unused in 4-bit mode (internal pull-ups)
+
+
+class Hd44780DisplaySpec(StrictModel):
+    """A character LCD with an HD44780-compatible controller on its parallel bus (8-bit, or
+    4-bit on D4-D7). In a firmware test the co-simulation feeds the controller the logic
+    levels of its pins: GPIO-driven pins with the emulator's exact timing, others once per
+    step, judged against `vih` / `vil`. `pins` maps each role (rs rw e d0-d7 vdd vss v0)
+    to a part pin.
+
+    Supply VDD-VSS must stay within `supply_min`..`supply_max`; after it first reaches
+    `supply_min` the controller is busy for `reset` (internal reset). The liquid crystal is
+    driven by VDD-V0: below `vlcd_visible` nothing shows, above `vlcd_dark` the unlit dots
+    darken too (typical for a 5 V module at 25 C)."""
+
+    kind: Literal["hd44780"]
+    columns: Annotated[int, Field(ge=8, le=40)]
+    rows: Literal[1, 2, 4]
+    pins: dict[str, str]
+    vih: str = "2.2V"
+    vil: str = "0.6V"
+    supply_min: str = "4.5V"
+    supply_max: str = "5.5V"
+    reset: str = "10ms"
+    vlcd_visible: str = "3.0V"
+    vlcd_dark: str = "4.8V"
+
+    @model_validator(mode="after")
+    def _roles(self) -> Self:
+        unknown = set(self.pins) - set(HD44780_ROLES)
+        if unknown:
+            raise ValueError(f"unknown roles {sorted(unknown)}; use {list(HD44780_ROLES)}")
+        missing = set(HD44780_ROLES) - set(HD44780_OPTIONAL) - set(self.pins)
+        if missing:
+            raise ValueError(f"pins lack the roles {sorted(missing)}")
+        for name in ("vih", "vil", "supply_min", "supply_max", "vlcd_visible", "vlcd_dark"):
+            parse_quantity(getattr(self, name), "V")
+        parse_quantity(self.reset, "s")
+        return self
+
+    def volts(self, name: str) -> float:
+        return parse_quantity(getattr(self, name), "V")
+
+
+type DisplaySpec = Annotated[SegmentDisplaySpec | Hd44780DisplaySpec, Field(discriminator="kind")]
 
 
 class SymbolSpec(StrictModel):
@@ -245,7 +305,8 @@ class PartSpec(StrictModel):
         if self.mcu is not None and not set(self.mcu.gpio) <= set(self.pins):
             raise ValueError("mcu.gpio keys must be pins of the part")
         if self.display is not None:
-            unknown = set(self.display.pins) - set(self.pins)
+            used = self.display.pins
+            unknown = set(used.values() if isinstance(used, dict) else used) - set(self.pins)
             if unknown:
                 raise ValueError(f"display names pins the part lacks: {sorted(unknown)}")
         segments = isinstance(self.display, SegmentDisplaySpec)

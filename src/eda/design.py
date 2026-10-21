@@ -45,7 +45,7 @@ from eda.schema.board import BoardFile, FabSpec
 from eda.schema.circuit import Circuit
 from eda.schema.common import Scalar
 from eda.schema.firmware import FirmwareFile
-from eda.schema.part import ParamSpec, PartSpec
+from eda.schema.part import ParamSpec, PartSpec, SegmentDisplaySpec
 from eda.schema.project import Project
 from eda.schema.testspec import (
     AcAnalysis,
@@ -655,7 +655,9 @@ def _compile_tests(
                     serial.append(found)
                 continue
             if exp.display is not None:
-                shown = _compile_display(name, index, exp, analysis, src, circuit, diag)
+                shown = _compile_display(
+                    name, index, exp, case.firmware, analysis, src, circuit, diag
+                )
                 if shown is not None:
                     displays.append(shown)
                 continue
@@ -952,6 +954,7 @@ def _compile_display(
     name: str,
     index: int,
     raw: Expectation,
+    runs_firmware: bool,
     analysis: Analysis | None,
     src: SourceMap,
     circuit: ResolvedCircuit | None,
@@ -976,6 +979,14 @@ def _compile_display(
         diag.error(
             "display_analysis",
             f"{name}: display({raw.display}) is read from an op or tran test",
+            at,
+        )
+        return None
+    if not isinstance(part.spec.display, SegmentDisplaySpec) and not runs_firmware:
+        diag.error(
+            "display_needs_firmware",
+            f"{name}: {raw.display} shows what the firmware writes to it; "
+            "read it in a test with firmware: true",
             at,
         )
         return None

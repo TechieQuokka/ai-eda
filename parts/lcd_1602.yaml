@@ -1,0 +1,60 @@
+id: lcd_1602
+name: 16x2 character LCD (HD44780)
+category: display
+description: >
+  16 characters x 2 lines LCD module with an HD44780-compatible controller (WC1602A,
+  LCD1602 and the like), 5 V supply, write-only use with RW tied to GND. Pins: vss, vdd
+  (4.5-5.5 V), v0 (contrast: VDD-V0 of about 4.2-4.6 V reads best; a 10 kohm pot from VDD
+  to GND with its wiper on V0, or a resistor to GND), rs, rw, e, d0-d7 (4-bit mode uses
+  d4-d7 only; d0-d3 may stay open), a / k (LED backlight, about 3.1 V at 20 mA, no
+  resistor on the module: add one). Logic inputs read high from 2.2 V, so 3.3 V GPIOs
+  drive them. Modelled: about 1.5 mA supply current, the on-board contrast ladder as
+  10 kohm from VDD to V0, the controller's pull-ups on rs, rw, d0-d7 (about 120 uA at
+  0 V, as 39 kohm to VDD), and the backlight LED. In firmware tests the controller decodes
+  the bus: instructions, 4/8-bit interface, busy times (37 us; 1.52 ms for clear and
+  home), power-on reset (10 ms), DDRAM/CGRAM, display shift, and the enable timing.
+datasheet: https://www.sparkfun.com/datasheets/LCD/HD44780.pdf
+pins: [vss, vdd, v0, rs, rw, e, d0, d1, d2, d3, d4, d5, d6, d7, a, k]
+optional_pins: [d0, d1, d2, d3, a, k]
+params:
+  backlight: { choices: [white, blue], default: blue, description: backlight colour }
+spice:
+  prefix: R
+  template: |
+    <name>_icc <pin:vdd> <pin:vss> 3.3k
+    <name>_bias <pin:vdd> <pin:v0> 10k
+    <name>_e <pin:e> <pin:vss> 10Meg
+    <name>_rs <pin:rs> <pin:vdd> 39k
+    <name>_rw <pin:rw> <pin:vdd> 39k
+    <name>_d0 <pin:d0> <pin:vdd> 39k
+    <name>_d1 <pin:d1> <pin:vdd> 39k
+    <name>_d2 <pin:d2> <pin:vdd> 39k
+    <name>_d3 <pin:d3> <pin:vdd> 39k
+    <name>_d4 <pin:d4> <pin:vdd> 39k
+    <name>_d5 <pin:d5> <pin:vdd> 39k
+    <name>_d6 <pin:d6> <pin:vdd> 39k
+    <name>_d7 <pin:d7> <pin:vdd> 39k
+    D<name>_bl <pin:a> <pin:k> <model>
+  pin_currents: true
+  model_param: backlight
+  models:
+    white: "D(IS=2.693e-28 N=2 RS=1 CJO=50p BV=5 IBV=10u)"
+    blue: "D(IS=2.693e-28 N=2 RS=1 CJO=50p BV=5 IBV=10u)"
+display:
+  kind: hd44780
+  columns: 16
+  rows: 2
+  pins: { vss: vss, vdd: vdd, v0: v0, rs: rs, rw: rw, e: e, d0: d0, d1: d1, d2: d2, d3: d3,
+          d4: d4, d5: d5, d6: d6, d7: d7 }
+symbol:
+  cell: x_display
+  ports: { vss: vss, vdd: vdd, v0: v0, rs: rs, rw: rw, e: e, d0: d0, d1: d1, d2: d2, d3: d3,
+           d4: d4, d5: d5, d6: d6, d7: d7, a: a, k: k }
+  label: "LCD 16x2"
+kicad:
+  symbol: Display_Character:WC1602A
+pcb:
+  footprint: Display:WC1602A
+  pads: { vss: "1", vdd: "2", v0: "3", rs: "4", rw: "5", e: "6", d0: "7", d1: "8", d2: "9",
+          d3: "10", d4: "11", d5: "12", d6: "13", d7: "14", a: "15", k: "16" }
+  value: LCD1602

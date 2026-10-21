@@ -1,0 +1,22 @@
+description: >
+  16x2 LCD on a Pico in 4-bit mode. Net names become firmware pins (PIN_LCD_RS, ...).
+parts:
+  J1: { type: dc_voltage_source, voltage: 5V }       # 5 V power input on VSYS
+  U1: { type: raspberry_pi_pico }
+  LCD1: { type: lcd_1602, backlight: blue }
+  RV1: { type: potentiometer, resistance: 10kohm, position: 7% }   # contrast trimmer: V0 about 0.6 V
+  RBL: { type: resistor, resistance: 120ohm }        # backlight current, about 15 mA
+  J2: { type: connector_1x03 }                       # UART header: 1 TX, 2 RX, 3 GND
+nets:
+  VSYS: [J1.+, U1.VSYS, LCD1.vdd, RV1.3, RBL.1]
+  LCD_V0: [LCD1.v0, RV1.2]
+  LCD_A: [RBL.2, LCD1.a]
+  LCD_RS: [U1.GP6, LCD1.rs]
+  LCD_E: [U1.GP7, LCD1.e]
+  LCD_D4: [U1.GP2, LCD1.d4]
+  LCD_D5: [U1.GP3, LCD1.d5]
+  LCD_D6: [U1.GP4, LCD1.d6]
+  LCD_D7: [U1.GP5, LCD1.d7]
+  UART_TX: [U1.GP0, J2.1]
+  UART_RX: [U1.GP1, J2.2]
+  GND: [J1.-, U1.GND, LCD1.vss, LCD1.rw, LCD1.k, RV1.1, J2.3]

@@ -1,0 +1,42 @@
+tests:
+  supply:
+    description: >
+      The backlight draws about 15 mA through RBL and the trimmer sets VDD-V0 (the LCD
+      drive voltage) to about 4.4 V.
+    analysis: { type: op }
+    expect:
+      - { measure: current(LCD1.a), min: 12mA, max: 18mA }
+      - { measure: "voltage(VSYS, LCD_V0)", min: 4.2V, max: 4.6V }
+  bus_high:
+    description: >
+      A data pin driven high: the LCD's pull-up to 5 V pushes only about 45 uA into the
+      3.3 V output, which stays at 3.3 V (well above the LCD's 2.2 V input threshold).
+    analysis: { type: op }
+    pins: { LCD_D4: high }
+    expect:
+      - { measure: voltage(LCD_D4), min: 3.2V, max: 3.4V }
+      - { measure: current(U1.GP2), min: 0A, max: 100uA }
+  hello:
+    description: >
+      Firmware in the loop: after the power-up wait and the 4-bit initialization the LCD
+      shows the greeting on line 1 and the uptime on line 2.
+    analysis: { type: tran, step: 1ms, stop: 400ms }
+    firmware: true
+    expect:
+      - { display: LCD1, match: '^Hello, world!$' }
+      - { display: LCD1, match: '^Uptime +0 s$' }
+      - { display: LCD1, at: 40ms, match: '^\n$' }
+      - { serial: UART_TX, match: 'lcd ready', min: 1, max: 1 }
+  message:
+    description: >
+      "msg Pico LCD" arrives on the UART at 200 ms and replaces line 1; the uptime keeps
+      counting on line 2.
+    analysis: { type: tran, step: 1ms, stop: 1.2s }
+    firmware: true
+    events:
+      - { at: 200ms, serial: UART_RX, send: "msg Pico LCD\n" }
+    expect:
+      - { display: LCD1, at: 150ms, match: '^Hello, world!$' }
+      - { display: LCD1, at: 300ms, match: '^Pico LCD$' }
+      - { display: LCD1, match: 'Uptime +(\d+) s', min: 1, max: 1 }
+      - { serial: UART_TX, match: 'shown: Pico LCD', min: 1, max: 1 }

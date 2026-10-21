@@ -298,7 +298,11 @@ def _run_cosim(
         diag.warning("simulator_warning", f"{test.name}: {warning}", test.location)
     if result.op_via_transient:
         _warn_transient_op(design, test, diag, None)
-    outcome = _evaluate(design, test, sim_dir, raw_path, diag, raw_path.with_suffix(".cir"))
+    for rule, message in result.display_issues:
+        diag.warning(rule, f"{test.name}: {message}", test.location)
+    outcome = _evaluate(
+        design, test, sim_dir, raw_path, diag, raw_path.with_suffix(".cir"), result.screens
+    )
     if outcome is None:
         return None
     if test.events:

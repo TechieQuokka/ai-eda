@@ -88,9 +88,14 @@ def element_lines(
         value = part.values[key]
         return value if isinstance(value, str) else f"{value:.12g}"
 
+    optional = set(part.spec.optional_pins)
     for line in template.split("\n"):
-        if line.strip():
-            lines.append(_PLACEHOLDER.sub(substitute, " ".join(line.split())))
+        if not line.strip():
+            continue
+        pins = re.findall(r"<pin:([^>]+)>", line)
+        if any(pin in optional and circuit.net_of(part.ref, pin) is None for pin in pins):
+            continue  # the element hangs on a pin that is left open on purpose
+        lines.append(_PLACEHOLDER.sub(substitute, " ".join(line.split())))
     return lines
 
 

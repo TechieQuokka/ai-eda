@@ -1,0 +1,6 @@
+name: lcd_message
+description: >
+  Raspberry Pi Pico (RP2040) writing text to a 16x2 character LCD (HD44780) in 4-bit mode:
+  line 1 shows a message (changed with "msg <text>" on the UART), line 2 the uptime in
+  seconds. The LCD runs on 5 V with RW tied to GND (write only), its contrast set with a
+  trimmer, the backlight through a resistor. Powered from 5 V on VSYS.

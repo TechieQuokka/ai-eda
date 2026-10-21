@@ -1,0 +1,12 @@
+# The LCD module (80 x 36 mm, mounted on a 1x16 header and four M2.5 holes) covers the top
+# of the board; the Pico lies below it, the trimmer and resistor next to what they join.
+board:
+  spacing: 2mm
+rules:
+  track_width: 0.3mm
+placement:
+  LCD1: { x: 10mm, y: 6mm }
+  U1: { x: 30mm, y: 72mm, rotation: 90deg }
+pours:
+  - { net: GND, layer: bottom }
+fab: jlcpcb
