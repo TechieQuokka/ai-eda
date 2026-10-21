@@ -5,6 +5,8 @@
 
 ## 1. Status
 
+Current release: **1.0.0** (`CHANGELOG.md`, tag `v1.0.0`).
+
 | Milestone | State | Record |
 |---|---|---|
 | M0 Vertical slice: YAML → ngspice → JSON verdict → schematic → live viewer | ✅ done | `DESIGN_DECISIONS.md` §10–§11 |
@@ -109,3 +111,4 @@ User decisions of 2026-10-21 (later): the viewer stays view-only (no sliders or 
 - Stay inside the project directory.
 - New dependencies at their latest versions (verify online); keep already-installed toolchains (Python 3.13, Node 22, Java 21) as they are.
 - Commit after each completed step; end commit messages with the Co-Authored-By line used in the history.
+- Versioning (user decision 2026-10-21): semantic versioning from 1.0.0. A release bumps `version` in `pyproject.toml`, adds a `CHANGELOG.md` entry, and gets an annotated tag `vX.Y.Z` (pushed only with approval). MAJOR breaks design files or the JSON output, MINOR adds features, PATCH fixes.

@@ -9,7 +9,8 @@ You describe the goal. The agent writes the circuit as YAML, simulates it, reads
 ![Python](https://img.shields.io/badge/python-3.13-3776AB?logo=python&logoColor=white)
 ![ngspice](https://img.shields.io/badge/simulator-ngspice%2047-555)
 ![pyright](https://img.shields.io/badge/types-pyright%20strict-2563eb)
-![tests](https://img.shields.io/badge/tests-145%20passing-15803d)
+![version](https://img.shields.io/badge/version-1.0.0-0f766e)
+![tests](https://img.shields.io/badge/tests-313%20passing-15803d)
 ![license](https://img.shields.io/badge/license-free%20for%20learning%20%7C%20paid%20commercial-b45309)
 
 </div>
@@ -96,13 +97,14 @@ Every run is written to the project's `iterations.jsonl` with the note, the chan
 | **ERC** | Unconnected pins, single-pin nets, missing ground, nets with no DC path, loops of voltage sources and inductors, shorts between nets, shorted sources, names that collide in case-insensitive SPICE; parameter ranges (no 0 Ω resistor, no negative capacitor) |
 | **Simulation** | ngspice batch runs: operating point (`op`), transient (`tran`), frequency response (`ac`), and DC sweeps of any part quantity (`dc`: a supply voltage, a resistance, an LDR's light) |
 | **Measures** | `voltage(N)`, `voltage(A, B)`, `current(R1)`, `current(U1.out)` inside `max min avg rms pp initial final`, `at(…, 1kHz)`, `cross(…, -3dB)`, `period(…, 3mA)`, `width` / `gap` / `duty(…, 3mA)` for pulse trains, and `db mag phase` — type-checked per analysis, with units |
-| **Parts** | One YAML file per part type: pins, typed parameters, SPICE template, schematic symbol. Built in: DC, pulse, and sine sources; R, C, L; diodes (1N4148, 1N4007); LEDs in five colors; NPN transistors (2N3904, PN2222A); a photoresistor (LDR, light in lx); a push button and a potentiometer; a generic op-amp macromodel (gain, GBW, slew rate, swing) |
+| **Parts** | One YAML file per part type: pins, typed parameters, SPICE template, schematic symbol. Built in: DC, pulse, and sine sources; R, C, L; diodes (1N4148, 1N4007); LEDs in five colors; NPN transistors (2N3904, PN2222A); a photoresistor (LDR, light in lx); a push button and a potentiometer; a generic op-amp macromodel (gain, GBW, slew rate, swing); displays (below) |
 | **Vendor models** | `eda model inspect` / `eda model import` turn a manufacturer `.subckt` (e.g. TI TL072, TLV9002) into a part, detecting PSpice-compatibility mode automatically |
 | **Rendering** | Schematic auto-layout via netlistsvg with a custom skin and net labels; waveform SVGs; PNG copies via CairoSVG for the agent to look at; a **KiCad schematic** (`.kicad_sch`) with library symbols and net labels, verified by re-exporting its netlist with `kicad-cli` |
 | **Boards** | `board.yaml` (outline, rules, optional placement, ground pours) → connectivity-aware auto-placement → KiCad 10 board → Freerouting autorouting → copper fill → `kicad-cli` DRC as JSON → Gerbers, drill, positions, and BOM in one zip |
 | **Firmware** | Raspberry Pi Pico (RP2040) part with its full GPIO function table; `firmware.yaml` assigns roles per net; `eda fw` checks functions and conflicts, generates `pins.h` / `pins_init.h`, and scans C sources; `eda fw --build` compiles with the pico-sdk and reports compiler errors by file and line |
 | **Firmware in the loop** | `firmware: true` tests run the compiled firmware in an RP2040 emulator (rp2040js) in lock-step with ngspice: GPIO and PWM outputs drive the circuit, inputs and the ADC read node voltages, UART output is checked with regular expressions |
-| **Live viewer** | `eda watch` re-runs on every save and pushes updates to a local page: schematic, verdicts, operating point, zoomable waveforms, board layout and 3D view, iteration log, and a **playback** that replays a transient test in real time with LEDs glowing on the KiCad schematic |
+| **Displays** | A 4-digit 7-segment LED display, a 16×2 character LCD (HD44780), and a 128×64 OLED (SSD1306, I2C): tests read the text on the screen (`{ display: LCD1, match: 'Hello' }`) and count lit pixels; the controllers check what the firmware sends (busy times, enable timing, logic levels, I2C pull-ups, charge pump) |
+| **Live viewer** | `eda watch` re-runs on every save and pushes updates to a local page: schematic, verdicts, operating point, zoomable waveforms, board layout and 3D view, iteration log, and a **playback** that replays a transient test in real time with LEDs glowing on the KiCad schematic and displays showing what they showed at that moment |
 | **Helpers** | `eda value` for E3 … E192 standard values, `eda part list/show`, `eda log` notes |
 
 ### Frequency response, too
@@ -191,6 +193,32 @@ The firmware reads the button through the switch and the pull-up it enabled itse
 
 Things can also happen during a run: `events: [{ at: 1.1s, part: SW1, set: { state: pressed } }, { at: 300ms, serial: UART_RX, send: "rate 100\n" }]`, with measures limited to part of it (`from: 1.6s`).
 
+### Text on a display
+
+Display parts show what the firmware writes to them, and tests read it back as text:
+
+```yaml
+  message:
+    analysis: { type: tran, step: 1ms, stop: 1.2s }
+    firmware: true
+    events:
+      - { at: 200ms, serial: UART_RX, send: "msg Pico LCD\n" }    # a command arrives
+    expect:
+      - { display: LCD1, at: 150ms, match: '^Hello, world!$' }
+      - { display: LCD1, at: 300ms, match: '^Pico LCD$' }
+      - { display: LCD1, match: 'Uptime +(\d+) s', min: 1, max: 1 }
+```
+
+<table>
+<tr>
+<td align="center"><img src="docs/images/seg_counter_screen.png" alt="7-segment display showing 1.2" height="110"><br><sub>Multiplexed 7-segment (<code>seg_counter</code>)</sub></td>
+<td align="center"><img src="docs/images/lcd_message_screen.png" alt="16x2 LCD showing Pico LCD and Uptime 1 s" height="110"><br><sub>16×2 HD44780 LCD (<code>lcd_message</code>)</sub></td>
+<td align="center"><img src="docs/images/oled_meter_screen.png" alt="OLED showing a pot reading and a bar" height="110"><br><sub>128×64 SSD1306 OLED on I2C (<code>oled_meter</code>)</sub></td>
+</tr>
+</table>
+
+The models catch the usual mistakes: an LCD instruction sent before the previous one finished (*"instruction 0x06 came 54 µs after the previous write, which needs 1.52 ms"*), an OLED left dark because the charge pump was never enabled, or an I2C bus without pull-ups (*"the bus idles at SDA 0 V … nothing answers"*).
+
 ### Vendor models
 
 Manufacturer SPICE models are imported locally and are **not** part of this repository, because their licenses usually forbid redistribution:
@@ -252,16 +280,16 @@ The repository's [`CLAUDE.md`](CLAUDE.md) is the working contract for an agent s
 | **M3** | Firmware integration: generated `pins.h`, schematic/firmware cross-checks | ✅ Done |
 | **M4** | Firmware build, MCU emulation co-simulated with the analog circuit | ✅ Done |
 
-Since M4: hardening against malformed and extreme input (every answer is JSON with a rule; limits on runaway runs; no simulator commands from part or model files), the playback viewer, and small example designs built and verified with the CLI only: `led_blink` (Pico firmware), `led_blink_bjt` (two-transistor astable), `nightlight` (LDR + Darlington), and `water_alarm` (a water detector taken all the way to an orderable board).
+Since M4: hardening against malformed and extreme input (every answer is JSON with a rule; limits on runaway runs; no simulator commands from part or model files), the playback viewer, and small example designs built and verified with the CLI only: `led_blink` (Pico firmware), `led_blink_bjt` (two-transistor astable), `nightlight` (LDR + Darlington), and `water_alarm` (a water detector taken all the way to an orderable board). Then displays, each with firmware in the loop and a board: `seg_counter` (7-segment stopwatch), `lcd_message` (16×2 LCD), and `oled_meter` (I2C OLED).
 
-Background and decisions: [`PROJECT_SUMMARY.md`](PROJECT_SUMMARY.md), [`DESIGN_DECISIONS.md`](DESIGN_DECISIONS.md).
+Background and decisions: [`PROJECT_SUMMARY.md`](PROJECT_SUMMARY.md), [`DESIGN_DECISIONS.md`](DESIGN_DECISIONS.md). Releases: [`CHANGELOG.md`](CHANGELOG.md) (semantic versioning, starting at 1.0.0).
 
 ## Development
 
 ```bash
 uv run ruff format --check && uv run ruff check   # style and lint
 uv run pyright                                    # strict static typing
-uv run pytest                                     # 249 tests
+uv run pytest                                     # 313 tests
 ```
 
 ---
