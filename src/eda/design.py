@@ -482,7 +482,8 @@ def _resolve_board(
         value = part.label(default.value if default else None) or part.spec.id
         if part.spec.generic and part.mpn:
             value = part.mpn  # the chip that will be soldered, not the model's figures
-        parts.append(BoardPart(ref, value, footprint, pad_nets, placements.get(ref)))
+        joined = default is not None and default.joined_pads and inst.footprint is None
+        parts.append(BoardPart(ref, value, footprint, pad_nets, placements.get(ref), joined))
 
     board_nets = {net for part in parts for net in part.pads.values()}
     pours: list[BoardPour] = []

@@ -1,0 +1,31 @@
+id: slide_switch
+name: Slide switch (SPDT)
+category: switch
+description: >
+  Miniature SPDT slide switch on a 2.54 mm pitch (C&K OS102011MS2Q and its many clones),
+  pin 2 is the common. `position` sets it for simulation: "1" joins pin 2 to pin 1, "3"
+  joins pin 2 to pin 3 (0.1 ohm closed, 1 Gohm open). As an on/off switch use pin 2 and
+  one throw and leave the other open. Pin currents: current(SW1.2) etc.
+pins: ["1", "2", "3"]
+optional_pins: ["1", "3"]
+params:
+  position: { choices: ["1", "3"], default: "1", description: the throw pin 2 is joined to }
+spice:
+  prefix: R
+  template: |
+    <name>_1 <pin:2> <pin:1> <choice:position.1>
+    <name>_3 <pin:2> <pin:3> <choice:position.3>
+  pin_currents: true
+  choice_values:
+    position.1: { "1": "0.1", "3": "1e9" }
+    position.3: { "1": "1e9", "3": "0.1" }
+symbol:
+  cell: x_spdt
+  ports: { "1": "1", "2": "C", "3": "3" }
+  label: "<param:position>"
+kicad:
+  symbol: Switch:SW_SPDT
+pcb:
+  footprint: Button_Switch_THT:SW_Slide_SPDT_Straight_CK_OS102011MS2Q
+  pads: { "1": "1", "2": "2", "3": "3" }
+  value: SW_SPDT

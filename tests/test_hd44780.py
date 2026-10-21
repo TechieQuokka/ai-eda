@@ -1,12 +1,13 @@
 """The HD44780 model, driven with synthetic bus timing (no emulator needed)."""
 
 from dataclasses import dataclass, field
+from xml.etree import ElementTree
 
 import pytest
 
 from eda.design import load_design
 from eda.display.font5x8 import character, code_of, columns, glyph
-from eda.display.hd44780 import Controller, Hd44780Device
+from eda.display.hd44780 import Controller, Hd44780Device, draw
 from eda.result import Diagnostics
 from tests.conftest import MakeProject
 
@@ -242,6 +243,21 @@ def test_cgram_characters() -> None:
     lcd.write(21, True, 0x01)
     assert lcd.cgram[8:12] == [0x0E, 0x11, 0x11, 0x0E]
     assert character(lcd.codes()[0][0]) == "\x01"
+
+
+def test_cgram_characters_are_drawn(bus: Bus) -> None:
+    bus.init()
+    bus.byte(False, 0x40)  # CGRAM character 0: a cross
+    for row in (0x00, 0x11, 0x0A, 0x04, 0x0A, 0x11, 0x00, 0x00):
+        bus.byte(True, row)
+    bus.byte(False, 0x80)
+    bus.text("2\x083")  # 0x08 mirrors character 0
+    bus.flush()
+    frame = bus.device.screen(bus.t).frame_at(None)
+    assert frame.text == "2\x003\n"
+    svg = draw(frame)
+    assert ElementTree.fromstring(svg).find("{http://www.w3.org/2000/svg}title") is not None
+    assert "2\\x003" in svg
 
 
 def test_font() -> None:

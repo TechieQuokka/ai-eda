@@ -1,0 +1,8 @@
+name: calculator
+description: >
+  Battery-powered pocket calculator: a Raspberry Pi Pico (RP2040) reads a 5 x 4 matrix of
+  tactile keys and shows the expression and the result on a 16x2 character LCD (HD44780,
+  4-bit). Four functions with decimals and negative numbers, percent, sign change,
+  backspace, and clear; division by zero shows "Error". Power: two AA cells, a power
+  switch, reverse-polarity protection, and a Pololu U1V11F5 5 V boost module; the Pico's
+  USB can power it too. A low-battery mark appears when the cells run down.

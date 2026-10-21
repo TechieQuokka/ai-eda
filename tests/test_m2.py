@@ -1,4 +1,5 @@
 import csv
+import re
 import shutil
 import zipfile
 from pathlib import Path
@@ -285,3 +286,43 @@ def test_overlapping_hand_placements(make_project: MakeProject) -> None:
     assert [e.rule for e in result.errors] == ["placement_overlap"]
     assert "overlaps" in result.errors[0].message
     assert result.errors[0].path == "placement.D1"
+
+
+BUTTON_CIRCUIT = """
+parts:
+  V1: { type: dc_voltage_source, voltage: 5V }
+  R1: { type: resistor, resistance: 1kohm }
+  SW1: { type: push_button }
+  SW2: { type: push_button }
+nets:
+  VCC: [V1.+, R1.1]
+  IN: [R1.2, SW1.1, SW2.1]
+  GND: [V1.-, SW1.2, SW2.2]
+"""
+
+
+def test_joined_pads_are_routed_once(make_project: MakeProject) -> None:
+    if not freerouting.JAR.is_file():
+        pytest.skip("Freerouting is not downloaded (tools/freerouting/fetch.sh)")
+    root = _board(make_project, "board: {}\n", BUTTON_CIRCUIT)
+    result = pipeline.pcb(root)
+    assert result.ok, result.errors
+    pcb_dir = root / "out" / "pcb"
+    dsn = (pcb_dir / "demo.dsn").read_text(encoding="utf-8")
+    pins = re.findall(r"SW1-1(?:@1)?(?=[\s)])", dsn.split("(network", 1)[1])
+    assert len(pins) == 1  # one of the twin legs is routed, the other is joined inside
+    assert "(clearance 210)" in dsn  # 0.2 mm plus the router's 10 um margin
+    board = (pcb_dir / "demo.kicad_pcb").read_text(encoding="utf-8")
+    assert "(duplicate_pad_numbers_are_jumpers yes)" in board
+    drc = result.data["drc"]
+    assert isinstance(drc, dict) and drc["errors"] == 0  # KiCad counts the legs as joined
+    routing = result.data["routing"]
+    assert isinstance(routing, dict) and routing["unrouted"] == 0
+    # The router's boundary keeps KiCad's 0.5 mm copper-to-edge clearance, not the
+    # 0.2 mm track clearance: 0.3 mm in from the outline on each side.
+    boundary = re.search(r"\(boundary\s*\(path pcb 0((?:\s+-?[\d.]+)+)", dsn)
+    assert boundary is not None
+    xs = [float(v) for v in boundary[1].split()[0::2]]
+    size = result.data["size_mm"]
+    assert isinstance(size, list)
+    assert max(xs) - min(xs) == pytest.approx(float(str(size[0])) * 1000 - 600, abs=1)

@@ -84,7 +84,8 @@ def element_lines(
         if kind == "pin":
             return pin_node(key)
         if kind == "choice":
-            return part.spec.spice.choice_values[key][str(part.values[key])]
+            param = key.partition(".")[0]
+            return part.spec.spice.choice_values[key][str(part.values[param])]
         value = part.values[key]
         return value if isinstance(value, str) else f"{value:.12g}"
 

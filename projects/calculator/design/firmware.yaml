@@ -1,0 +1,25 @@
+# Keypad rows idle as inputs without pull (high impedance); the firmware turns one row at
+# a time into an output driving low and reads the columns, which have pull-ups: a pressed
+# key pulls its column low. Rows are never driven high, so two keys pressed together
+# cannot short two outputs.
+mcu: U1
+signals:
+  ROW1: { mode: input, description: "key row 1 (C <- % /): driven low while scanned" }
+  ROW2: { mode: input, description: "key row 2 (7 8 9 x)" }
+  ROW3: { mode: input, description: "key row 3 (4 5 6 -)" }
+  ROW4: { mode: input, description: "key row 4 (1 2 3 +)" }
+  ROW5: { mode: input, description: "key row 5 (+/- 0 . =)" }
+  COL1: { mode: input, pull: up, description: "key column 1, low while a key in it is pressed" }
+  COL2: { mode: input, pull: up, description: "key column 2" }
+  COL3: { mode: input, pull: up, description: "key column 3" }
+  COL4: { mode: input, pull: up, description: "key column 4" }
+  LCD_RS: { mode: output, initial: low, description: "LCD register select (0 instruction, 1 data)" }
+  LCD_E: { mode: output, initial: low, description: "LCD enable: data latched on the falling edge" }
+  LCD_D4: { mode: output, initial: low, description: "LCD data bit 4 (4-bit bus, low bit)" }
+  LCD_D5: { mode: output, initial: low, description: "LCD data bit 5" }
+  LCD_D6: { mode: output, initial: low, description: "LCD data bit 6" }
+  LCD_D7: { mode: output, initial: low, description: "LCD data bit 7" }
+  BL: { mode: output, initial: high, description: "LCD backlight on (drives Q1)" }
+  BAT_SENSE: { function: ADC2, description: "half the battery voltage (after D1)" }
+  UART_TX: { function: UART0_TX, description: "debug console out: keys and results" }
+  UART_RX: { function: UART0_RX, description: "debug console in (unused)" }

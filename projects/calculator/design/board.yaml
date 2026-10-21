@@ -1,0 +1,57 @@
+# Portrait calculator, 112 x 126 mm. The LCD covers the top left (on its header and
+# four M2.5 holes) with the Pico beside it, USB socket on the top edge (programming, or
+# power without batteries); the LCD bus runs under the module straight to the Pico's
+# left pins. The keys sit below in a 4 x 5 grid on a 16 mm pitch (room for 12 mm key
+# caps), their rows and columns on the Pico's lower left pins. The power entry is right
+# of the keys, below the Pico, leaving the space between the keys and the Pico free for
+# their tracks: battery wire pads and the power switch on the right edge, the U2 boost
+# module lying flat over the area right of its header (x 68-81 mm, y 94-107 mm: nothing
+# else is placed there), the diodes, the battery sense divider, the backlight switch,
+# the contrast trimmer, and the debug UART header.
+board:
+  width: 112mm
+  height: 126mm
+  spacing: 2mm
+rules:
+  track_width: 0.25mm
+placement:
+  LCD1: { x: 12mm, y: 6mm }
+  U1: { x: 89mm, y: 1.5mm }
+  SWP: { x: 109mm, y: 62mm, rotation: 270deg }
+  BT1: { x: 109mm, y: 74mm, rotation: 270deg }
+  D1: { x: 92mm, y: 86mm }
+  U2: { x: 68mm, y: 96mm }
+  D2: { x: 84mm, y: 98mm }
+  RS1: { x: 84mm, y: 104mm }
+  RS2: { x: 84mm, y: 109mm }
+  CS: { x: 84mm, y: 114mm }
+  RBL: { x: 68mm, y: 112mm }
+  RB: { x: 68mm, y: 117mm }
+  Q1: { x: 90mm, y: 120mm }
+  RV1: { x: 102mm, y: 104mm }
+  J2: { x: 100mm, y: 110mm }
+  KCLR: { x: 7mm, y: 46mm }
+  KDEL: { x: 23mm, y: 46mm }
+  KPCT: { x: 39mm, y: 46mm }
+  KDIV: { x: 55mm, y: 46mm }
+  K7: { x: 7mm, y: 62mm }
+  K8: { x: 23mm, y: 62mm }
+  K9: { x: 39mm, y: 62mm }
+  KMUL: { x: 55mm, y: 62mm }
+  K4: { x: 7mm, y: 78mm }
+  K5: { x: 23mm, y: 78mm }
+  K6: { x: 39mm, y: 78mm }
+  KSUB: { x: 55mm, y: 78mm }
+  K1: { x: 7mm, y: 94mm }
+  K2: { x: 23mm, y: 94mm }
+  K3: { x: 39mm, y: 94mm }
+  KADD: { x: 55mm, y: 94mm }
+  KNEG: { x: 7mm, y: 110mm }
+  K0: { x: 23mm, y: 110mm }
+  KDOT: { x: 39mm, y: 110mm }
+  KEQ: { x: 55mm, y: 110mm }
+routing:
+  passes: 60
+pours:
+  - { net: GND, layer: bottom }
+fab: jlcpcb

@@ -245,6 +245,7 @@ class BoardPart:
     footprint: str  # KiCad `Library:Name`
     pads: dict[str, str]  # pad number → net
     placement: BoardPlacement | None
+    joined_pads: bool = False  # pads with the same number are joined inside the part
 
 
 @dataclass(frozen=True)

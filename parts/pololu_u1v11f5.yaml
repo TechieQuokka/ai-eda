@@ -1,0 +1,37 @@
+id: pololu_u1v11f5
+name: Pololu 5 V step-up regulator U1V11F5
+category: power
+description: >
+  Boost regulator module (Pololu #2562, 11.4 x 12.7 mm) on a 1x4 header, pins in board
+  order SHDN, VIN, GND, VOUT. Makes 5 V from 0.5-5.5 V in (once running it holds down to
+  about 0.3 V); input switch current limit about 1.2 A, so the output current it can give
+  falls with the input voltage; no reverse-voltage protection. SHDN is pulled up to VIN
+  on the module (100 kohm) and may stay open; below 0.4 V it turns the regulator off.
+  Behavioural model (parts/models/eda_boost.lib): 5 V behind 50 mohm that can only source
+  current, input power = output power / efficiency (`eta`) plus about 0.5 mA quiescent
+  current. It does not model ripple, the switch current limit, or start-up timing:
+  check the input current against 1.2 A yourself. On the board the module lies flat over
+  the area next to its header: keep that free of other parts.
+datasheet: https://www.pololu.com/product/2562
+pins: [shdn, vin, gnd, vout]
+optional_pins: [shdn]
+params:
+  eta: { unit: "%", default: 85%, min: 1%, max: 100%, description: conversion efficiency }
+spice:
+  prefix: X
+  template: |
+    <name> <pin:vin> <pin:gnd> <pin:vout> <name>_shdn eda_boost vset=5 eta=<param:eta> iq=0.5m von=0.5 voff=0.3
+    R<name>_shdn <pin:shdn> <name>_shdn 1
+  pin_currents: true
+  include: models/eda_boost.lib
+symbol:
+  cell: x_boost
+  ports: { shdn: SHDN, vin: VIN, gnd: GND, vout: VOUT }
+  label: "5V boost"
+kicad:
+  symbol: Connector_Generic:Conn_01x04
+  pins: { shdn: "1", vin: "2", gnd: "3", vout: "4" }
+pcb:
+  footprint: Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical
+  pads: { shdn: "1", vin: "2", gnd: "3", vout: "4" }
+  value: U1V11F5

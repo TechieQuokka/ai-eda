@@ -1,0 +1,10 @@
+# Build with the Raspberry Pi pico-sdk:  cmake -B build -DPICO_SDK_PATH=<sdk> && cmake --build build
+cmake_minimum_required(VERSION 3.13)
+include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
+project(calculator C CXX ASM)
+pico_sdk_init()
+add_executable(calculator main.c calc.c keypad.c lcd.c)
+target_link_libraries(calculator pico_stdlib hardware_uart hardware_adc)
+pico_enable_stdio_uart(calculator 1)
+pico_add_extra_outputs(calculator)
+target_compile_options(calculator PRIVATE -Wall -Wextra)

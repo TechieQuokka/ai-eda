@@ -1,0 +1,28 @@
+id: battery
+name: Battery
+category: power
+description: >
+  Battery pack off the board (e.g. a 2xAA box with leads), its wires soldered into two
+  pads: + (pad 1, square) and -. Simulation: the open-circuit `voltage` behind the
+  internal resistance `rint`. Alkaline AA cells: about 1.6 V new, 1.2-1.3 V for most of
+  their life, 0.9-1.0 V empty, 0.15-0.3 ohm each when fresh (more when nearly empty).
+  current(BT1) flows into + (negative while it delivers power).
+pins: ["+", "-"]
+params:
+  voltage: { unit: V, description: "open-circuit voltage of the pack (negative: inserted the wrong way round)" }
+  rint: { unit: ohm, default: 0.5ohm, positive: true, description: internal resistance of the pack }
+spice:
+  prefix: V
+  template: |
+    <name> <name>_e <pin:-> DC <param:voltage>
+    R<name>_int <pin:+> <name>_e <param:rint>
+symbol:
+  cell: v
+  ports: { "+": "+", "-": "-" }
+  label: "<param:voltage>"
+kicad:
+  symbol: Device:Battery
+pcb:
+  footprint: Connector_Wire:SolderWire-0.25sqmm_1x02_P4.5mm_D0.65mm_OD2mm
+  pads: { "+": "1", "-": "2" }
+  value: Battery

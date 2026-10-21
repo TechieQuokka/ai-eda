@@ -12,6 +12,7 @@ cycle at least 500 ns, RS/RW set up 40 ns before E rises, data set up 80 ns befo
 falls and held 10 ns after. Reading (RW high) is not modelled.
 """
 
+import re
 from dataclasses import dataclass, field
 from html import escape
 
@@ -485,8 +486,13 @@ def draw(frame: Frame, scheme: str = "green") -> str:
                         f'<rect x="{x0 + x * pitch:g}" y="{y0 + y * pitch:g}" width="{_DOT:g}" '
                         f'height="{_DOT:g}" fill="{fill}"/>'
                     )
-    parts.append(f"<title>{escape(frame.text)}</title></svg>")
+    parts.append(f"<title>{escape(_printable(frame.text))}</title></svg>")
     return "".join(parts)
+
+
+def _printable(text: str) -> str:
+    """CGRAM characters (\\x00-\\x07) spelled out: XML does not allow control characters."""
+    return re.sub(r"[\x00-\x08\x0b-\x1f]", lambda m: f"\\x{ord(m[0]):02x}", text)
 
 
 def _dots(code: int, cgram: JsonValue) -> tuple[int, ...]:

@@ -215,6 +215,9 @@ Display parts show what the firmware writes to them, and tests read it back as t
 <td align="center"><img src="docs/images/lcd_message_screen.png" alt="16x2 LCD showing Pico LCD and Uptime 1 s" height="110"><br><sub>16×2 HD44780 LCD (<code>lcd_message</code>)</sub></td>
 <td align="center"><img src="docs/images/oled_meter_screen.png" alt="OLED showing a pot reading and a bar" height="110"><br><sub>128×64 SSD1306 OLED on I2C (<code>oled_meter</code>)</sub></td>
 </tr>
+<tr>
+<td align="center" colspan="3"><img src="docs/images/calculator_screen.png" alt="16x2 LCD showing 2+3×4= and 20" height="110"><br><sub>A pocket calculator on batteries, keys pressed by test events (<code>calculator</code>)</sub></td>
+</tr>
 </table>
 
 The models catch the usual mistakes: an LCD instruction sent before the previous one finished (*"instruction 0x06 came 54 µs after the previous write, which needs 1.52 ms"*), an OLED left dark because the charge pump was never enabled, or an I2C bus without pull-ups (*"the bus idles at SDA 0 V … nothing answers"*).
@@ -280,7 +283,7 @@ The repository's [`CLAUDE.md`](CLAUDE.md) is the working contract for an agent s
 | **M3** | Firmware integration: generated `pins.h`, schematic/firmware cross-checks | ✅ Done |
 | **M4** | Firmware build, MCU emulation co-simulated with the analog circuit | ✅ Done |
 
-Since M4: hardening against malformed and extreme input (every answer is JSON with a rule; limits on runaway runs; no simulator commands from part or model files), the playback viewer, and small example designs built and verified with the CLI only: `led_blink` (Pico firmware), `led_blink_bjt` (two-transistor astable), `nightlight` (LDR + Darlington), and `water_alarm` (a water detector taken all the way to an orderable board). Then displays, each with firmware in the loop and a board: `seg_counter` (7-segment stopwatch), `lcd_message` (16×2 LCD), and `oled_meter` (I2C OLED).
+Since M4: hardening against malformed and extreme input (every answer is JSON with a rule; limits on runaway runs; no simulator commands from part or model files), the playback viewer, and small example designs built and verified with the CLI only: `led_blink` (Pico firmware), `led_blink_bjt` (two-transistor astable), `nightlight` (LDR + Darlington), and `water_alarm` (a water detector taken all the way to an orderable board). Then displays, each with firmware in the loop and a board: `seg_counter` (7-segment stopwatch), `lcd_message` (16×2 LCD), and `oled_meter` (I2C OLED). And `calculator`: a battery-powered pocket calculator (20-key matrix, 16×2 LCD, 2×AA with a 5 V boost module) taken to an orderable board.
 
 Background and decisions: [`PROJECT_SUMMARY.md`](PROJECT_SUMMARY.md), [`DESIGN_DECISIONS.md`](DESIGN_DECISIONS.md). Releases: [`CHANGELOG.md`](CHANGELOG.md) (semantic versioning, starting at 1.0.0).
 

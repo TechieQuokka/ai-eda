@@ -106,7 +106,8 @@ class SpiceSpec(StrictModel):
     # netlist written by code, not by `template`: "mcu" (McuSpec), "display" (DisplaySpec)
     generator: Literal["mcu", "display"] | None = None
     # `<choice:P>` in the template becomes choice_values[P][value of P], e.g. a switch's
-    # resistance for state open / pressed.
+    # resistance for state open / pressed. `<choice:P.T>` reads the table `P.T` instead, so
+    # one parameter can set several elements (the two throws of a changeover switch).
     choice_values: dict[str, dict[str, str]] = Field(default_factory=dict[str, dict[str, str]])
 
 
@@ -127,6 +128,10 @@ class PcbSpec(StrictModel):
     # Value on the silkscreen and in the BOM (template like symbol.label, which is the
     # default); leaves out simulation-only state such as a switch position.
     value: str | None = None
+    # Pads that share a number are joined inside the part (a tactile switch's four legs
+    # are two pairs): the router connects the net to one pad of each number and KiCad
+    # counts the others as connected through the part (its duplicate-pad jumpers).
+    joined_pads: bool = False
 
 
 class GpioSpec(StrictModel):
@@ -387,9 +392,10 @@ class PartSpec(StrictModel):
             if kind == "param" and key in self.params:
                 continue
             if kind == "choice":
-                spec = self.params.get(key)
+                param = key.partition(".")[0]
+                spec = self.params.get(param)
                 if spec is None or spec.choices is None:
-                    raise ValueError(f"<choice:{key}> needs a choices parameter {key!r}")
+                    raise ValueError(f"<choice:{key}> needs a choices parameter {param!r}")
                 missing = set(spec.choices) - set(self.spice.choice_values.get(key, {}))
                 if missing:
                     raise ValueError(f"spice.choice_values.{key} lacks {sorted(missing)}")

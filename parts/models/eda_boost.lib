@@ -1,0 +1,25 @@
+* eda_boost - behavioural fixed-output boost regulator (part of ai-eda, see LICENSE)
+*
+* Pins: vin gnd vout shdn
+* The output is `vset` behind `rout`, but it can only source current (a boost converter
+* cannot pull its output down). The input draws the output power divided by `eta`
+* (percent) plus the quiescent current `iq` while running. The regulator starts once VIN
+* rises above `von` and keeps running down to `voff` (modelled as one threshold between
+* them); SHDN, pulled up to VIN through 100 kohm, turns it off below about 0.4 V.
+* Not modelled: ripple, the switch current limit, soft start.
+*
+.subckt eda_boost vin gnd vout shdn
++ params: vset=5 eta=85 iq=0.5m von=0.5 voff=0.3 rout=0.05
+.param vth = {(von + voff) / 2}
+Rpu vin shdn 100k
+* Enable: 1 while VIN is above the threshold and SHDN is high.
+Ben en gnd V = 0.5 * (1 + tanh((v(vin, gnd) - {vth}) / 0.02))
++ * 0.5 * (1 + tanh((v(shdn, gnd) - 0.6) / 0.05))
+Ren en gnd 1Meg
+* Output: a current source that drives VOUT towards vset (never sinks).
+Bout gnd vout I = max({vset} * v(en, gnd) - v(vout, gnd), 0) / {rout}
+Rleak vout gnd 10Meg
+* Input: power balance plus quiescent current.
+Bin vin gnd I = v(vout, gnd) * max({vset} * v(en, gnd) - v(vout, gnd), 0) / {rout}
++ / ({eta} / 100 * max(v(vin, gnd), {voff})) + {iq} * v(en, gnd)
+.ends eda_boost

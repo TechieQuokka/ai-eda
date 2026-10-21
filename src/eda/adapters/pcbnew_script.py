@@ -17,6 +17,7 @@ import importlib
 import json
 import math
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,7 @@ type Request = dict[str, Any]
 type Box = tuple[float, float, float, float]
 type Shape = tuple[float, Box, list[tuple[str, float, float]]]  # rotation, courtyard, pads
 
+ROUTER_MARGIN_UM = 10.0  # extra clearance the router keeps beyond the DRC rule
 FOOTPRINT_DIR = Path(os.environ.get("KICAD10_FOOTPRINT_DIR", "/usr/share/kicad/footprints"))
 
 
@@ -319,6 +321,8 @@ def build(request: Request) -> Request:
         footprint.SetValue(item["value"])
         _clear_fab_reference(footprint)
         board.Add(footprint)
+        if item.get("joined_pads"):
+            footprint.SetDuplicatePadNumbersAreJumpers(True)
         for pad in footprint.Pads():
             net = item["pads"].get(pad.GetNumber())
             if net is not None:
@@ -378,7 +382,100 @@ def build(request: Request) -> Request:
 
     board.Save(request["pcb"])
     pcbnew.ExportSpecctraDSN(board, request["dsn"])
+    settings = board.GetDesignSettings()
+    inset = pcbnew.ToMM(settings.m_CopperEdgeClearance) - request["rules"]["clearance"]
+    if inset > 0:
+        _inset_boundary(request["dsn"], inset)
+    _widen_clearances(request["dsn"], ROUTER_MARGIN_UM)
+    joined = {item["ref"] for item in request["footprints"] if item.get("joined_pads")}
+    if joined:
+        _route_one_pad_per_number(request["dsn"], _twin_pads_to_skip(board, joined))
     return {"outline": [x0, y0, w, h], "footprints": _footprint_report(board)}
+
+
+def _widen_clearances(dsn: str, margin_um: float) -> None:
+    """Give the router slightly more clearance than DRC checks: its 45-degree tracks next to
+    round pads are rounded to the .dsn's 0.1 um grid and came out 2 um short (0.1979 mm
+    for 0.2 mm), which DRC reports as a clearance violation."""
+    path = Path(dsn)
+    text = path.read_text(encoding="utf-8")
+    text = re.sub(
+        r"\(clearance ([\d.]+)",
+        lambda m: f"(clearance {float(m[1]) + margin_um:g}",
+        text,
+    )
+    path.write_text(text, encoding="utf-8")
+
+
+def _inset_boundary(dsn: str, inset_mm: float) -> None:
+    """Move the router's board boundary in by `inset_mm`. Freerouting keeps only the track
+    clearance from the board edge, while KiCad's DRC wants the (larger) copper-to-edge
+    clearance; the board outline is a rectangle (see `build`)."""
+    path = Path(dsn)
+    text = path.read_text(encoding="utf-8")
+    match = re.search(r"\(boundary\s*\(path pcb 0((?:\s+-?[\d.]+)+)\s*\)", text)
+    if match is None:
+        return
+    values = [float(v) for v in match[1].split()]
+    xs, ys = values[0::2], values[1::2]
+    d = inset_mm * 1000  # the .dsn is in um
+    x0, x1, y0, y1 = min(xs) + d, max(xs) - d, min(ys) + d, max(ys) - d
+    corners = [(x1, y0), (x0, y0), (x0, y1), (x1, y1), (x1, y0)]
+    points = "  ".join(f"{x:.1f} {y:.1f}" for x, y in corners)
+    text = text[: match.start()] + f"(boundary\n      (path pcb 0  {points})" + text[match.end() :]
+    path.write_text(text, encoding="utf-8")
+
+
+def _twin_pads_to_skip(board: Any, refs: set[str]) -> list[str]:
+    """Specctra pin names (`SW1-1@1`) of the twin pads the router need not connect: of the
+    pads sharing a number in a joined-pads part, only the one nearest the net's other pads
+    is kept (KiCad names them 1, 1@1, 1@2, ... in pad order)."""
+    others: dict[str, list[tuple[float, float]]] = {}
+    for footprint in board.GetFootprints():
+        if footprint.GetReference() in refs:
+            continue
+        for pad in footprint.Pads():
+            if pad.GetNetname():
+                at = pad.GetPosition()
+                others.setdefault(pad.GetNetname(), []).append((at.x, at.y))
+    skip: list[str] = []
+    for footprint in board.GetFootprints():
+        ref = footprint.GetReference()
+        if ref not in refs:
+            continue
+        twins: dict[str, list[tuple[str, Any]]] = {}
+        for pad in footprint.Pads():
+            number = pad.GetNumber()
+            if not number:
+                continue
+            group = twins.setdefault(number, [])
+            name = number if not group else f"{number}@{len(group)}"
+            group.append((name, pad))
+        for group in twins.values():
+            if len(group) < 2:
+                continue
+            targets = others.get(group[0][1].GetNetname(), [])
+
+            def distance(
+                entry: tuple[str, Any], targets: list[tuple[float, float]] = targets
+            ) -> float:
+                at = entry[1].GetPosition()
+                return min((math.hypot(at.x - x, at.y - y) for x, y in targets), default=0.0)
+
+            keep = min(group, key=distance)[0]
+            skip += [f"{ref}-{name}" for name, _ in group if name != keep]
+    return skip
+
+
+def _route_one_pad_per_number(dsn: str, skip: list[str]) -> None:
+    """Leave twin pads (`skip`) out of the nets the router must connect: they are joined
+    inside the part. Tracks between them only crowd the board, and Freerouting gives up on
+    connections next to such pad pairs. They stay in the board as obstacles."""
+    path = Path(dsn)
+    text = path.read_text(encoding="utf-8")
+    for pin in skip:
+        text = re.sub(rf' "?{re.escape(pin)}"?(?=[\s)])', "", text)
+    path.write_text(text, encoding="utf-8")
 
 
 def import_ses(request: Request) -> Request:

@@ -1,0 +1,75 @@
+description: >
+  Pocket calculator: a Raspberry Pi Pico scans a 5 x 4 key matrix and shows the
+  expression (line 1) and the result (line 2) on a 16x2 LCD. Power: two AA cells (BT1,
+  off the board) through the slide switch SWP and the Schottky D1 (reverse-polarity
+  protection) into a Pololu 5 V boost module (U2); D2 joins its 5 V to VSYS, so the Pico's
+  USB can feed VSYS too without back-feeding the module. The LCD runs from VSYS (about
+  4.7 V), its backlight switched by Q1 from the BL pin. RS1/RS2 halve the battery voltage
+  for the ADC (low-battery mark). Keys join a row (pin 1) to a column (pin 2): the firmware
+  pulls one row low at a time and reads the columns, which have pull-ups.
+parts:
+  BT1: { type: battery, voltage: 3V, mpn: "2xAA battery box with leads" }
+  SWP: { type: slide_switch, position: "1", mpn: OS102011MS2QN1 }   # power: on at "1"
+  D1: { type: diode, model: 1N5817, footprint: "Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal", mpn: 1N5817 }
+  U2: { type: pololu_u1v11f5, mpn: "Pololu 2562" }
+  D2: { type: diode, model: 1N5817, footprint: "Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal", mpn: 1N5817 }
+  U1: { type: raspberry_pi_pico }
+  LCD1: { type: lcd_1602, backlight: blue }
+  RV1: { type: potentiometer, resistance: 10kohm, position: 5% }   # contrast: V0 about 0.3 V
+  RBL: { type: resistor, resistance: 100ohm }        # backlight current, about 15 mA
+  Q1: { type: npn, model: 2N3904 }                   # backlight switch
+  RB: { type: resistor, resistance: 2.2kohm }
+  RS1: { type: resistor, resistance: 100kohm }       # battery sense divider (1/2)
+  RS2: { type: resistor, resistance: 100kohm }
+  CS: { type: capacitor, capacitance: 100nF }        # ADC input filter
+  J2: { type: connector_1x03 }                       # debug UART: 1 TX, 2 RX, 3 GND
+  KCLR: { type: push_button }   # C
+  KDEL: { type: push_button }   # <-
+  KPCT: { type: push_button }   # %
+  KDIV: { type: push_button }   # /
+  K7: { type: push_button }
+  K8: { type: push_button }
+  K9: { type: push_button }
+  KMUL: { type: push_button }   # x
+  K4: { type: push_button }
+  K5: { type: push_button }
+  K6: { type: push_button }
+  KSUB: { type: push_button }   # -
+  K1: { type: push_button }
+  K2: { type: push_button }
+  K3: { type: push_button }
+  KADD: { type: push_button }   # +
+  KNEG: { type: push_button }   # +/-
+  K0: { type: push_button }
+  KDOT: { type: push_button }   # .
+  KEQ: { type: push_button }    # =
+nets:
+  BAT: [BT1.+, SWP.2]
+  BAT_ON: [SWP.1, D1.anode]
+  VBAT: [D1.cathode, U2.vin, RS1.1]
+  V5: [U2.vout, D2.anode]
+  VSYS: [D2.cathode, U1.VSYS, LCD1.vdd, RV1.3, RBL.1]
+  BAT_SENSE: [RS1.2, RS2.1, CS.1, U1.GP28]
+  LCD_V0: [LCD1.v0, RV1.2]
+  LCD_A: [RBL.2, LCD1.a]
+  LCD_K: [LCD1.k, Q1.c]
+  BL: [U1.GP22, RB.1]
+  BL_BASE: [RB.2, Q1.b]
+  LCD_RS: [U1.GP7, LCD1.rs]
+  LCD_E: [U1.GP6, LCD1.e]
+  LCD_D4: [U1.GP5, LCD1.d4]
+  LCD_D5: [U1.GP4, LCD1.d5]
+  LCD_D6: [U1.GP3, LCD1.d6]
+  LCD_D7: [U1.GP2, LCD1.d7]
+  UART_TX: [U1.GP16, J2.1]
+  UART_RX: [U1.GP17, J2.2]
+  ROW1: [U1.GP8, KCLR.1, KDEL.1, KPCT.1, KDIV.1]
+  ROW2: [U1.GP9, K7.1, K8.1, K9.1, KMUL.1]
+  ROW3: [U1.GP10, K4.1, K5.1, K6.1, KSUB.1]
+  ROW4: [U1.GP11, K1.1, K2.1, K3.1, KADD.1]
+  ROW5: [U1.GP12, KNEG.1, K0.1, KDOT.1, KEQ.1]
+  COL1: [U1.GP13, KCLR.2, K7.2, K4.2, K1.2, KNEG.2]
+  COL2: [U1.GP14, KDEL.2, K8.2, K5.2, K2.2, K0.2]
+  COL3: [U1.GP15, KPCT.2, K9.2, K6.2, K3.2, KDOT.2]
+  COL4: [U1.GP19, KDIV.2, KMUL.2, KSUB.2, KADD.2, KEQ.2]
+  GND: [BT1.-, U2.gnd, U1.GND, LCD1.vss, LCD1.rw, RV1.1, Q1.e, RS2.2, CS.2, J2.3]

@@ -52,6 +52,19 @@ def test_moving_a_pin_updates_pins_h(pico: Path) -> None:
     assert "GP16: output" in header
 
 
+def test_input_without_pull_disables_the_reset_pull_down(pico: Path) -> None:
+    result = pipeline.fw(pico)
+    assert result.ok, result.errors
+    init = (pico / "firmware" / "pins_init.h").read_text(encoding="utf-8")
+    assert "gpio_pull_up(PIN_BUTTON);" in init and "gpio_disable_pulls" not in init
+
+    _edit(pico, "firmware.yaml", "BUTTON: { mode: input, pull: up,", "BUTTON: { mode: input,")
+    result = pipeline.fw(pico)
+    init = (pico / "firmware" / "pins_init.h").read_text(encoding="utf-8")
+    assert "gpio_disable_pulls(PIN_BUTTON);" in init
+    assert "gpio_disable_pulls(PIN_LED)" not in init  # outputs keep their reset pads
+
+
 def test_wrong_function_pin_is_flagged(pico: Path) -> None:
     _edit(pico, "circuit.yaml", "UART_TX: [U1.GP0, J2.1]", "UART_TX: [U1.GP2, J2.1]")
     errors, _, diag = _rules(pico)

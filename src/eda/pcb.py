@@ -198,6 +198,7 @@ def _build_request(board: ResolvedBoard, pcb: Path, dsn: Path) -> dict[str, Any]
             "value": part.value,
             "footprint": part.footprint,
             "pads": part.pads,
+            "joined_pads": part.joined_pads,
         }
         if part.placement is not None:
             item |= {

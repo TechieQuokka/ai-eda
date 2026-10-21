@@ -1,5 +1,7 @@
 # The display sits along the top edge, the Pico below it; resistors and transistors are
-# placed automatically next to what they connect to.
+# placed automatically next to what they connect to. The reset button sits right below
+# its pin (GP14, pin 19, on the Pico's lower row): from above, its track had to squeeze
+# round the Pico's end, where the footprint keeps the copper out between the rows.
 board:
   spacing: 2mm
 rules:
@@ -7,6 +9,7 @@ rules:
 placement:
   DS1: { x: 10mm, y: 22mm, rotation: 90deg }
   U1: { x: 32mm, y: 62mm, rotation: 90deg }
+  SW1: { x: 74mm, y: 67mm }
 pours:
   - { net: GND, layer: bottom }
 fab: jlcpcb

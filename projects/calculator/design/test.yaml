@@ -1,0 +1,256 @@
+tests:
+  power:
+    description: >
+      Two fresh-ish AA cells (3 V): the boost module makes 5 V, VSYS sits one Schottky drop
+      below it and stays inside the LCD's 4.5-5.5 V; the backlight draws about 15 mA.
+    analysis: { type: op }
+    expect:
+      - { measure: voltage(V5), min: 4.9V, max: 5.1V }
+      - { measure: voltage(VSYS), min: 4.55V, max: 5V }
+      - { measure: current(LCD1.a), min: 12mA, max: 18mA }
+      - { measure: "voltage(VSYS, LCD_V0)", min: 4.2V, max: 4.6V }
+      - { measure: current(U2.vin), max: 200mA }
+  key_reads_column:
+    description: >
+      Scanning row 2 (ROW2 driven low) with key 8 held: column 2 is pulled low through the
+      key, the other columns stay at 3.3 V through their pull-ups.
+    analysis: { type: op }
+    pins: { ROW2: low }
+    parts: { K8: { state: pressed } }
+    expect:
+      - { measure: voltage(COL2), max: 0.1V }
+      - { measure: voltage(COL1), min: 3.2V }
+      - { measure: voltage(COL3), min: 3.2V }
+  ready:
+    description: >
+      Firmware in the loop: after the LCD's power-up wait and initialization the display
+      shows 0 on line 2 and an empty line 1; no low-battery mark with fresh cells.
+    analysis: { type: tran, step: 1ms, stop: 150ms }
+    firmware: true
+    expect:
+      - { display: LCD1, match: '^\n +0$' }
+      - { serial: UART_TX, match: 'calculator ready', min: 1, max: 1 }
+      - { serial: UART_TX, match: 'battery low', max: 0 }
+  add:
+    description: >
+      Keys 1 2 + 3 4 =: line 1 shows the expression, line 2 the sum; the value on line 2 follows the typing (12, then 46 before = is pressed).
+    analysis: { type: tran, step: 1ms, stop: 660ms }
+    firmware: true
+    events:
+      - { at: 150ms, part: K1, set: { state: pressed } }
+      - { at: 190ms, part: K1, set: { state: open } }
+      - { at: 230ms, part: K2, set: { state: pressed } }
+      - { at: 270ms, part: K2, set: { state: open } }
+      - { at: 310ms, part: KADD, set: { state: pressed } }
+      - { at: 350ms, part: KADD, set: { state: open } }
+      - { at: 390ms, part: K3, set: { state: pressed } }
+      - { at: 430ms, part: K3, set: { state: open } }
+      - { at: 470ms, part: K4, set: { state: pressed } }
+      - { at: 510ms, part: K4, set: { state: open } }
+      - { at: 550ms, part: KEQ, set: { state: pressed } }
+      - { at: 590ms, part: KEQ, set: { state: open } }
+    expect:
+      - { display: LCD1, match: '^12\+34=\n +46$' }
+      - { display: LCD1, at: 300ms, match: '^12\n +12$' }
+      - { display: LCD1, at: 540ms, match: '^12\+34\n +46$' }
+      - { serial: UART_TX, match: 'key =: 12\+34= \| 46', min: 1, max: 1 }
+  order:
+    description: >
+      2 + 3 x 4 = gives 20: operations run in the order typed, as on a pocket calculator. The times sign is CGRAM character 0 (\x00).
+    analysis: { type: tran, step: 1ms, stop: 660ms }
+    firmware: true
+    events:
+      - { at: 150ms, part: K2, set: { state: pressed } }
+      - { at: 190ms, part: K2, set: { state: open } }
+      - { at: 230ms, part: KADD, set: { state: pressed } }
+      - { at: 270ms, part: KADD, set: { state: open } }
+      - { at: 310ms, part: K3, set: { state: pressed } }
+      - { at: 350ms, part: K3, set: { state: open } }
+      - { at: 390ms, part: KMUL, set: { state: pressed } }
+      - { at: 430ms, part: KMUL, set: { state: open } }
+      - { at: 470ms, part: K4, set: { state: pressed } }
+      - { at: 510ms, part: K4, set: { state: open } }
+      - { at: 550ms, part: KEQ, set: { state: pressed } }
+      - { at: 590ms, part: KEQ, set: { state: open } }
+    expect:
+      - { display: LCD1, match: '^2\+3\x004=\n +20$' }
+  divide:
+    description: >
+      7 / 2 = shows 3.5 (the division sign is the LCD's ROM character); 1 / 3 = keeps 9 significant digits.
+    analysis: { type: tran, step: 1ms, stop: 900ms }
+    firmware: true
+    events:
+      - { at: 150ms, part: K7, set: { state: pressed } }
+      - { at: 190ms, part: K7, set: { state: open } }
+      - { at: 230ms, part: KDIV, set: { state: pressed } }
+      - { at: 270ms, part: KDIV, set: { state: open } }
+      - { at: 310ms, part: K2, set: { state: pressed } }
+      - { at: 350ms, part: K2, set: { state: open } }
+      - { at: 390ms, part: KEQ, set: { state: pressed } }
+      - { at: 430ms, part: KEQ, set: { state: open } }
+      - { at: 470ms, part: KCLR, set: { state: pressed } }
+      - { at: 510ms, part: KCLR, set: { state: open } }
+      - { at: 550ms, part: K1, set: { state: pressed } }
+      - { at: 590ms, part: K1, set: { state: open } }
+      - { at: 630ms, part: KDIV, set: { state: pressed } }
+      - { at: 670ms, part: KDIV, set: { state: open } }
+      - { at: 710ms, part: K3, set: { state: pressed } }
+      - { at: 750ms, part: K3, set: { state: open } }
+      - { at: 790ms, part: KEQ, set: { state: pressed } }
+      - { at: 830ms, part: KEQ, set: { state: open } }
+    expect:
+      - { display: LCD1, at: 450ms, match: '^7÷2=\n +3\.5$' }
+      - { display: LCD1, match: '^1÷3=\n +0\.333333333$' }
+  divide_by_zero:
+    description: >
+      5 / 0 = shows Error; C clears the calculator back to 0.
+    analysis: { type: tran, step: 1ms, stop: 580ms }
+    firmware: true
+    events:
+      - { at: 150ms, part: K5, set: { state: pressed } }
+      - { at: 190ms, part: K5, set: { state: open } }
+      - { at: 230ms, part: KDIV, set: { state: pressed } }
+      - { at: 270ms, part: KDIV, set: { state: open } }
+      - { at: 310ms, part: K0, set: { state: pressed } }
+      - { at: 350ms, part: K0, set: { state: open } }
+      - { at: 390ms, part: KEQ, set: { state: pressed } }
+      - { at: 430ms, part: KEQ, set: { state: open } }
+      - { at: 470ms, part: KCLR, set: { state: pressed } }
+      - { at: 510ms, part: KCLR, set: { state: open } }
+    expect:
+      - { display: LCD1, at: 450ms, match: '^5÷0\n +Error$' }
+      - { display: LCD1, match: '^\n +0$' }
+  decimals:
+    description: >
+      0.1 + 0.2 = shows 0.3 (nine significant digits hide the binary rounding); a second . is ignored.
+    analysis: { type: tran, step: 1ms, stop: 820ms }
+    firmware: true
+    events:
+      - { at: 150ms, part: KDOT, set: { state: pressed } }
+      - { at: 190ms, part: KDOT, set: { state: open } }
+      - { at: 230ms, part: K1, set: { state: pressed } }
+      - { at: 270ms, part: K1, set: { state: open } }
+      - { at: 310ms, part: KADD, set: { state: pressed } }
+      - { at: 350ms, part: KADD, set: { state: open } }
+      - { at: 390ms, part: K0, set: { state: pressed } }
+      - { at: 430ms, part: K0, set: { state: open } }
+      - { at: 470ms, part: KDOT, set: { state: pressed } }
+      - { at: 510ms, part: KDOT, set: { state: open } }
+      - { at: 550ms, part: KDOT, set: { state: pressed } }
+      - { at: 590ms, part: KDOT, set: { state: open } }
+      - { at: 630ms, part: K2, set: { state: pressed } }
+      - { at: 670ms, part: K2, set: { state: open } }
+      - { at: 710ms, part: KEQ, set: { state: pressed } }
+      - { at: 750ms, part: KEQ, set: { state: open } }
+    expect:
+      - { display: LCD1, match: '^0\.1\+0\.2=\n +0\.3$' }
+  edit_keys:
+    description: >
+      Backspace removes the last digit (12+3 <- 4 = gives 16), percent after + takes that share of the value (200+10% = 220), and +/- changes the sign of the result.
+    analysis: { type: tran, step: 1ms, stop: 1540ms }
+    firmware: true
+    events:
+      - { at: 150ms, part: K1, set: { state: pressed } }
+      - { at: 190ms, part: K1, set: { state: open } }
+      - { at: 230ms, part: K2, set: { state: pressed } }
+      - { at: 270ms, part: K2, set: { state: open } }
+      - { at: 310ms, part: KADD, set: { state: pressed } }
+      - { at: 350ms, part: KADD, set: { state: open } }
+      - { at: 390ms, part: K3, set: { state: pressed } }
+      - { at: 430ms, part: K3, set: { state: open } }
+      - { at: 470ms, part: KDEL, set: { state: pressed } }
+      - { at: 510ms, part: KDEL, set: { state: open } }
+      - { at: 550ms, part: K4, set: { state: pressed } }
+      - { at: 590ms, part: K4, set: { state: open } }
+      - { at: 630ms, part: KEQ, set: { state: pressed } }
+      - { at: 670ms, part: KEQ, set: { state: open } }
+      - { at: 710ms, part: KCLR, set: { state: pressed } }
+      - { at: 750ms, part: KCLR, set: { state: open } }
+      - { at: 790ms, part: K2, set: { state: pressed } }
+      - { at: 830ms, part: K2, set: { state: open } }
+      - { at: 870ms, part: K0, set: { state: pressed } }
+      - { at: 910ms, part: K0, set: { state: open } }
+      - { at: 950ms, part: K0, set: { state: pressed } }
+      - { at: 990ms, part: K0, set: { state: open } }
+      - { at: 1030ms, part: KADD, set: { state: pressed } }
+      - { at: 1070ms, part: KADD, set: { state: open } }
+      - { at: 1110ms, part: K1, set: { state: pressed } }
+      - { at: 1150ms, part: K1, set: { state: open } }
+      - { at: 1190ms, part: K0, set: { state: pressed } }
+      - { at: 1230ms, part: K0, set: { state: open } }
+      - { at: 1270ms, part: KPCT, set: { state: pressed } }
+      - { at: 1310ms, part: KPCT, set: { state: open } }
+      - { at: 1350ms, part: KEQ, set: { state: pressed } }
+      - { at: 1390ms, part: KEQ, set: { state: open } }
+      - { at: 1430ms, part: KNEG, set: { state: pressed } }
+      - { at: 1470ms, part: KNEG, set: { state: open } }
+    expect:
+      - { display: LCD1, at: 700ms, match: '^12\+4=\n +16$' }
+      - { display: LCD1, at: 1420ms, match: '^200\+10%=\n +220$' }
+      - { display: LCD1, match: '^-220\n +-220$' }
+  bounce:
+    description: >
+      Key 7 bounces for 3 ms when pressed and when released (contacts closing and opening
+      every millisecond): the debounce (the same reading on 3 scans 5 ms apart) reports
+      one key press.
+    analysis: { type: tran, step: 250us, stop: 300ms }
+    firmware: true
+    events:
+      - { at: 150ms, part: K7, set: { state: pressed } }
+      - { at: 151ms, part: K7, set: { state: open } }
+      - { at: 152ms, part: K7, set: { state: pressed } }
+      - { at: 153ms, part: K7, set: { state: open } }
+      - { at: 154ms, part: K7, set: { state: pressed } }
+      - { at: 220ms, part: K7, set: { state: open } }
+      - { at: 221ms, part: K7, set: { state: pressed } }
+      - { at: 222ms, part: K7, set: { state: open } }
+      - { at: 223ms, part: K7, set: { state: pressed } }
+      - { at: 224ms, part: K7, set: { state: open } }
+    expect:
+      - { display: LCD1, match: '^7\n +7$' }
+      - { serial: UART_TX, match: 'key 7', min: 1, max: 1 }
+  low_battery:
+    description: >
+      Cells run down to 1.0 V each (2.0 V): the boost module still makes 5 V, and the
+      firmware, reading VBAT through RS1/RS2 on ADC2, puts the battery mark (CGRAM
+      character 1) in the corner of line 2.
+    analysis: { type: tran, step: 1ms, stop: 150ms }
+    firmware: true
+    parts: { BT1: { voltage: 2V } }
+    expect:
+      - { display: LCD1, match: '^\n\x01 +0$' }
+      - { serial: UART_TX, match: 'battery low', min: 1, max: 1 }
+      - { measure: final(voltage(VSYS)), min: 4.55V }
+  battery_sweep:
+    description: >
+      The pack from 1.2 V (0.6 V per cell, flat) to 3.4 V (new cells): VSYS stays in the
+      LCD's range down to 0.8 V per cell, the module's input current stays well below its
+      1.2 A switch limit, and VBAT passes the firmware's 1.8 V low-battery threshold at
+      about 1.1 V per cell.
+    analysis: { type: dc, sweep: BT1.voltage, start: 1.2V, stop: 3.4V, step: 50mV }
+    expect:
+      - { measure: "at(voltage(VSYS), 1.6V)", min: 4.55V, max: 5V }
+      - { measure: "at(voltage(VSYS), 3.4V)", min: 4.55V, max: 5V }
+      - { measure: max(current(U2.vin)), max: 600mA }
+      - { measure: "cross(voltage(VBAT), 1.8V)", min: 2V, max: 2.4V }
+  reversed_battery:
+    description: >
+      Cells inserted the wrong way round (-3 V): D1 blocks. Only its leakage flows (tens
+      of uA), which pulls the lightly loaded VBAT node negative; the module's input and the
+      sense divider see that voltage through D1 alone, so their currents stay at the
+      leakage level and nothing is damaged.
+    analysis: { type: op }
+    parts: { BT1: { voltage: -3V } }
+    expect:
+      - { measure: current(BT1), min: -100uA, max: 100uA }
+      - { measure: current(U2.vin), min: -50uA, max: 50uA }
+      - { measure: voltage(VSYS), max: 0.1V }
+  switched_off:
+    description: >
+      Power switch off: the pack is disconnected (no drain on the cells) and nothing is
+      powered.
+    analysis: { type: op }
+    parts: { SWP: { position: "3" } }
+    expect:
+      - { measure: current(BT1), min: -1uA, max: 1uA }
+      - { measure: voltage(VSYS), max: 0.1V }

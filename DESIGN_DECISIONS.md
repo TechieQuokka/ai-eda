@@ -719,3 +719,43 @@ The user asked for displays that show strings, all three common kinds: seven-seg
 - **Co-simulation cost**: the LCD and OLED examples run 300 ms – 1.2 s of firmware at a 1 ms step in 8–15 s per test; the seven-segment stopwatch needs a 200 µs step (18 s).
 
 Not done: SPI displays, reading back from a display (busy flag, SSD1306 status), I2C clock stretching and bus waveforms, scaled or proportional fonts in the text reader, colour displays.
+
+## 27. Example: battery-powered calculator, made to be built (2026-10-21)
+
+The user asked for a calculator to order and hand-solder. Decided with the user, one question at a time: a real board (not only a simulated example); 20 tactile keys in a 5 × 4 matrix (`C ← % ÷ / 7 8 9 × / 4 5 6 − / 1 2 3 + / ± 0 . =`); a 16×2 HD44780 LCD (expression on line 1, value on line 2); a pocket-calculator engine (four functions in typed order, decimals, negatives, percent, sign, backspace, `Error`); two AA cells, which cannot feed a 4.5–5.5 V LCD directly, so a Pololu U1V11F5 5 V boost module (fixed output, 0.5–5.5 V in, header pins, no reverse protection: verified on pololu.com).
+
+### 27.1 Circuit (`projects/calculator`)
+
+- **Power path**: BT1 (2×AA box with leads, soldered to wire pads) → SWP slide switch → D1 1N5817 (reverse polarity) → U2 boost → D2 1N5817 → VSYS. D2 lets the Pico's USB feed VSYS (through the Pico's own VBUS diode) without back-feeding the module, as the Pico datasheet recommends for a second supply. The LCD, contrast trimmer, and backlight run from VSYS: 4.72 V on batteries, inside the LCD's range.
+- **Backlight** through RBL 100 Ω (15.3 mA) and Q1 2N3904 from a GPIO (RB 2.2 kΩ), so firmware can switch it off later without a new board (it stays on for now).
+- **Battery sense**: RS1/RS2 100 kΩ/100 kΩ + CS 100 nF from VBAT to an ADC pin; the firmware shows a battery mark (CGRAM character) below 1.8 V at VBAT (≈ 1.1 V per cell; hysteresis to 1.9 V; no mark below 0.3 V, i.e. USB power with the switch off).
+- **Keys**: rows idle as high-impedance inputs, the scanned row is an output driving low, columns have the internal pull-ups. No diodes needed for single key presses, and two pressed keys never join a high and a low output. Scanning by switching the row's *direction* is also what makes the co-simulation exact: each mode change stops the emulator and lets the circuit settle (§15.3), so a column read 10 µs later sees the key.
+
+### 27.2 Firmware
+
+- `calc.c` (hardware-free; 41 cases checked with the host's gcc during development), `keypad.c` (scan every 5 ms, a key reported after 3 identical scans), `lcd.c` from `lcd_message` plus `lcd_define_char`, `main.c`. × is CGRAM character 0 written as 0x08 (its mirror, so C strings can hold it), ÷ is the ROM's 0xFD.
+- **Found by the co-simulation, not by the host build**: the pico-sdk's printf keeps the trailing zeros of `%g` ("0.00000000" instead of "0"). Numbers are now formatted by hand (9 significant digits, plain from 1e-5 to 1e9 when it fits in 15 columns, else `1.52415788e+16`).
+
+### 27.3 Tests (14, all passing)
+
+Power at 3 V (V5 4.998 V, VSYS 4.717 V, backlight 15.3 mA, boost input 83.5 mA), a key pulling its column low, the ready screen, five key sequences with firmware in the loop (`12+34=` → 46 with the live value on line 2, `2+3×4=` → 20, `7÷2=` → 3.5 and `1÷3=` → 0.333333333, `5÷0=` → Error then C, `0.1+0.2=` → 0.3, backspace / percent / sign), contact bounce (3 ms each way: one key), low battery (2.0 V: mark shown, VSYS still 4.72 V), a DC sweep of the pack from 1.2 to 3.4 V (VSYS held down to 0.8 V per cell, boost input ≤ 298 mA, the low-battery threshold at 2.20 V), reversed cells (only D1's leakage, 15 µA), and the switch off (3 nA). The key tests take 3–5 s each.
+
+### 27.4 Board (112 × 126 mm, `fab: jlcpcb`, DRC clean)
+
+LCD top left with the Pico beside it, USB on the top edge (the plug needs the module at the edge); the LCD bus runs under the module straight to the Pico's left pins; keys below on a 16 mm pitch (12 mm caps), on the Pico's lower left pins; the power section below the Pico, U2 lying flat over an area kept free (noted in `board.yaml`; the tool does not know the module's body). The first two layouts (Pico right of the keys, then power parts between the keys and the Pico) left 2–7 connections unrouted at any pass count.
+
+### 27.5 Tool changes made along the way
+
+- **Joined pads** (`pcb.joined_pads: true`, set on `push_button`): a tactile switch's four legs are two internally joined pairs. The footprint gets KiCad's *duplicate pad numbers are jumpers* attribute, and the second pad of each number is left out of the router's nets. Freerouting had routed the 6.5 mm links between twin legs and then gave up on the plain links between neighbouring keys (7 unrouted after 200 passes, none of them blocked); without the twins everything routes in 13 s instead of 2 min, and KiCad's DRC counts the legs as connected. Of each set of twins the pad nearest the net's other pads is the one kept (always keeping the first left `seg_counter`'s button one connection short); the others stay on the board as obstacles.
+- **Router boundary**: Freerouting kept only the 0.2 mm track clearance from the board edge, KiCad's DRC wants 0.5 mm (`copper_edge_clearance` errors along the edge). The .dsn boundary is now moved in by the difference.
+- **Router clearance margin**: Freerouting's 45° tracks next to round pads came out 2 µm short of the clearance after rounding (0.1979 mm for 0.2 mm, a DRC error). The router now gets every clearance 10 µm wider than DRC checks.
+- **Freerouting is not deterministic**: the same .dsn routed twice left 1 and 2 connections open. The route cache (§13) keeps a board stable once routed; a fresh checkout routes again, so a board on the edge of routability can come out differently.
+- **`seg_counter` board**: with the boundary inset its reset button, auto-placed above the Pico, could no longer reach its pin (GP14, on the Pico's lower row): the only way round the module's end, where the footprint keeps copper out between the rows, was too narrow. SW1 is now hand-placed right below its pin.
+- **Intermittent `raw_parse` error** (seen twice in `seg_counter`'s `stopwatch` test, a 400 MB raw file): one character read as `)` (`2.0…e)02`, `)2.3…e-05`), both times a bit cleared. The file on disk parsed cleanly afterwards, and that code path was not changed. Cause unknown (memory on this machine is one possibility); not worked around.
+- **`pull: none` inputs** now call `gpio_disable_pulls()` in `pins_init.h`. The RP2040 resets with the pull-down on, so such inputs were not high-impedance on the chip, unlike in the simulation; for the key rows it would have made a pressed key in an idle row pull its column to half the supply.
+- **CGRAM characters in the LCD's SVG title** are spelled `\x00`; the raw control characters made the SVG invalid XML and crashed the PNG rendering.
+- **New parts**: `battery` (pack off the board on wire pads; voltage behind internal resistance, negative = reversed), `slide_switch` (SPDT; `<choice:P.T>` lets one choice parameter set several elements), `pololu_u1v11f5` (behavioural boost model `parts/models/eda_boost.lib`: 5 V behind 50 mΩ that only sources, input power = output power / `eta` + 0.5 mA, start/shutdown thresholds), and the `1N5817` Schottky for `diode` (model fitted to the onsemi datasheet's maximum forward voltages; no vendor model could be downloaded).
+
+### 27.6 Not covered
+
+The boost module's ripple, current limit, and start-up; the battery's discharge curve over time (only static voltages); USB power in simulation (the Pico model has no VBUS → VSYS diode); key legends on the silkscreen (the references `KCLR`, `KDEL`, `KPCT`, `KDIV`, `KMUL`, `KSUB`, `KADD`, `KNEG`, `KDOT`, `KEQ`, `K0`–`K9` name the keys); the U2 module outline on the assembly drawing; an enclosure. Battery life estimated from the 83.5 mA input at 3 V: about a day of use on 2000 mAh alkaline cells, most of it the Pico and the backlight.
