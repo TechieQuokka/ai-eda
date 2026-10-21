@@ -5,7 +5,7 @@
 
 ## 1. Status
 
-Current release: **1.1.1** (`CHANGELOG.md`, tag `v1.1.1`).
+Current release: **1.2.0** (`CHANGELOG.md`, tag `v1.2.0`).
 
 | Milestone | State | Record |
 |---|---|---|

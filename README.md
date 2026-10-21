@@ -9,7 +9,7 @@ You describe the goal. The agent writes the circuit as YAML, simulates it, reads
 ![Python](https://img.shields.io/badge/python-3.13-3776AB?logo=python&logoColor=white)
 ![ngspice](https://img.shields.io/badge/simulator-ngspice%2047-555)
 ![pyright](https://img.shields.io/badge/types-pyright%20strict-2563eb)
-![version](https://img.shields.io/badge/version-1.1.1-0f766e)
+![version](https://img.shields.io/badge/version-1.2.0-0f766e)
 ![tests](https://img.shields.io/badge/tests-313%20passing-15803d)
 ![license](https://img.shields.io/badge/license-free%20for%20learning%20%7C%20paid%20commercial-b45309)
 
