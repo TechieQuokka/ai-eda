@@ -21,6 +21,11 @@ type PathKey = str | int
 type DataPath = tuple[PathKey, ...]
 type Plain = str | int | float | bool | list[Plain] | dict[str, Plain] | None
 
+# Design files are small. These limits stop an alias bomb (a few lines that expand to
+# billions of nodes) or absurd nesting before they exhaust memory or the stack.
+MAX_NODES = 100_000
+MAX_DEPTH = 50
+
 
 def format_path(path: Sequence[PathKey]) -> str:
     """Render a data path as `tests.led.expect[0].min`."""
@@ -56,9 +61,10 @@ class Document:
 
 
 class _ConversionError(Exception):
-    def __init__(self, message: str, path: DataPath) -> None:
+    def __init__(self, message: str, path: DataPath, rule: str = "yaml_type") -> None:
         super().__init__(message)
         self.path = path
+        self.rule = rule
 
 
 def load_yaml(path: Path, display_name: str, diag: Diagnostics) -> Document | None:
@@ -92,19 +98,34 @@ def load_yaml(path: Path, display_name: str, diag: Diagnostics) -> Document | No
     except YAMLError as exc:
         diag.error("yaml_syntax", f"YAML error: {exc}", Location(file=display_name))
         return None
+    except RecursionError:
+        diag.error(
+            "yaml_too_deep",
+            f"{display_name} is nested too deeply to parse",
+            Location(file=display_name),
+        )
+        return None
 
     positions: dict[DataPath, tuple[int, int]] = {(): (1, 1)}
     try:
         data = _convert(raw, (), positions)
     except _ConversionError as exc:
         source = SourceMap(display_name, positions)
-        diag.error("yaml_type", str(exc), source.at(*exc.path))
+        diag.error(exc.rule, str(exc), source.at(*exc.path))
         return None
     return Document(data=data, source=SourceMap(display_name, positions))
 
 
 def _convert(node: object, path: DataPath, positions: dict[DataPath, tuple[int, int]]) -> Plain:
     # ruamel's node classes are untyped; treat them as Any inside the isinstance branches.
+    if len(positions) > MAX_NODES:
+        raise _ConversionError(
+            f"more than {MAX_NODES} values (anchors and aliases expand to copies)",
+            path,
+            "yaml_too_large",
+        )
+    if len(path) > MAX_DEPTH:
+        raise _ConversionError(f"nested more than {MAX_DEPTH} levels deep", path, "yaml_too_deep")
     if isinstance(node, CommentedMap):
         mapping: Any = node
         result: dict[str, Plain] = {}
@@ -112,8 +133,7 @@ def _convert(node: object, path: DataPath, positions: dict[DataPath, tuple[int, 
             if not isinstance(key, str):
                 raise _ConversionError(f"mapping keys must be strings, got {key!r}", path)
             child = (*path, key)
-            line, column = mapping.lc.key(key)
-            positions[child] = (int(line) + 1, int(column) + 1)
+            positions[child] = _position(mapping, key, positions[path])
             result[key] = _convert(value, child, positions)
         return result
     if isinstance(node, CommentedSeq):
@@ -136,6 +156,17 @@ def _convert(node: object, path: DataPath, positions: dict[DataPath, tuple[int, 
     raise _ConversionError(
         f"unsupported YAML value {node!r} ({type(node).__name__}); quote it as a string", path
     )
+
+
+def _position(mapping: object, key: str, parent: tuple[int, int]) -> tuple[int, int]:
+    """Line and column of a mapping key; keys merged in with `<<` have none of their own."""
+    node: Any = mapping  # a CommentedMap; its `lc` attribute is untyped
+    lc: Any = node.lc
+    try:
+        line, column = lc.key(key)
+    except KeyError:
+        return parent
+    return int(line) + 1, int(column) + 1
 
 
 def validate[M: BaseModel](model: type[M], document: Document, diag: Diagnostics) -> M | None:

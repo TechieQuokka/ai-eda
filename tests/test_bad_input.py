@@ -1,15 +1,22 @@
 """Regression tests for bad and extreme input: each case once crashed, hung, or was accepted."""
 
 import json
+import shutil
 from pathlib import Path
+from textwrap import dedent
 
 import pytest
 
 import eda.project
 from eda import vendor
 from eda.cli import main
-from tests.conftest import requires_ngspice
+from eda.design import load_design
+from eda.loader import Document, load_yaml
+from eda.result import Diagnostics
+from tests.conftest import LED_CIRCUIT, MakeProject, requires_ngspice
 from tests.test_m1 import MODEL
+
+EXAMPLES = Path(__file__).resolve().parent.parent / "projects"
 
 
 @pytest.fixture
@@ -61,3 +68,97 @@ def test_failed_import_leaves_parts_loadable(
     code, result = _cli(argv, capsys)  # a good import still works
     assert code == 0, result["errors"]
     assert (vendor_dir / "demoamp.yaml").is_file()
+
+
+def _load(tmp_path: Path, text: str) -> tuple[object, list[str]]:
+    path = tmp_path / "doc.yaml"
+    path.write_text(text, encoding="utf-8")
+    diag = Diagnostics()
+    doc = load_yaml(path, "doc.yaml", diag)
+    return doc, [e.rule for e in diag.errors]
+
+
+def test_alias_bomb_is_refused(tmp_path: Path) -> None:
+    lines = ["a: &a [x, x, x, x, x, x, x, x, x]"]
+    for prev, name in zip("abcdefgh", "bcdefghi", strict=True):
+        lines.append(f"{name}: &{name} [" + ", ".join([f"*{prev}"] * 9) + "]")
+    doc, rules = _load(tmp_path, "\n".join(lines) + "\n")  # 9**9 = 387 million values
+    assert doc is None
+    assert rules == ["yaml_too_large"]
+
+
+@pytest.mark.parametrize("depth", [60, 5000])
+def test_deep_nesting_is_refused(tmp_path: Path, depth: int) -> None:
+    doc, rules = _load(tmp_path, "parts: " + "[" * depth + "]" * depth + "\n")
+    assert doc is None
+    assert rules == ["yaml_too_deep"]
+
+
+def test_merge_key_gets_the_parent_position(tmp_path: Path) -> None:
+    doc, rules = _load(tmp_path, "base: &b { type: capacitor }\nC1: { <<: *b, capacitance: 1nF }\n")
+    assert rules == []
+    assert isinstance(doc, Document)
+    assert doc.data == {
+        "base": {"type": "capacitor"},
+        "C1": {"capacitance": "1nF", "type": "capacitor"},
+    }
+    assert doc.source.at("C1", "type").line == 2
+
+
+@pytest.mark.parametrize(
+    "analysis",
+    [
+        "{ type: tran, step: 1ns, stop: 10s }",
+        "{ type: tran, step: 1us, stop: 2s }",
+        "{ type: ac, start: 1e-90Hz, stop: 1THz, points_per_decade: 1000 }",
+    ],
+)
+def test_runaway_analysis_is_refused(make_project: MakeProject, analysis: str) -> None:
+    tests = f"""
+    tests:
+      big:
+        analysis: {analysis}
+        expect:
+          - {{ measure: max(voltage(VCC)), max: 10V }}
+    """
+    measure = "max(voltage(VCC))" if "tran" in analysis else '"at(db(voltage(VCC)), 1kHz)"'
+    unit = "V" if "tran" in analysis else "dB"
+    tests = tests.replace("max(voltage(VCC)), max: 10V", f"{measure}, max: 10{unit}")
+    circuit = LED_CIRCUIT.replace("voltage: 5V }", "voltage: 5V, ac: 1V }")
+    diag = Diagnostics()
+    assert load_design(make_project(circuit, tests), diag) is None
+    assert [e.rule for e in diag.errors] == ["too_many_points"]
+
+
+def test_firmware_cosim_length_is_bounded(tmp_path: Path) -> None:
+    root = tmp_path / "pico_io"
+    shutil.copytree(EXAMPLES / "pico_io", root, ignore=shutil.ignore_patterns("out", "*.jsonl"))
+    (root / "design" / "test.yaml").write_text(
+        dedent("""
+        tests:
+          long:
+            analysis: { type: tran, step: 10us, stop: 2s }
+            firmware: true
+            expect:
+              - { measure: max(current(D1)), min: 5mA }
+        """),
+        encoding="utf-8",
+    )
+    diag = Diagnostics()
+    assert load_design(root, diag) is None
+    assert [e.rule for e in diag.errors] == ["too_many_points"]
+    assert "co-simulation" in diag.errors[0].message
+
+
+def test_board_beyond_one_metre_is_refused(make_project: MakeProject) -> None:
+    root = make_project()
+    (root / "design" / "board.yaml").write_text(
+        "board: { width: 5000mm, height: 20mm }\nplacement:\n  V1: { x: -2m, y: 1mm }\n",
+        encoding="utf-8",
+    )
+    diag = Diagnostics()
+    assert load_design(root, diag) is None
+    assert [e.message for e in diag.errors] == [
+        "board.width = 5000mm is beyond 1000 mm",
+        "placement.V1.x = -2m is beyond 1000 mm",
+    ]

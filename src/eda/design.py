@@ -4,6 +4,7 @@ Pydantic checks structure; this module checks meaning: part types, parameter val
 units, pin references, and test expressions. ERC lives in `eda.verify.erc`.
 """
 
+import math
 import re
 from dataclasses import replace
 from pathlib import Path
@@ -62,6 +63,13 @@ from eda.verify.measure import (
     parse_measure,
     probes,
 )
+
+# Upper bounds that keep a run from hanging or filling the disk: a mistyped step (1ns for
+# 10 s) asks for billions of points, which ngspice would try to compute and store.
+MAX_TRAN_POINTS = 1_000_000
+MAX_AC_POINTS = 100_000
+MAX_COSIM_WINDOWS = 100_000  # firmware co-simulation exchanges values once per step
+MAX_BOARD_MM = 1000.0  # no board dimension, rule, or placement coordinate goes beyond 1 m
 
 
 def load_design(root: Path, diag: Diagnostics) -> Design | None:
@@ -302,6 +310,13 @@ def _resolve_board(
             ok = False
         elif value <= 0 and path[-1] not in ("x", "y"):
             diag.error("invalid_value", f"{'.'.join(path)} must be positive", src.at(*path))
+            ok = False
+        elif abs(value) > MAX_BOARD_MM:
+            diag.error(
+                "invalid_value",
+                f"{'.'.join(path)} = {text} is beyond {MAX_BOARD_MM:g} mm",
+                src.at(*path),
+            )
             ok = False
         return value
 
@@ -700,6 +715,16 @@ def _check_firmware_test(
     if analysis is not None and not isinstance(analysis, Tran):
         diag.error("firmware_needs_tran", f"{name}: firmware runs only in a tran analysis", at)
         return False
+    if isinstance(analysis, Tran):
+        windows = (analysis.stop - (analysis.start or 0.0)) / analysis.step
+        if windows > MAX_COSIM_WINDOWS:
+            diag.error(
+                "too_many_points",
+                f"{name}: firmware co-simulation would take {windows:.3g} steps "
+                f"(limit {MAX_COSIM_WINDOWS}, about 1 ms each); raise step or shorten stop",
+                src.at("tests", name, "analysis", "step"),
+            )
+            return False
     if case.pins:
         diag.error(
             "firmware_pins",
@@ -801,6 +826,15 @@ def _compile_analysis(
                 "invalid_analysis", f"{name}: ac needs 0 < start < stop", _at(src, name, "start")
             )
             return None
+        points = math.log10(stop / start) * raw.points_per_decade
+        if points > MAX_AC_POINTS:
+            diag.error(
+                "too_many_points",
+                f"{name}: ac would compute {points:.3g} frequencies (limit {MAX_AC_POINTS}); "
+                "narrow start..stop or lower points_per_decade",
+                _at(src, name),
+            )
+            return None
         return Ac(start=start, stop=stop, points_per_decade=raw.points_per_decade)
     step, stop, start = values["step"], values["stop"], values["start"]
     assert step is not None and stop is not None
@@ -813,6 +847,15 @@ def _compile_analysis(
         return None
     if start is not None and not 0 <= start < stop:
         diag.error("invalid_analysis", f"{name}: tran needs 0 <= start < stop", _at(src, name))
+        return None
+    points = (stop - (start or 0.0)) / step
+    if points > MAX_TRAN_POINTS:
+        diag.error(
+            "too_many_points",
+            f"{name}: tran would record {points:.3g} time points (limit {MAX_TRAN_POINTS:.0e}); "
+            "raise step or shorten stop",
+            _at(src, name, "step"),
+        )
         return None
     return Tran(step=step, stop=stop, start=start)
 

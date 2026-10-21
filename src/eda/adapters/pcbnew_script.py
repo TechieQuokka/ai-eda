@@ -15,6 +15,7 @@ Keep this file free of eda imports and third-party packages.
 
 import importlib
 import json
+import math
 import os
 import sys
 from pathlib import Path
@@ -110,6 +111,9 @@ def _auto_place(
 
 ROTATIONS = (0.0, 90.0, 180.0, 270.0)
 GRID_MM = 0.5  # candidate positions are on this grid
+# A large area coarsens the grid (in GRID_MM multiples) so one part never tries more than
+# this many positions; boards up to about 100 mm square keep the full GRID_MM grid.
+MAX_CANDIDATES = 40_000
 AREA_WEIGHT = 0.5  # cost of growing the layout's half-perimeter, relative to wire length
 
 
@@ -214,12 +218,14 @@ def _connected_place(
                 area = (0.0, 0.0, 0.0, 0.0)
             x_lo, y_lo = float(area[0] - bx), float(area[1] - by)
             x_hi, y_hi = float(area[2] - bx), float(area[3] - by)
-            steps_x = max(0, int((x_hi - x_lo) / GRID_MM))
-            steps_y = max(0, int((y_hi - y_lo) / GRID_MM))
+            span = max(0.0, x_hi - x_lo) * max(0.0, y_hi - y_lo)
+            grid = GRID_MM * max(1, math.ceil(math.sqrt(span / MAX_CANDIDATES) / GRID_MM))
+            steps_x = max(0, int((x_hi - x_lo) / grid))
+            steps_y = max(0, int((y_hi - y_lo) / grid))
             for i in range(steps_x + 1):
-                x = x_lo + i * GRID_MM
+                x = x_lo + i * grid
                 for j in range(steps_y + 1):
-                    y = y_lo + j * GRID_MM
+                    y = y_lo + j * grid
                     box = (x + bx, y + by, bw, bh)
                     if _overlaps(box, boxes, gap):
                         continue
