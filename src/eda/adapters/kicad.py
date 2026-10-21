@@ -111,6 +111,16 @@ def export_svg(pcb: Path, svg: Path) -> None:
     )  # fmt: skip
 
 
+def export_assembly_svg(pcb: Path, svg: Path) -> None:
+    """Assembly drawing: board outline and each part's body, reference, and value (F.Fab),
+    black on white, at true size (mm) for printing."""
+    run_cli(
+        "pcb", "export", "svg", "--mode-single", "--page-size-mode", "2",
+        "--exclude-drawing-sheet", "--black-and-white", "--sketch-pads-on-fab-layers",
+        "--layers", "Edge.Cuts,F.Fab", "--output", str(svg), str(pcb),
+    )  # fmt: skip
+
+
 def render_3d(pcb: Path, png: Path, side: str = "top") -> None:
     run_cli(
         "pcb", "render", "--side", side, "--width", "1200", "--height", "800",

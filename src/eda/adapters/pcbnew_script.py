@@ -286,6 +286,21 @@ def _target_width(footprints: list[Any], gap: float) -> float:
     return max(widest + gap, (area * 1.5) ** 0.5 * 1.25)
 
 
+def _clear_fab_reference(footprint: Any) -> None:
+    """Move the assembly-drawing reference (F.Fab) where the silkscreen one sits when it
+    would cover pads, as on small connectors; the library places that one clear of them."""
+    pads = [pad.GetBoundingBox() for pad in footprint.Pads()]
+    silk = footprint.Reference()
+    for item in footprint.GraphicalItems():
+        if item.GetClass() != "PCB_TEXT" or item.GetLayer() != pcbnew.F_Fab:
+            continue
+        if "REFERENCE" not in item.GetText():
+            continue
+        if any(item.GetBoundingBox().Intersects(box) for box in pads):
+            item.SetPosition(silk.GetPosition())
+            item.SetTextAngle(silk.GetTextAngle())
+
+
 def build(request: Request) -> Request:
     board = pcbnew.BOARD()
     _apply_rules(board, request["rules"])
@@ -302,6 +317,7 @@ def build(request: Request) -> Request:
         footprint = _load_footprint(item["footprint"])
         footprint.SetReference(item["ref"])
         footprint.SetValue(item["value"])
+        _clear_fab_reference(footprint)
         board.Add(footprint)
         for pad in footprint.Pads():
             net = item["pads"].get(pad.GetNumber())

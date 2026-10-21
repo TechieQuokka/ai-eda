@@ -206,6 +206,10 @@ function renderBoard(state, version) {
       el("a", { href: `/${data.outputs.fabrication}` }, "Gerbers + drill + BOM (.zip)")))));
   const images = el("div", { class: "board-images" });
   if (data.outputs.svg) images.append(el("div", { class: "schematic" }, el("img", { src: `/${data.outputs.svg}?v=${version}`, alt: "board layout" })));
+  if (data.outputs.assembly_svg) images.append(el("div", { class: "schematic" },
+    el("img", { src: `/${data.outputs.assembly_svg}?v=${version}`, alt: "assembly drawing" }),
+    el("p", { class: "muted" }, el("a", { href: `/${data.outputs.assembly_svg}`, target: "_blank" },
+      "Assembly drawing"), " (true size: print at 100% scale)")));
   if (data.outputs.render_3d) images.append(el("img", { class: "render", src: `/${data.outputs.render_3d}?v=${version}`, alt: "3D render" }));
   $("board").replaceChildren(images, facts);
 }

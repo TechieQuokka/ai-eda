@@ -119,6 +119,9 @@ def test_pcb_end_to_end(make_project: MakeProject) -> None:
     assert any(n.endswith(".drl") for n in names)
     assert any(n.endswith("-bom.csv") for n in names)
     assert (root / "out" / "board.svg").is_file()
+    assert (
+        outputs["assembly_svg"] == "out/assembly.svg" and (root / "out" / "assembly.svg").is_file()
+    )
 
     second = pipeline.pcb(root)
     routing2 = second.data["routing"]
@@ -163,6 +166,7 @@ def test_bom_groups_parts(make_project: MakeProject, tmp_path: Path) -> None:
     assert rows["RV1"]["Value"] == "10kΩ"  # the wiper position is simulation state
     assert rows["U1"]["Note"].startswith("generic model")
     assert rows["U2"]["MPN"] == "NE5532" and rows["U2"]["Note"] == ""
+    assert rows["U2"]["Value"] == "NE5532"  # a generic model's value is its real chip
     generic = [w for w in diag.warnings if w.rule == "bom_generic_part"]
     assert [w.details["part"] for w in generic] == ["U1"]
 

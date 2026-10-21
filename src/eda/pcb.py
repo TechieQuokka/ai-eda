@@ -115,10 +115,14 @@ def build(design: Design, diag: Diagnostics) -> dict[str, JsonValue]:
         svg = paths.out_dir / "board.svg"
         kicad.export_svg(pcb, svg)
         outputs["svg"] = rel(svg)
+        assembly = paths.out_dir / "assembly.svg"
+        kicad.export_assembly_svg(pcb, assembly)
+        outputs["assembly_svg"] = rel(assembly)
         if rasterize.available() is not None:
-            png = svg.with_suffix(".png")
-            rasterize.svg_to_png(svg, png, paths.out_dir / ".chrome-profile", width=1200)
-            outputs["png"] = rel(png)
+            for image, key in ((svg, "png"), (assembly, "assembly_png")):
+                png = image.with_suffix(".png")
+                rasterize.svg_to_png(image, png, paths.out_dir / ".chrome-profile", width=1200)
+                outputs[key] = rel(png)
         render = paths.out_dir / "board-3d.png"
         kicad.render_3d(pcb, render)
         outputs["render_3d"] = rel(render)
