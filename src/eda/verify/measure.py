@@ -14,6 +14,12 @@ Functions by analysis:
                                                                trace crosses LEVEL
                 period(trace, LEVEL)            tran           mean time between rising
                                                                crossings of LEVEL
+                width(trace, LEVEL)             tran           mean time above LEVEL per
+                                                               pulse (rise to fall)
+                gap(trace, LEVEL)               tran           mean time below LEVEL
+                                                               between pulses (fall to rise)
+                duty(trace, LEVEL)              tran           % of the time above LEVEL,
+                                                               over whole periods
     transforms  db mag phase                    ac             complex trace → real trace
 
 A `tran` measure must end in a value; an `ac` probe must pass through db(), mag(), or
@@ -25,6 +31,7 @@ import math
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from itertools import pairwise
 from typing import Final, Literal
 
 from eda.units import QuantityError, parse_any_quantity
@@ -34,7 +41,8 @@ type Domain = Literal["op", "tran", "ac"]
 REDUCTIONS: Final = ("max", "min", "initial", "final", "avg", "rms", "pp")
 TIME_ONLY: Final = frozenset({"avg", "rms", "pp"})
 TRANSFORMS: Final = {"db": "dB", "mag": None, "phase": "deg"}
-SAMPLERS: Final = ("at", "cross", "period")
+SAMPLERS: Final = ("at", "cross", "period", "width", "gap", "duty")
+PULSE: Final = frozenset({"period", "width", "gap", "duty"})  # tran only, LEVEL crossings
 X_UNIT: Final[dict[Domain, str | None]] = {"op": None, "tran": "s", "ac": "Hz"}
 
 _TOKEN: Final = re.compile(r"\s*(?:(?P<open>\()|(?P<close>\))|(?P<comma>,)|(?P<atom>[^\s(),]+))")
@@ -232,7 +240,7 @@ def check(node: Node, domain: Domain) -> Measure:
             raise MeasureTypeError(
                 f"{node.text}: a tran analysis gives a waveform; reduce it with max(), min(), "
                 "avg(), rms(), pp(), initial(), final(), at(..., TIME), cross(..., LEVEL), "
-                "or period(..., LEVEL)"
+                "period(), width(), gap(), or duty(..., LEVEL)"
             )
         if domain == "ac":
             raise MeasureTypeError(
@@ -265,8 +273,8 @@ def _check(node: Node, domain: Domain) -> _Type:
         x_unit = X_UNIT[domain]
         if x_unit is None:
             raise MeasureTypeError(f"{node.text}: {fn}() needs a tran or ac analysis")
-        if fn == "period" and domain != "tran":
-            raise MeasureTypeError(f"{node.text}: period() needs a tran analysis")
+        if fn in PULSE and domain != "tran":
+            raise MeasureTypeError(f"{node.text}: {fn}() needs a tran analysis")
         assert node.quantity is not None
         expected = x_unit if fn == "at" else inner.unit
         if node.quantity.unit != expected:
@@ -274,6 +282,8 @@ def _check(node: Node, domain: Domain) -> _Type:
                 f"{node.text}: second argument of {fn}() must be in {expected}, "
                 f"got {node.quantity.text!r}"
             )
+        if fn == "duty":
+            return _Type("value", "%")
         return _Type("value", inner.unit if fn == "at" else x_unit)
     return _Type("value", inner.unit)
 
@@ -327,8 +337,8 @@ def _eval(
         if node.fn == "at":
             target = math.log10(node.quantity.value) if domain == "ac" else node.quantity.value
             return _interpolate(xs, values, target)
-        if node.fn == "period":
-            return _period(xs, values, node.quantity.value)
+        if node.fn in PULSE:
+            return _pulse(node.fn, xs, values, node.quantity.value)
         found = _crossing(xs, values, node.quantity.value)
         return 10**found if domain == "ac" and math.isfinite(found) else found
     return reduce(node.fn, x if domain == "tran" else None, values)
@@ -382,16 +392,32 @@ def _crossing(xs: Sequence[float], ys: Sequence[float], level: float) -> float:
     return math.nan
 
 
-def _period(xs: Sequence[float], ys: Sequence[float], level: float) -> float:
-    """Mean spacing of the times the trace rises through `level` (NaN below two rises)."""
-    rises: list[float] = []
+def _edges(xs: Sequence[float], ys: Sequence[float], level: float) -> list[tuple[float, bool]]:
+    """Times the trace crosses `level`, with True for rising (reaching it counts as above)."""
+    edges: list[tuple[float, bool]] = []
     for i in range(1, len(xs)):
         a, b = ys[i - 1] - level, ys[i] - level
-        if a < 0 <= b:
-            rises.append(xs[i - 1] + (xs[i] - xs[i - 1]) * a / (a - b))
-    if len(rises) < 2:
+        if (a < 0) != (b < 0):
+            edges.append((xs[i - 1] + (xs[i] - xs[i - 1]) * a / (a - b), a < 0))
+    return edges
+
+
+def _pulse(fn: str, xs: Sequence[float], ys: Sequence[float], level: float) -> float:
+    """period / width / gap / duty from the LEVEL crossings, over complete cycles only
+    (NaN when there are none): partial pulses at the ends of the run do not count."""
+    edges = _edges(xs, ys, level)
+    rises = [t for t, rising in edges if rising]
+    if fn == "period":
+        return (rises[-1] - rises[0]) / (len(rises) - 1) if len(rises) >= 2 else math.nan
+    pulses = [(a, b - a, up) for (a, up), (b, _) in pairwise(edges)]  # start, length, high
+    if fn in ("width", "gap"):
+        lengths = [length for _, length, high in pulses if high == (fn == "width")]
+        return sum(lengths) / len(lengths) if lengths else math.nan
+    if len(rises) < 2:  # duty: the high time between the first and the last rise
         return math.nan
-    return (rises[-1] - rises[0]) / (len(rises) - 1)
+    first, last = rises[0], rises[-1]
+    high = sum(length for start, length, up in pulses if up and first <= start < last)
+    return 100.0 * high / (last - first)
 
 
 def reduce(reduction: str | None, time: Sequence[float] | None, values: Sequence[float]) -> float:

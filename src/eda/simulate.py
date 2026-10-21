@@ -613,6 +613,9 @@ def _judge(
             hint = {
                 "cross": "the trace never crosses that level",
                 "period": "the trace does not rise through that level twice",
+                "duty": "the trace does not rise through that level twice",
+                "width": "no complete pulse above that level",
+                "gap": "no complete gap below that level",
             }.get(measure.reduction or "", "outside the simulated range")
         elif exp.min is not None and value < exp.min:
             hint = f"too low by {format_quantity(exp.min - value, unit)}"

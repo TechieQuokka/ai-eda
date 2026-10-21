@@ -129,3 +129,38 @@ def test_reductions() -> None:
     assert reduce("avg", time, values) == 1.0  # trapezoid area 2 over 2 s
     assert math.isclose(reduce("rms", time, values), math.sqrt(2.0))
     assert reduce(None, None, [5.0]) == 5.0
+
+
+def test_pulse_measures() -> None:
+    # 1 s period, high for 0.3 s from 0.2 s of each second; the run starts and ends mid-gap
+    # and the first pulse is complete, so only whole pulses and gaps count.
+    xs = [i * 0.001 for i in range(4651)]  # 0 .. 4.65 s
+    ys = [2.0 if 0.2 <= x % 1.0 < 0.5 else 0.0 for x in xs]
+
+    def value(text: str) -> float:
+        node = parse_measure(text)
+        check(node, "tran")
+        return evaluate(node, "tran", xs, lambda _probe: ys)
+
+    assert value("period(voltage(A), 1V)") == pytest.approx(1.0, abs=2e-3)
+    assert value("width(voltage(A), 1V)") == pytest.approx(0.3, abs=2e-3)
+    assert value("gap(voltage(A), 1V)") == pytest.approx(0.7, abs=2e-3)
+    assert value("duty(voltage(A), 1V)") == pytest.approx(30.0, abs=0.3)
+    assert check(parse_measure("duty(voltage(A), 1V)"), "tran").unit == "%"
+    assert check(parse_measure("width(current(D1), 3mA)"), "tran").unit == "s"
+    flat = [0.0] * len(xs)
+    node = parse_measure("width(voltage(A), 1V)")
+    assert math.isnan(evaluate(node, "tran", xs, lambda _probe: flat))
+
+
+@pytest.mark.parametrize(
+    ("text", "domain", "message"),
+    [
+        ("width(db(voltage(A)), 1dB)", "ac", "needs a tran analysis"),
+        ("gap(voltage(A), 1V)", "op", "needs a tran or ac analysis"),
+        ("duty(voltage(A), 1mA)", "tran", "must be in V"),
+    ],
+)
+def test_pulse_measure_rules(text: str, domain: str, message: str) -> None:
+    with pytest.raises(MeasureTypeError, match=message):
+        check(parse_measure(text), domain)  # pyright: ignore[reportArgumentType]
