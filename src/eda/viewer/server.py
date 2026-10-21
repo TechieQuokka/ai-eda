@@ -22,7 +22,7 @@ from watchfiles import Change
 from watchfiles import watch as watch_files
 
 from eda import history, pipeline
-from eda.project import BUILTIN_PARTS_DIR, ProjectPaths
+from eda.project import BUILTIN_PARTS_DIR, ProjectPaths, project_lock
 
 STATIC_DIR = Path(__file__).parent / "static"
 KEEPALIVE_S = 15.0
@@ -122,8 +122,9 @@ class _Handler(BaseHTTPRequestHandler):
 
 
 def _run(paths: ProjectPaths, hub: _Hub, reason: str) -> None:
-    result = pipeline.run(paths.root)
-    history.record_run(paths, result, only_if_changed=True)
+    with project_lock(paths):
+        result = pipeline.run(paths.root)
+        history.record_run(paths, result, only_if_changed=True)
     status = "ok" if result.ok else f"{len(result.errors)} error(s)"
     print(f"[eda watch] {reason}: {status}", file=sys.stderr, flush=True)
     hub.bump()

@@ -4,6 +4,8 @@ import json
 import os
 import re
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 from textwrap import dedent
 
@@ -14,6 +16,7 @@ from eda import pipeline, vendor
 from eda.cli import main
 from eda.design import load_design
 from eda.loader import Document, load_yaml
+from eda.project import ProjectPaths, project_lock
 from eda.result import Diagnostics
 from eda.schema.part import ParamSpec
 from tests.conftest import LED_CIRCUIT, MakeProject, requires_ngspice
@@ -482,3 +485,15 @@ def test_reversed_opamp_supply(make_project: MakeProject) -> None:
     """
     result = pipeline.sim(make_project(circuit, tests))
     assert "supply_reversed" in [e.rule for e in result.errors]
+
+
+def test_commands_on_one_project_take_turns(make_project: MakeProject) -> None:
+    root = make_project()
+    command = [sys.executable, "-m", "eda.cli", "check", str(root)]
+    with project_lock(ProjectPaths(root)):
+        proc = subprocess.Popen(command, stdout=subprocess.PIPE, text=True)
+        with pytest.raises(subprocess.TimeoutExpired):
+            proc.wait(timeout=2)  # blocked on the lock we hold
+    stdout, _ = proc.communicate(timeout=60)
+    assert proc.returncode == 0
+    assert json.loads(stdout)["ok"] is True

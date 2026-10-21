@@ -1,5 +1,8 @@
 """Project layout and the part database."""
 
+import fcntl
+from collections.abc import Generator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -73,6 +76,16 @@ class ProjectPaths:
         if self.parts_dir.is_dir():
             files.extend(sorted(self.parts_dir.glob("*.yaml")))
         return [f for f in files if f.is_file()]
+
+
+@contextmanager
+def project_lock(paths: ProjectPaths) -> Generator[None]:
+    """Hold the project's lock: commands on one project (a manual `eda run` while
+    `eda watch` re-runs) take turns instead of overwriting each other's files in out/."""
+    paths.out_dir.mkdir(parents=True, exist_ok=True)
+    with (paths.out_dir / ".lock").open("a") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)  # released when the file closes
+        yield
 
 
 def find_project(start: Path) -> Path | None:

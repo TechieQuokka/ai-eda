@@ -10,7 +10,7 @@ from pathlib import Path
 from pydantic import JsonValue
 
 from eda import eseries, history, pipeline, vendor
-from eda.project import ProjectPaths, find_project, load_parts
+from eda.project import ProjectPaths, find_project, load_parts, project_lock
 from eda.result import Diagnostics, ExitCode, Result
 from eda.units import format_quantity, parse_any_quantity
 
@@ -74,6 +74,11 @@ def _dispatch(args: argparse.Namespace, command: str) -> int:
 
         return watch(root, host=args.host, port=args.port, open_browser=not args.no_open)
 
+    with project_lock(paths):
+        return _emit(_run_command(args, command, root, paths))
+
+
+def _run_command(args: argparse.Namespace, command: str, root: Path, paths: ProjectPaths) -> Result:
     result: Result
     if command == "check":
         result, _ = pipeline.check(root)
@@ -88,7 +93,7 @@ def _dispatch(args: argparse.Namespace, command: str) -> int:
     else:
         result = pipeline.run(root)
     history.record_run(paths, result, note=args.message)
-    return _emit(result)
+    return result
 
 
 def _parser() -> argparse.ArgumentParser:
