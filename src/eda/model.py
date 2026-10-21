@@ -193,6 +193,32 @@ class CompiledEvent:
     net: str | None = None  # UART RX net
     uart: int | None = None
     text: str = ""
+    key: str | None = None  # the key of a `keys` event this part change belongs to
+    release: bool = False  # the key is let go (True) or pressed (False)
+
+
+@dataclass(frozen=True)
+class KeyBinding:
+    """What one key of design/inputs.yaml does: parameters set on `part` when it is
+    pressed and when it is released (param → (value, label))."""
+
+    part: str
+    press: dict[str, tuple[float | str, str]]
+    release: dict[str, tuple[float | str, str]]
+
+
+@dataclass(frozen=True)
+class Inputs:
+    """design/inputs.yaml, resolved: key bindings and timing (seconds)."""
+
+    keys: dict[str, KeyBinding]
+    hold: float
+    gap: float
+    start: float
+    settle: float
+    step: float
+    # Keys whose binding has errors (reported in inputs.yaml, not again where they are used).
+    invalid: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -329,3 +355,4 @@ class Design:
     parts: dict[str, PartSpec]
     board: ResolvedBoard | None = None
     firmware: ResolvedFirmware | None = None
+    inputs: Inputs | None = None

@@ -170,7 +170,10 @@ def _plot_series(
         if exp.max is not None:
             bounds.append(waveform.Bound(label, unit, exp.max, axis))
     for event in test.events:
-        if event.part is not None:
+        if event.key is not None:
+            # A key string makes many events: label each press with its key only.
+            text = "" if event.release else f"key {event.key}"
+        elif event.part is not None:
             what = ", ".join(f"{k}={label}" for k, (_, label) in event.values.items())
             text = f"{event.part}: {what}"
         else:

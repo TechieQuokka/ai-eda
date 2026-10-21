@@ -10,7 +10,7 @@ from typing import NoReturn
 
 from pydantic import JsonValue
 
-from eda import eseries, history, pipeline, vendor
+from eda import eseries, explore, history, pipeline, vendor
 from eda.project import ProjectPaths, find_project, load_parts, project_lock
 from eda.result import Diagnostics, ExitCode, Result
 from eda.units import format_quantity, parse_any_quantity
@@ -81,6 +81,21 @@ def _dispatch(args: argparse.Namespace, command: str) -> int:
 
 def _run_command(args: argparse.Namespace, command: str, root: Path, paths: ProjectPaths) -> Result:
     result: Result
+    if command == "try":  # exploration: not a design iteration, so not logged
+        return explore.run(
+            root,
+            explore.TryRequest(
+                keys=args.keys,
+                at=args.at,
+                events=args.event or [],
+                sends=args.send or [],
+                sets=args.set or [],
+                from_test=args.from_test,
+                stop=args.stop,
+                step=args.step,
+                measures=args.measure or [],
+            ),
+        )
     if command == "check":
         result, _ = pipeline.check(root)
     elif command == "sim":
@@ -135,6 +150,31 @@ def _parser() -> argparse.ArgumentParser:
     fw.add_argument("--build", action="store_true", help="also compile with the pico-sdk")
     with_note(with_project("pcb", "build, autoroute, DRC, and export the board"))
     with_note(with_project("run", "check, sim, render, and pcb (if board.yaml) in one call"))
+    trial = with_project(
+        "try",
+        "run the circuit (and firmware) with inputs given here instead of in test.yaml; "
+        "reports screens, UART output, and measures, judges nothing, logs nothing",
+    )
+    trial.add_argument("--keys", help='keys to press, mapped in design/inputs.yaml, e.g. "12+34="')
+    trial.add_argument("--at", help="time of the first key (default: inputs.yaml start)")
+    trial.add_argument(
+        "--event", action="append", metavar="'TIME PART.param=VALUE'", help="a part change"
+    )
+    trial.add_argument(
+        "--send", action="append", metavar="'TIME NET TEXT'", help=r"UART input (\n for newline)"
+    )
+    trial.add_argument(
+        "--set", action="append", metavar="PART.param=VALUE", help="a part setting for the run"
+    )
+    trial.add_argument("--from", dest="from_test", metavar="TEST", help="start from a tran test")
+    trial.add_argument("--stop", help="run length (default: last input + inputs.yaml settle)")
+    trial.add_argument("--step", help="time step (default: inputs.yaml step, or 1ms)")
+    trial.add_argument(
+        "--measure",
+        action="append",
+        metavar="EXPR",
+        help='a value to report, e.g. "max(current(D1))"',
+    )
     log = with_project("log", "append a note to the iteration log")
     log.add_argument("-m", "--message", required=True, help="what changed and why")
     watch = with_project("watch", "re-run on file changes and serve the live viewer")

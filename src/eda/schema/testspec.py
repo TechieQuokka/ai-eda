@@ -85,25 +85,34 @@ class Expectation(StrictModel):
 
 class SimEvent(StrictModel):
     """Something that happens during a tran test, at time `at`: a part parameter changes
-    (`part` + `set`, e.g. a button is pressed) or text arrives on a firmware UART RX net
-    (`serial` + `send`)."""
+    (`part` + `set`, e.g. a button is pressed), text arrives on a firmware UART RX net
+    (`serial` + `send`), or keys are pressed one after another (`keys`, mapped to parts in
+    design/inputs.yaml; `hold` / `gap` override its timing)."""
 
     at: str
     part: Ident | None = None
     set: dict[str, Scalar] | None = None
     serial: Ident | None = None  # UART RX net name
     send: str | None = None
+    keys: str | None = None  # e.g. "12+34=" or "{menu}1"
+    hold: str | None = None
+    gap: str | None = None
 
     @model_validator(mode="after")
     def _one_kind(self) -> Self:
         part = self.part is not None or self.set is not None
         serial = self.serial is not None or self.send is not None
-        if part == serial:
-            raise ValueError("give either `part` + `set` or `serial` + `send`")
+        keys = self.keys is not None
+        if part + serial + keys != 1:
+            raise ValueError("give one of `part` + `set`, `serial` + `send`, or `keys`")
         if part and (self.part is None or not self.set):
             raise ValueError("`part` and `set` go together")
         if serial and (self.serial is None or self.send is None):
             raise ValueError("`serial` and `send` go together")
+        if not keys and (self.hold is not None or self.gap is not None):
+            raise ValueError("`hold` and `gap` go with `keys`")
+        if keys and not self.keys:
+            raise ValueError("`keys` is empty")
         return self
 
 
@@ -120,6 +129,13 @@ class SimTest(StrictModel):
     firmware: bool = False
     events: list[SimEvent] = Field(default_factory=list[SimEvent])  # tran only
     expect: Annotated[list[Expectation], Field(min_length=1)]
+
+
+class TryTest(SimTest):
+    """The test `eda try` builds from its options: like a test, but expectations are only
+    reported (`measure` without bounds), so there may be none."""
+
+    expect: list[Expectation] = Field(default_factory=list[Expectation])
 
 
 class SimTestFile(StrictModel):

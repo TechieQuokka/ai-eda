@@ -47,6 +47,10 @@ class ProjectPaths:
         return self.root / "design" / "firmware.yaml"
 
     @property
+    def inputs_file(self) -> Path:
+        return self.root / "design" / "inputs.yaml"
+
+    @property
     def parts_dir(self) -> Path:
         return self.root / "parts"
 

@@ -4,6 +4,16 @@ All notable changes to ai-eda. Versions follow [Semantic Versioning](https://sem
 MAJOR for changes that break existing design files or the CLI's JSON, MINOR for new
 features that keep them working, PATCH for fixes. Each release is tagged `vX.Y.Z`.
 
+## [Unreleased]
+
+### Added
+- `eda try`: run the circuit and its firmware with inputs given on the command line (keys,
+  part changes, UART text, part settings, starting from a test), reporting screens, UART
+  output, and measured values without judging or logging anything.
+- `design/inputs.yaml`: how a person operates the board (key → part, hold and gap times).
+- `keys` events in tests: `{ at: 150ms, keys: "12+34=" }` presses keys one after another.
+- The calculator's key tests use `keys` events (test.yaml from 250 to 160 lines).
+
 ## [1.1.1] - 2026-10-21
 
 ### Fixed

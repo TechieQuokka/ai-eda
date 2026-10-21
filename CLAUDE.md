@@ -39,6 +39,9 @@ For a design task in `projects/<name>/` (schema: `DESIGN_DECISIONS.md` §10; exa
 6. Look at `out/schematic.png`, `out/waves/<test>.png`, and (with a board) `out/board.png` before reporting; when everything passes, report to the user. `eda render` also writes a KiCad schematic, `out/kicad/<name>.kicad_sch`, placed and wired, checked against the design's nets; `out/kicad/<name>.png` shows the drawing (cropped), `.svg` the full sheet.
 
 Other commands: `eda check`, `eda sim [-t TEST]`, `eda render`, `eda pcb`, `eda part list`, `eda part show ID`, `eda value TARGET [-s SERIES]`.
+
+**Trying inputs** (`eda try`): runs the circuit and its firmware with inputs given on the command line, without editing `test.yaml`; nothing is judged or logged. `--keys "9*8-2="` (keys mapped in `design/inputs.yaml`, from its `start`), `--at TIME`, `--event "150ms SW1.state=pressed"`, `--send "300ms UART_RX rate 100\n"`, `--set RV1.position=25%`, `--from TEST` (start from a tran test), `--stop`, `--step`, `--measure "max(current(D1))"` (value reported). Results: `data.try` (`displays`, `firmware.serial`, `expectations` values, `events`), files in `out/try/` and `out/display/try.*`. Use it to explore; turn what matters into a test.
+
 The CLI never makes design decisions; it only reports.
 
 ## 4. Iteration Log and Viewer
@@ -53,6 +56,7 @@ The CLI never makes design decisions; it only reports.
 - Functions: `max min initial final avg rms pp`, `at(trace, 1ms | 1kHz | 5V)`, `cross(trace, LEVEL)` (time / frequency / swept value of the first crossing; dc: e.g. `"cross(current(D1), 1mA)"` in lx when sweeping light), `period(trace, LEVEL)` (tran: mean time between rising crossings), `width(trace, LEVEL)` / `gap(trace, LEVEL)` (tran: mean time above / below LEVEL per pulse, whole pulses only), `duty(trace, LEVEL)` (tran: % of the time above LEVEL), and for AC `db mag phase`. Examples: `"at(db(voltage(OUT)), 1kHz)"`, `"cross(db(voltage(OUT)), 17.8dB)"`, `"period(current(D1), 3mA)"`, `"width(current(D1), 3mA)"`.
 - Per-test part parameters: `parts: { SW1: { state: pressed }, RV1: { position: 25% } }`.
 - Events during a `tran` test: `events: [{ at: 1.1s, part: SW1, set: { state: pressed } }, { at: 300ms, serial: UART_RX, send: "rate 100\n" }]`. Part events can change R/C/L values (switches, pots, resistors, an LDR's `light`) and a DC source's `voltage`; serial events need `firmware: true`. Event times are marked on the waveform plots.
+- Key presses: `{ at: 150ms, keys: "12+34=" }` presses one key after another (each a press and a release event; optional `hold` / `gap` per event). Keys are mapped in `design/inputs.yaml`: `keys: { "1": K1, "+": KADD, menu: { part: RV1, press: { position: 90% }, release: { position: 10% } } }` (a bare part name is a button: `state` pressed, then open; a key longer than one character is written `{menu}` in a key string), plus `hold`, `gap` (default 40 ms each) and, for `eda try`, `start`, `settle`, `step`. Rules: `keys_need_inputs`, `unknown_key`, `key_part`, `event_time` (released after the run ends).
 - Time range of a tran measure: `{ measure: "period(current(D1), 3mA)", from: 1.6s, to: 2s, ... }` (either bound may be left out).
 - Display expectations: `{ display: DS1, match: '^  1\.2$', at: 1.25s }` searches the text on a display part's screen (rows joined by newlines; `at` defaults to the end of the run); with `min`/`max` the value is the number in the capture group, or the count of matches. See §9.
 - **Quote any measure that contains a comma** inside `{ ... }`.

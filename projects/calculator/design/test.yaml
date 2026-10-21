@@ -37,18 +37,7 @@ tests:
     analysis: { type: tran, step: 1ms, stop: 660ms }
     firmware: true
     events:
-      - { at: 150ms, part: K1, set: { state: pressed } }
-      - { at: 190ms, part: K1, set: { state: open } }
-      - { at: 230ms, part: K2, set: { state: pressed } }
-      - { at: 270ms, part: K2, set: { state: open } }
-      - { at: 310ms, part: KADD, set: { state: pressed } }
-      - { at: 350ms, part: KADD, set: { state: open } }
-      - { at: 390ms, part: K3, set: { state: pressed } }
-      - { at: 430ms, part: K3, set: { state: open } }
-      - { at: 470ms, part: K4, set: { state: pressed } }
-      - { at: 510ms, part: K4, set: { state: open } }
-      - { at: 550ms, part: KEQ, set: { state: pressed } }
-      - { at: 590ms, part: KEQ, set: { state: open } }
+      - { at: 150ms, keys: "12+34=" }   # each key held 40 ms, 40 ms apart
     expect:
       - { display: LCD1, match: '^12\+34=\n +46$' }
       - { display: LCD1, at: 300ms, match: '^12\n +12$' }
@@ -60,18 +49,7 @@ tests:
     analysis: { type: tran, step: 1ms, stop: 660ms }
     firmware: true
     events:
-      - { at: 150ms, part: K2, set: { state: pressed } }
-      - { at: 190ms, part: K2, set: { state: open } }
-      - { at: 230ms, part: KADD, set: { state: pressed } }
-      - { at: 270ms, part: KADD, set: { state: open } }
-      - { at: 310ms, part: K3, set: { state: pressed } }
-      - { at: 350ms, part: K3, set: { state: open } }
-      - { at: 390ms, part: KMUL, set: { state: pressed } }
-      - { at: 430ms, part: KMUL, set: { state: open } }
-      - { at: 470ms, part: K4, set: { state: pressed } }
-      - { at: 510ms, part: K4, set: { state: open } }
-      - { at: 550ms, part: KEQ, set: { state: pressed } }
-      - { at: 590ms, part: KEQ, set: { state: open } }
+      - { at: 150ms, keys: "2+3*4=" }
     expect:
       - { display: LCD1, match: '^2\+3\x004=\n +20$' }
   divide:
@@ -81,24 +59,7 @@ tests:
     analysis: { type: tran, step: 1ms, stop: 900ms }
     firmware: true
     events:
-      - { at: 150ms, part: K7, set: { state: pressed } }
-      - { at: 190ms, part: K7, set: { state: open } }
-      - { at: 230ms, part: KDIV, set: { state: pressed } }
-      - { at: 270ms, part: KDIV, set: { state: open } }
-      - { at: 310ms, part: K2, set: { state: pressed } }
-      - { at: 350ms, part: K2, set: { state: open } }
-      - { at: 390ms, part: KEQ, set: { state: pressed } }
-      - { at: 430ms, part: KEQ, set: { state: open } }
-      - { at: 470ms, part: KCLR, set: { state: pressed } }
-      - { at: 510ms, part: KCLR, set: { state: open } }
-      - { at: 550ms, part: K1, set: { state: pressed } }
-      - { at: 590ms, part: K1, set: { state: open } }
-      - { at: 630ms, part: KDIV, set: { state: pressed } }
-      - { at: 670ms, part: KDIV, set: { state: open } }
-      - { at: 710ms, part: K3, set: { state: pressed } }
-      - { at: 750ms, part: K3, set: { state: open } }
-      - { at: 790ms, part: KEQ, set: { state: pressed } }
-      - { at: 830ms, part: KEQ, set: { state: open } }
+      - { at: 150ms, keys: "7/2=c1/3=" }
     expect:
       - { display: LCD1, at: 450ms, match: '^7\x022=\n +3\.5$' }
       - { display: LCD1, match: '^1\x023=\n +0\.333333333$' }
@@ -108,16 +69,7 @@ tests:
     analysis: { type: tran, step: 1ms, stop: 580ms }
     firmware: true
     events:
-      - { at: 150ms, part: K5, set: { state: pressed } }
-      - { at: 190ms, part: K5, set: { state: open } }
-      - { at: 230ms, part: KDIV, set: { state: pressed } }
-      - { at: 270ms, part: KDIV, set: { state: open } }
-      - { at: 310ms, part: K0, set: { state: pressed } }
-      - { at: 350ms, part: K0, set: { state: open } }
-      - { at: 390ms, part: KEQ, set: { state: pressed } }
-      - { at: 430ms, part: KEQ, set: { state: open } }
-      - { at: 470ms, part: KCLR, set: { state: pressed } }
-      - { at: 510ms, part: KCLR, set: { state: open } }
+      - { at: 150ms, keys: "5/0=c" }
     expect:
       - { display: LCD1, at: 450ms, match: '^5\x020\n +Error$' }
       - { display: LCD1, match: '^\n +0$' }
@@ -127,22 +79,7 @@ tests:
     analysis: { type: tran, step: 1ms, stop: 820ms }
     firmware: true
     events:
-      - { at: 150ms, part: KDOT, set: { state: pressed } }
-      - { at: 190ms, part: KDOT, set: { state: open } }
-      - { at: 230ms, part: K1, set: { state: pressed } }
-      - { at: 270ms, part: K1, set: { state: open } }
-      - { at: 310ms, part: KADD, set: { state: pressed } }
-      - { at: 350ms, part: KADD, set: { state: open } }
-      - { at: 390ms, part: K0, set: { state: pressed } }
-      - { at: 430ms, part: K0, set: { state: open } }
-      - { at: 470ms, part: KDOT, set: { state: pressed } }
-      - { at: 510ms, part: KDOT, set: { state: open } }
-      - { at: 550ms, part: KDOT, set: { state: pressed } }
-      - { at: 590ms, part: KDOT, set: { state: open } }
-      - { at: 630ms, part: K2, set: { state: pressed } }
-      - { at: 670ms, part: K2, set: { state: open } }
-      - { at: 710ms, part: KEQ, set: { state: pressed } }
-      - { at: 750ms, part: KEQ, set: { state: open } }
+      - { at: 150ms, keys: ".1+0..2=" }
     expect:
       - { display: LCD1, match: '^0\.1\+0\.2=\n +0\.3$' }
   edit_keys:
@@ -151,40 +88,7 @@ tests:
     analysis: { type: tran, step: 1ms, stop: 1540ms }
     firmware: true
     events:
-      - { at: 150ms, part: K1, set: { state: pressed } }
-      - { at: 190ms, part: K1, set: { state: open } }
-      - { at: 230ms, part: K2, set: { state: pressed } }
-      - { at: 270ms, part: K2, set: { state: open } }
-      - { at: 310ms, part: KADD, set: { state: pressed } }
-      - { at: 350ms, part: KADD, set: { state: open } }
-      - { at: 390ms, part: K3, set: { state: pressed } }
-      - { at: 430ms, part: K3, set: { state: open } }
-      - { at: 470ms, part: KDEL, set: { state: pressed } }
-      - { at: 510ms, part: KDEL, set: { state: open } }
-      - { at: 550ms, part: K4, set: { state: pressed } }
-      - { at: 590ms, part: K4, set: { state: open } }
-      - { at: 630ms, part: KEQ, set: { state: pressed } }
-      - { at: 670ms, part: KEQ, set: { state: open } }
-      - { at: 710ms, part: KCLR, set: { state: pressed } }
-      - { at: 750ms, part: KCLR, set: { state: open } }
-      - { at: 790ms, part: K2, set: { state: pressed } }
-      - { at: 830ms, part: K2, set: { state: open } }
-      - { at: 870ms, part: K0, set: { state: pressed } }
-      - { at: 910ms, part: K0, set: { state: open } }
-      - { at: 950ms, part: K0, set: { state: pressed } }
-      - { at: 990ms, part: K0, set: { state: open } }
-      - { at: 1030ms, part: KADD, set: { state: pressed } }
-      - { at: 1070ms, part: KADD, set: { state: open } }
-      - { at: 1110ms, part: K1, set: { state: pressed } }
-      - { at: 1150ms, part: K1, set: { state: open } }
-      - { at: 1190ms, part: K0, set: { state: pressed } }
-      - { at: 1230ms, part: K0, set: { state: open } }
-      - { at: 1270ms, part: KPCT, set: { state: pressed } }
-      - { at: 1310ms, part: KPCT, set: { state: open } }
-      - { at: 1350ms, part: KEQ, set: { state: pressed } }
-      - { at: 1390ms, part: KEQ, set: { state: open } }
-      - { at: 1430ms, part: KNEG, set: { state: pressed } }
-      - { at: 1470ms, part: KNEG, set: { state: open } }
+      - { at: 150ms, keys: "12+3b4=c200+10%=n" }
     expect:
       - { display: LCD1, at: 700ms, match: '^12\+4=\n +16$' }
       - { display: LCD1, at: 1420ms, match: '^200\+10%=\n +220$' }

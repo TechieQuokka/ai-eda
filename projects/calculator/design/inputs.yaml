@@ -1,0 +1,27 @@
+# How a person uses the calculator: each key of a key string presses one button.
+# Used by `keys` events in test.yaml and by `eda try --keys "12+34="`.
+keys:
+  "0": K0
+  "1": K1
+  "2": K2
+  "3": K3
+  "4": K4
+  "5": K5
+  "6": K6
+  "7": K7
+  "8": K8
+  "9": K9
+  ".": KDOT
+  "+": KADD
+  "-": KSUB
+  "*": KMUL
+  "/": KDIV
+  "=": KEQ
+  "%": KPCT
+  "n": KNEG   # +/- (change sign)
+  "b": KDEL   # <- (backspace)
+  "c": KCLR   # C (clear)
+hold: 40ms    # each key held 40 ms: the firmware needs 3 scans 5 ms apart
+gap: 40ms
+start: 150ms  # the LCD is ready about 70 ms after power-up
+settle: 50ms

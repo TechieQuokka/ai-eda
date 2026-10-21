@@ -27,6 +27,8 @@ from eda.model import (
     Dc,
     Design,
     DisplayExpectation,
+    Inputs,
+    KeyBinding,
     Op,
     PinKey,
     ResolvedBoard,
@@ -45,6 +47,7 @@ from eda.schema.board import BoardFile, FabSpec
 from eda.schema.circuit import Circuit
 from eda.schema.common import Scalar
 from eda.schema.firmware import FirmwareFile
+from eda.schema.inputs import InputsFile, KeyAction
 from eda.schema.part import ParamSpec, PartSpec, SegmentDisplaySpec, Ssd1306DisplaySpec
 from eda.schema.project import Project
 from eda.schema.testspec import (
@@ -101,12 +104,26 @@ def load_design(root: Path, diag: Diagnostics) -> Design | None:
         if raw_fw is not None and fw_doc is not None:
             firmware = fw.resolve(raw_fw, fw_doc.source, circuit, diag)
 
+    inputs: Inputs | None = None
+    if paths.inputs_file.is_file() and circuit is not None:
+        inputs_doc = load_yaml(paths.inputs_file, paths.rel(paths.inputs_file), diag)
+        raw_inputs = validate(InputsFile, inputs_doc, diag) if inputs_doc is not None else None
+        if raw_inputs is not None and inputs_doc is not None:
+            inputs = _resolve_inputs(raw_inputs, inputs_doc.source, circuit, diag)
+
     tests: dict[str, CompiledTest] = {}
     test_doc = load_yaml(paths.test_file, paths.rel(paths.test_file), diag)
     if test_doc is not None:
         raw_tests = validate(SimTestFile, test_doc, diag)
         if raw_tests is not None:
-            tests = _compile_tests(raw_tests, test_doc.source, circuit, firmware, diag)
+            if not raw_tests.tests:
+                diag.warning(
+                    "no_tests",
+                    "design/test.yaml has no tests, so nothing checks the design; add one per "
+                    "requirement",
+                    test_doc.source.at("tests"),
+                )
+            tests = compile_tests(raw_tests.tests, test_doc.source, circuit, firmware, inputs, diag)
 
     board: ResolvedBoard | None = None
     if paths.board_file.is_file() and circuit is not None and circuit_doc is not None:
@@ -125,6 +142,7 @@ def load_design(root: Path, diag: Diagnostics) -> Design | None:
         parts=parts,
         board=board,
         firmware=firmware,
+        inputs=inputs,
     )
 
 
@@ -609,21 +627,19 @@ def _resolve_fab(raw: str | FabSpec | None, src: SourceMap, diag: Diagnostics) -
 # --- tests -------------------------------------------------------------------------------
 
 
-def _compile_tests(
-    raw: SimTestFile,
+def compile_tests(
+    raw: dict[str, SimTest],
     src: SourceMap,
     circuit: ResolvedCircuit | None,
     firmware: ResolvedFirmware | None,
+    inputs: Inputs | None,
     diag: Diagnostics,
+    report_only: bool = False,
 ) -> dict[str, CompiledTest]:
+    """Tests as written under `tests:` (`src` locates their fields). With `report_only`
+    (eda try) a measure needs no bounds: its value is reported, not judged."""
     compiled: dict[str, CompiledTest] = {}
-    if not raw.tests:
-        diag.warning(
-            "no_tests",
-            "design/test.yaml has no tests, so nothing checks the design; add one per requirement",
-            src.at("tests"),
-        )
-    for name, case in raw.tests.items():
+    for name, case in raw.items():
         analysis = _compile_analysis(name, case.analysis, src, circuit, diag)
         for net in case.pins:
             if firmware is None or net not in firmware.signals:
@@ -644,7 +660,7 @@ def _compile_tests(
         if case.firmware:
             ok = _check_firmware_test(name, case, analysis, src, firmware, diag)
         overrides = _compile_overrides(name, case, src, circuit, diag)
-        events = _compile_events(name, case, analysis, src, circuit, firmware, diag)
+        events = _compile_events(name, case, analysis, src, circuit, firmware, inputs, diag)
         ok = ok and overrides is not None and events is not None
         expectations: list[CompiledExpectation] = []
         serial: list[SerialExpectation] = []
@@ -662,7 +678,7 @@ def _compile_tests(
                 if shown is not None:
                     displays.append(shown)
                 continue
-            item = _compile_expectation(name, index, exp, analysis, src, circuit, diag)
+            item = _compile_expectation(name, index, exp, analysis, src, circuit, diag, report_only)
             if item is not None:
                 expectations.append(item)
         judged = len(expectations) + len(serial) + len(displays)
@@ -690,9 +706,11 @@ def _compile_events(
     src: SourceMap,
     circuit: ResolvedCircuit | None,
     firmware: ResolvedFirmware | None,
+    inputs: Inputs | None,
     diag: Diagnostics,
 ) -> list[CompiledEvent] | None:
-    """`events:` of a tran test: part parameter changes and UART input, sorted by time."""
+    """`events:` of a tran test: part parameter changes, UART input, and key presses
+    (each key a press and a release), sorted by time."""
     if not case.events:
         return []
     if analysis is not None and not isinstance(analysis, Tran):
@@ -718,6 +736,13 @@ def _compile_events(
             )
             ok = False
             continue
+        if raw.keys is not None:
+            presses = _key_events(name, raw, time, analysis, base, src, inputs, diag)
+            if presses is None:
+                ok = False
+            else:
+                found += presses
+            continue
         if raw.part is not None:
             event = _part_event(name, raw.part, raw.set or {}, time, base, src, circuit, diag)
         else:
@@ -740,16 +765,34 @@ def _part_event(
     circuit: ResolvedCircuit | None,
     diag: Diagnostics,
 ) -> CompiledEvent | None:
+    values = _part_change(f"{name}.events", ref, params, base, "set", src, circuit, diag)
+    if values is None:
+        return None
+    return CompiledEvent(time=time, location=src.at(*base), part=ref, values=values)
+
+
+def _part_change(
+    context: str,
+    ref: str,
+    params: dict[str, Scalar],
+    base: tuple[str | int, ...],
+    field: str,
+    src: SourceMap,
+    circuit: ResolvedCircuit | None,
+    diag: Diagnostics,
+) -> dict[str, tuple[float | str, str]] | None:
+    """Checked parameter values a part takes during a run (param → (value, label)): the
+    part exists, the parameters and values are valid, and ngspice can alter them."""
     if circuit is None:
         return None
     part = circuit.parts.get(ref)
     if part is None:
-        diag.error("unknown_part", f"{name}.events: no part named {ref!r}", src.at(*base, "part"))
+        diag.error("unknown_part", f"{context}: no part named {ref!r}", src.at(*base, "part"))
         return None
     values: dict[str, tuple[float | str, str]] = {}
     for param_name, raw in params.items():
         param = part.spec.params.get(param_name)
-        where = src.at(*base, "set", param_name)
+        where = src.at(*base, field, param_name)
         if param is None:
             known = ", ".join(part.spec.params) or "none"
             diag.error(
@@ -766,9 +809,165 @@ def _part_event(
     try:
         alter_commands(part, changed, circuit)
     except ValueError as exc:
-        diag.error("event_unsupported", f"{ref}: {exc}", src.at(*base, "set"))
+        diag.error("event_unsupported", f"{ref}: {exc}", src.at(*base, field))
         return None
-    return CompiledEvent(time=time, location=src.at(*base), part=ref, values=values)
+    return values
+
+
+def split_keys(text: str) -> list[str]:
+    """Key names in a key string: each character is a key, `{word}` a named key."""
+    keys: list[str] = []
+    i = 0
+    while i < len(text):
+        if text[i] == "{":
+            end = text.find("}", i)
+            if end < 0:
+                raise ValueError(f"{text!r}: '{{' at {i} has no closing '}}'")
+            keys.append(text[i + 1 : end])
+            i = end + 1
+        else:
+            keys.append(text[i])
+            i += 1
+    return keys
+
+
+def key_timing(raw: SimEvent, inputs: Inputs) -> tuple[float, float]:
+    """(hold, gap) of a keys event: its own values or the inputs.yaml defaults."""
+    hold = parse_quantity(raw.hold, "s") if raw.hold is not None else inputs.hold
+    gap = parse_quantity(raw.gap, "s") if raw.gap is not None else inputs.gap
+    return hold, gap
+
+
+def _key_events(
+    name: str,
+    raw: SimEvent,
+    time: float,
+    analysis: Analysis | None,
+    base: tuple[str | int, ...],
+    src: SourceMap,
+    inputs: Inputs | None,
+    diag: Diagnostics,
+) -> list[CompiledEvent] | None:
+    """A keys event as presses and releases: each key held for `hold`, then `gap`."""
+    assert raw.keys is not None
+    where = src.at(*base, "keys")
+    if inputs is None:
+        diag.error(
+            "keys_need_inputs",
+            f"{name}: keys events need design/inputs.yaml, which maps each key to a part "
+            '(e.g. keys: { "1": K1, "+": KADD })',
+            where,
+        )
+        return None
+    try:
+        names = split_keys(raw.keys)
+        hold, gap = key_timing(raw, inputs)
+    except (ValueError, QuantityError) as exc:
+        diag.error("invalid_value", str(exc), where)
+        return None
+    if hold <= 0 or gap < 0:
+        diag.error("invalid_value", f"{name}: hold must be positive, gap not negative", where)
+        return None
+    if any(key in inputs.invalid for key in names):
+        return None  # the key's binding is reported in inputs.yaml
+    unknown = [key for key in names if key not in inputs.keys]
+    if unknown:
+        known = " ".join(k if len(k) == 1 else "{" + k + "}" for k in inputs.keys)
+        diag.error(
+            "unknown_key",
+            f"{name}: no key {', '.join(repr(k) for k in unknown)} in design/inputs.yaml "
+            f"(keys: {known})",
+            where,
+        )
+        return None
+    events: list[CompiledEvent] = []
+    at = time
+    for key in names:
+        binding = inputs.keys[key]
+        events.append(
+            CompiledEvent(
+                time=at, location=src.at(*base), part=binding.part, values=binding.press, key=key
+            )
+        )
+        events.append(
+            CompiledEvent(
+                time=at + hold,
+                location=src.at(*base),
+                part=binding.part,
+                values=binding.release,
+                key=key,
+                release=True,
+            )
+        )
+        at += hold + gap
+    end = events[-1].time
+    if isinstance(analysis, Tran) and end >= analysis.stop:
+        diag.error(
+            "event_time",
+            f"{name}: the keys {raw.keys!r} from {raw.at} are released at "
+            f"{format_quantity(end, 's')}, after the run ends "
+            f"({format_quantity(analysis.stop, 's')})",
+            where,
+        )
+        return None
+    return events
+
+
+def _resolve_inputs(
+    raw: InputsFile, src: SourceMap, circuit: ResolvedCircuit, diag: Diagnostics
+) -> Inputs | None:
+    """design/inputs.yaml: each key's part changes are checked once, here. Errors are
+    recorded; what is valid is still returned, so tests using the file are checked too."""
+    keys: dict[str, KeyBinding] = {}
+    invalid: set[str] = set()
+    for key, target in raw.keys.items():
+        base: tuple[str | int, ...] = ("keys", key)
+        if isinstance(target, KeyAction):
+            ref = target.part
+            press, release = target.press, target.release
+        else:
+            ref = target
+            part = circuit.parts.get(ref)
+            state = part.spec.params.get("state") if part is not None else None
+            if part is not None and (
+                state is None or not {"pressed", "open"} <= set(state.choices or [])
+            ):
+                diag.error(
+                    "key_part",
+                    f"key {key!r}: {ref} ({part.spec.id}) is not a button with state "
+                    "pressed/open; give { part, press: {...}, release: {...} }",
+                    src.at(*base),
+                )
+                invalid.add(key)
+                continue
+            press: dict[str, Scalar] = {"state": "pressed"}
+            release: dict[str, Scalar] = {"state": "open"}
+        context = f"inputs.keys.{key}"
+        if ref not in circuit.parts:
+            diag.error("unknown_part", f"{context}: no part named {ref!r}", src.at(*base))
+            invalid.add(key)
+            continue
+        pressed = _part_change(context, ref, press, base, "press", src, circuit, diag)
+        released = _part_change(context, ref, release, base, "release", src, circuit, diag)
+        if pressed is None or released is None:
+            invalid.add(key)
+            continue
+        keys[key] = KeyBinding(part=ref, press=pressed, release=released)
+    defaults = InputsFile()
+    times: dict[str, float] = {}
+    for field in ("hold", "gap", "start", "settle", "step"):
+        text: str = getattr(raw, field)
+        times[field] = parse_quantity(getattr(defaults, field), "s")
+        try:
+            value = parse_quantity(text, "s")
+        except QuantityError as exc:
+            diag.error("invalid_value", f"{field}: {exc}", src.at(field))
+            continue
+        if value < 0 or (value == 0 and field in ("hold", "step")):
+            diag.error("invalid_value", f"{field}: {text} must be positive", src.at(field))
+            continue
+        times[field] = value
+    return Inputs(keys=keys, invalid=frozenset(invalid), **times)
 
 
 def _serial_event(
@@ -1200,6 +1399,7 @@ def _compile_expectation(
     src: SourceMap,
     circuit: ResolvedCircuit | None,
     diag: Diagnostics,
+    report_only: bool = False,
 ) -> CompiledExpectation | None:
     base = ("tests", name, "expect", index)
     at = src.at(*base)
@@ -1228,7 +1428,7 @@ def _compile_expectation(
                 diag.error(rule, f"{raw.measure}: {text}", at_measure)
                 ok = False
 
-    if raw.min is None and raw.max is None:
+    if raw.min is None and raw.max is None and not report_only:
         diag.error("missing_bound", f"{raw.measure}: give min, max, or both", at)
         return None
     if measure is None:

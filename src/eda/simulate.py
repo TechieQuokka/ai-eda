@@ -115,6 +115,19 @@ def run_tests(
     }
 
 
+def run_test(
+    design: Design, test: CompiledTest, sim_dir: Path, diag: Diagnostics, image: Path | None
+) -> dict[str, JsonValue] | None:
+    """Run one compiled test (e.g. the one `eda try` builds) with its outputs in `sim_dir`."""
+    sim_dir.mkdir(parents=True, exist_ok=True)
+    return _run_one(design, test, sim_dir, diag, image)
+
+
+def firmware_image(design: Design, diag: Diagnostics) -> Path | None:
+    """Build the firmware; the UF2 image, or None (errors in `diag`)."""
+    return _firmware_image(design, diag)
+
+
 def _firmware_image(design: Design, diag: Diagnostics) -> Path | None:
     build = firmware.build(design, diag)
     uf2 = build.get("uf2")
@@ -395,6 +408,8 @@ def _event_json(event: CompiledEvent) -> dict[str, JsonValue]:
         )
     else:
         what = f"{event.net} <- {event.text!r}"
+    if event.key is not None:
+        what = f"key {event.key} {'up' if event.release else 'down'} ({what})"
     return {"time": event.time, "display": format_quantity(event.time, "s"), "event": what}
 
 

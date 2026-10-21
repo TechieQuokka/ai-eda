@@ -261,6 +261,7 @@ uv run eda watch projects/rc_filter  # live viewer at http://127.0.0.1:8765/
 | `eda fw [PROJECT] [--build]` | Firmware: check pin roles, generate `pins.h` / `pins_init.h`, scan sources; `--build` compiles |
 | `eda pcb [PROJECT]` | Board: build, autoroute, DRC, Gerbers/drill/BOM |
 | `eda run [PROJECT] [-m NOTE]` | check → sim → render (→ pcb) in one call, logged with an optional note |
+| `eda try [PROJECT] --keys "12+34="` | Run the circuit and firmware with inputs given on the command line (keys, part changes, UART text); reports screens, UART output, and values, judges and logs nothing |
 | `eda watch [PROJECT]` | Re-run on change and serve the live viewer |
 | `eda value TARGET [-s E24]` | Nearest standard component values |
 | `eda part list` / `eda part show ID` | Inspect the part database |
