@@ -26,6 +26,7 @@ from eda.model import (
     CompiledTest,
     Dc,
     Design,
+    DisplayExpectation,
     Op,
     PinKey,
     ResolvedBoard,
@@ -646,16 +647,23 @@ def _compile_tests(
         ok = ok and overrides is not None and events is not None
         expectations: list[CompiledExpectation] = []
         serial: list[SerialExpectation] = []
+        displays: list[DisplayExpectation] = []
         for index, exp in enumerate(case.expect):
             if exp.serial is not None:
                 found = _compile_serial(name, index, exp, case.firmware, src, firmware, diag)
                 if found is not None:
                     serial.append(found)
                 continue
+            if exp.display is not None:
+                shown = _compile_display(name, index, exp, analysis, src, circuit, diag)
+                if shown is not None:
+                    displays.append(shown)
+                continue
             item = _compile_expectation(name, index, exp, analysis, src, circuit, diag)
             if item is not None:
                 expectations.append(item)
-        if ok and analysis is not None and len(expectations) + len(serial) == len(case.expect):
+        judged = len(expectations) + len(serial) + len(displays)
+        if ok and analysis is not None and judged == len(case.expect):
             compiled[name] = CompiledTest(
                 name=name,
                 description=case.description,
@@ -665,6 +673,7 @@ def _compile_tests(
                 pins=dict(case.pins),
                 firmware=case.firmware,
                 serial=tuple(serial),
+                displays=tuple(displays),
                 parts=overrides or {},
                 events=tuple(events or ()),
             )
@@ -893,6 +902,29 @@ def _compile_serial(
             src.at(*base, "serial"),
         )
         return None
+    if raw.min is None and raw.max is None:
+        diag.error("missing_bound", f"serial({raw.serial}): give min, max, or both", at)
+        return None
+    bounds = _match_bounds(raw, base, src, diag)
+    if bounds is None:
+        return None
+    return SerialExpectation(
+        index=index,
+        net=raw.serial,
+        uart=int(tx.group(1)),
+        pattern=raw.match,
+        min=bounds[0],
+        max=bounds[1],
+        location=at,
+    )
+
+
+def _match_bounds(
+    raw: Expectation, base: tuple[str | int, ...], src: SourceMap, diag: Diagnostics
+) -> tuple[float | None, float | None] | None:
+    """Checks `match` (a regular expression with at most one group) and returns the numeric
+    (min, max) of a serial or display expectation."""
+    assert raw.match is not None
     try:
         pattern = re.compile(raw.match)
     except re.error as exc:
@@ -900,9 +932,6 @@ def _compile_serial(
         return None
     if pattern.groups > 1:
         diag.error("invalid_match", "match: use at most one capture group", src.at(*base, "match"))
-        return None
-    if raw.min is None and raw.max is None:
-        diag.error("missing_bound", f"serial({raw.serial}): give min, max, or both", at)
         return None
     bounds: dict[str, float | None] = {"min": None, "max": None}
     for key in ("min", "max"):
@@ -916,13 +945,65 @@ def _compile_serial(
                 "invalid_value", f"{key}: expected a number, got {value!r}", src.at(*base, key)
             )
             return None
-    return SerialExpectation(
+    return bounds["min"], bounds["max"]
+
+
+def _compile_display(
+    name: str,
+    index: int,
+    raw: Expectation,
+    analysis: Analysis | None,
+    src: SourceMap,
+    circuit: ResolvedCircuit | None,
+    diag: Diagnostics,
+) -> DisplayExpectation | None:
+    base = ("tests", name, "expect", index)
+    at = src.at(*base)
+    assert raw.display is not None and raw.match is not None
+    if circuit is None or analysis is None:
+        return None
+    part = circuit.parts.get(raw.display)
+    if part is None or part.spec.display is None:
+        shown = [ref for ref, p in circuit.parts.items() if p.spec.display is not None]
+        what = "no part named" if part is None else "not a display:"
+        diag.error(
+            "display_part",
+            f"{name}: {what} {raw.display!r}; display parts: {', '.join(shown) or 'none'}",
+            src.at(*base, "display"),
+        )
+        return None
+    if not isinstance(analysis, (Op, Tran)):
+        diag.error(
+            "display_analysis",
+            f"{name}: display({raw.display}) is read from an op or tran test",
+            at,
+        )
+        return None
+    when: float | None = None
+    if raw.at is not None:
+        if not isinstance(analysis, Tran):
+            diag.error("display_analysis", f"{name}: `at` needs a tran test", src.at(*base, "at"))
+            return None
+        try:
+            when = parse_quantity(raw.at, "s")
+        except QuantityError as exc:
+            diag.error("invalid_value", f"at: {exc}", src.at(*base, "at"))
+            return None
+        if not 0 < when <= analysis.stop:
+            diag.error(
+                "display_time", f"{name}: at {raw.at} is outside the run", src.at(*base, "at")
+            )
+            return None
+    bounds = _match_bounds(raw, base, src, diag)
+    if bounds is None:
+        return None
+    return DisplayExpectation(
         index=index,
-        net=raw.serial,
-        uart=int(tx.group(1)),
+        ref=raw.display,
         pattern=raw.match,
-        min=bounds["min"],
-        max=bounds["max"],
+        at=when,
+        min=bounds[0],
+        max=bounds[1],
         location=at,
     )
 

@@ -1,0 +1,6 @@
+name: seg_counter
+description: >
+  Raspberry Pi Pico (RP2040) stopwatch on a 4-digit 7-segment LED display: the digits are
+  multiplexed (one lit at a time, 2 ms each), segments driven straight from GPIOs through
+  220 ohm resistors, digit cathodes switched by 2N3904 transistors. Shows tenths of a second
+  since start; a push button resets it. Powered from 5 V on VSYS.

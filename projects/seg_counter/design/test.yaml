@@ -1,0 +1,44 @@
+tests:
+  all_segments:
+    description: >
+      Every segment pin high with digit 1 on ("8."): each segment gets about 5 mA, Q1 sinks
+      the 8 segments (about 40 mA) and stays saturated, and the GPIOs stay within 12 mA.
+    analysis: { type: op }
+    pins: { SEG_A: high, SEG_B: high, SEG_C: high, SEG_D: high, SEG_E: high, SEG_F: high,
+            SEG_G: high, SEG_DP: high, DIG1: high }
+    expect:
+      - { display: DS1, match: '^8\.   $' }
+      - { measure: current(DS1.a), min: 4mA, max: 6mA }
+      - { measure: current(DS1.dp), min: 4mA, max: 6mA }
+      - { measure: current(Q1.c), max: 50mA }
+      - { measure: voltage(K1), max: 0.2V }
+      - { measure: current(U1.GP2), min: -12mA }
+      - { measure: current(U1.GP10), min: -12mA }
+  dark:
+    description: With every pin low (reset state) the display is dark.
+    analysis: { type: op }
+    expect:
+      - { display: DS1, match: '^    $' }
+  stopwatch:
+    description: >
+      Firmware in the loop: the display counts tenths of a second; the multiplexed digits
+      look steady (each segment about 1.2 mA on average).
+    analysis: { type: tran, step: 200us, stop: 1.3s }
+    firmware: true
+    expect:
+      - { display: DS1, at: 550ms, match: '^  0\.5$' }
+      - { display: DS1, at: 1.25s, match: '^  1\.2$' }
+      - { measure: "max(current(DS1.a))", min: 4mA, max: 6mA }
+      - { measure: "avg(current(DS1.b))", from: 200ms, min: 1mA }
+  reset:
+    description: >
+      The reset button is held from 0.8 s to 0.9 s: the count starts again from zero at the
+      release, so at 1.25 s it shows 0.3 s.
+    analysis: { type: tran, step: 200us, stop: 1.3s }
+    firmware: true
+    events:
+      - { at: 800ms, part: SW1, set: { state: pressed } }
+      - { at: 900ms, part: SW1, set: { state: open } }
+    expect:
+      - { display: DS1, at: 850ms, match: '^  0\.0$' }
+      - { display: DS1, at: 1.25s, match: '^  0\.3$' }

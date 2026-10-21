@@ -126,6 +126,12 @@ function renderTests(state) {
       el("thead", {}, el("tr", {}, el("th", {}, "measure"), el("th", {}, "value"),
         el("th", {}, "expected"), el("th", {}, ""))),
       el("tbody", {}, ...rows)));
+    if (test.displays) {
+      blocks.push(el("div", { class: "screens" }, ...Object.entries(test.displays).map(([ref, d]) =>
+        el("figure", { class: "screen" },
+          el("img", { src: `/${d.image}?v=${state.version}`, alt: `${ref} at the end of ${name}` }),
+          el("figcaption", {}, el("code", {}, ref), " ", el("code", { class: "screen-text" }, d.text))))));
+    }
     if (test.events) {
       blocks.push(el("p", { class: "muted" },
         "events: " + test.events.map((e) => `${e.display} ${e.event}`).join(" · ")));
@@ -500,6 +506,80 @@ function sampleAt(xs, ys, t) {
   return ys[i - 1] + f * (ys[i] - ys[i - 1]);
 }
 
+// Display parts: frames recorded by `eda sim` (out/display/<test>.<ref>.json), drawn here
+// from their state, so the screens follow the replay.
+const frameFiles = new Map(); // path?v=version → promise of the frames file
+
+function loadFrames(path, version) {
+  const key = `${path}?v=${version}`;
+  if (!frameFiles.has(key)) {
+    frameFiles.set(key, fetch(`/${key}`, { cache: "no-store" }).then((r) => r.json()));
+  }
+  return frameFiles.get(key);
+}
+
+function frameIndex(frames, t) {
+  let lo = 0;
+  let hi = frames.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (frames[mid].time <= t + 1e-12) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo;
+}
+
+const SEGMENT_COLORS = { red: "#ff2a1a", yellow: "#ffc21a", green: "#38e04a" };
+const SEGMENT_POLYGONS = {
+  a: "12,4 40,4 35,10 17,10", b: "41,6 37,40 32,36 35,11", c: "36,44 32,78 27,73 30,48",
+  d: "8,80 30,80 25,74 12,74", e: "11,44 15,48 12,73 7,78", f: "16,6 19,11 16,36 11,40",
+  g: "13,42 18,39 31,39 35,42 30,45 17,45",
+};
+
+function drawSegments(file, frame) {
+  const digits = frame.state.digits;
+  const meta = { color: "red", segments: Object.keys(digits[0]?.mean ?? {}), lit: 1e-4, ...file.meta };
+  const on = SEGMENT_COLORS[meta.color] ?? SEGMENT_COLORS.red;
+  const width = digits.length * 62 + 14;
+  const root = svg("svg", { viewBox: `0 0 ${width} 112`, class: "screen-svg" });
+  root.append(svg("rect", { width, height: 112, rx: 6, fill: "#1b1b1b" }));
+  digits.forEach((digit, index) => {
+    const group = svg("g", { transform: `translate(${14 + index * 62},14)` });
+    for (const segment of meta.segments) {
+      const lit = digit.lit.includes(segment);
+      const level = Math.min(1, (digit.mean[segment] ?? 0) / (30 * meta.lit));
+      const attrs = lit ? { fill: on, "fill-opacity": (0.35 + 0.65 * level).toFixed(2) } : { fill: "#3a3a3a" };
+      group.append(segment === "dp"
+        ? svg("circle", { cx: 43, cy: 77, r: 3.5, ...attrs })
+        : svg("polygon", { points: SEGMENT_POLYGONS[segment], ...attrs }));
+    }
+    root.append(group);
+  });
+  return root;
+}
+
+const DRAWERS = { segments: drawSegments };
+
+// One screen in the playback: shows the frame at time t, redrawn only when it changes.
+function screenView(ref, path, version) {
+  const holder = el("div", { class: "screen-live" }, el("p", { class: "muted" }, `${ref}: loading…`));
+  const caption = el("figcaption");
+  const view = { node: el("figure", { class: "screen" }, holder, caption), file: null, shown: -1 };
+  loadFrames(path, version).then((file) => { view.file = file; view.shown = -1; player.show(); })
+    .catch((error) => holder.replaceChildren(el("p", { class: "muted" }, `${ref}: no frames (${error})`)));
+  view.show = (t) => {
+    if (!view.file) return;
+    const index = frameIndex(view.file.frames, t);
+    if (index === view.shown) return;
+    view.shown = index;
+    const frame = view.file.frames[index];
+    const draw = DRAWERS[view.file.kind];
+    holder.replaceChildren(draw ? draw(view.file, frame) : el("pre", {}, frame.text));
+    caption.replaceChildren(el("code", {}, ref), " ", el("code", { class: "screen-text" }, frame.text));
+  };
+  return view;
+}
+
 function renderPlayback(state, version, waves) {
   const section = $("playback-section");
   const tests = state.sim?.data?.tests || {};
@@ -581,6 +661,10 @@ function renderPlayback(state, version, waves) {
   speed.addEventListener("change", () => { player.speed = Number(speed.value); });
   slider.addEventListener("input", () => { player.t = Number(slider.value) / 1000 * end; player.show(); });
 
+  // Display parts of this test, following the replay.
+  const screens = Object.entries(tests[player.test]?.displays ?? {})
+    .map(([ref, d]) => screenView(ref, d.frames, version));
+
   // Readouts: LED currents, then every net voltage.
   const rows = [];
   const readouts = [];
@@ -610,6 +694,7 @@ function renderPlayback(state, version, waves) {
     for (const [cell, signal, unit] of readouts) {
       cell.textContent = fmt(sampleAt(xs, data.signals[signal].values, t), unit);
     }
+    for (const screen of screens) screen.show(t);
     for (const [name, place] of playheads) place(name === player.test ? t : null);
   };
 
@@ -617,6 +702,7 @@ function renderPlayback(state, version, waves) {
   const side = el("table", { class: "readouts" }, el("tbody", {}, ...rows));
   section.querySelector("#playback").replaceChildren(
     controls,
+    ...(screens.length ? [el("div", { class: "screens" }, ...screens.map((v) => v.node))] : []),
     el("div", { class: "player-body" }, stage, side),
     el("p", { class: "muted" },
       "Replays the simulated waveforms; LEDs glow with their current " +

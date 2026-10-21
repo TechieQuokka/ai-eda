@@ -1,0 +1,16 @@
+# Segment and digit nets reach GP2..GP13; eda fw writes firmware/pins.h and pins_init.h.
+mcu: U1
+signals:
+  SEG_A: { mode: output, initial: low, description: "segment a anode (via 220 ohm), active high" }
+  SEG_B: { mode: output, initial: low, description: "segment b" }
+  SEG_C: { mode: output, initial: low, description: "segment c" }
+  SEG_D: { mode: output, initial: low, description: "segment d" }
+  SEG_E: { mode: output, initial: low, description: "segment e" }
+  SEG_F: { mode: output, initial: low, description: "segment f" }
+  SEG_G: { mode: output, initial: low, description: "segment g" }
+  SEG_DP: { mode: output, initial: low, description: "decimal point" }
+  DIG1: { mode: output, initial: low, description: "digit 1 (left) on, via Q1; active high" }
+  DIG2: { mode: output, initial: low, description: "digit 2 on, via Q2" }
+  DIG3: { mode: output, initial: low, description: "digit 3 on, via Q3" }
+  DIG4: { mode: output, initial: low, description: "digit 4 (right) on, via Q4" }
+  BUTTON: { mode: input, pull: up, description: "reset button to GND, active low" }

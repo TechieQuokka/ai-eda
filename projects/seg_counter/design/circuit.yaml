@@ -1,0 +1,58 @@
+description: >
+  Stopwatch on a multiplexed 4-digit display. Segment nets SEG_A..SEG_DP and digit nets
+  DIG1..DIG4 become firmware pins PIN_SEG_A.., PIN_DIG1..
+parts:
+  J1: { type: dc_voltage_source, voltage: 5V }       # 5 V power input on VSYS
+  U1: { type: raspberry_pi_pico }
+  DS1: { type: seven_segment_4, color: red, mpn: CC56-12EWA }
+  # segment resistors: about 5 mA per segment while its digit is on
+  RA: { type: resistor, resistance: 220ohm }
+  RB: { type: resistor, resistance: 220ohm }
+  RC: { type: resistor, resistance: 220ohm }
+  RD: { type: resistor, resistance: 220ohm }
+  RE: { type: resistor, resistance: 220ohm }
+  RF: { type: resistor, resistance: 220ohm }
+  RG: { type: resistor, resistance: 220ohm }
+  RDP: { type: resistor, resistance: 220ohm }
+  # digit switches: a 2N3904 pulls the digit's common cathode to GND
+  Q1: { type: npn }
+  Q2: { type: npn }
+  Q3: { type: npn }
+  Q4: { type: npn }
+  RQ1: { type: resistor, resistance: 1kohm }
+  RQ2: { type: resistor, resistance: 1kohm }
+  RQ3: { type: resistor, resistance: 1kohm }
+  RQ4: { type: resistor, resistance: 1kohm }
+  SW1: { type: push_button }                          # reset
+nets:
+  VSYS: [J1.+, U1.VSYS]
+  SEG_A: [U1.GP2, RA.1]
+  SEG_B: [U1.GP3, RB.1]
+  SEG_C: [U1.GP4, RC.1]
+  SEG_D: [U1.GP5, RD.1]
+  SEG_E: [U1.GP6, RE.1]
+  SEG_F: [U1.GP7, RF.1]
+  SEG_G: [U1.GP8, RG.1]
+  SEG_DP: [U1.GP9, RDP.1]
+  LA: [RA.2, DS1.a]
+  LB: [RB.2, DS1.b]
+  LC: [RC.2, DS1.c]
+  LD: [RD.2, DS1.d]
+  LE: [RE.2, DS1.e]
+  LF: [RF.2, DS1.f]
+  LG: [RG.2, DS1.g]
+  LDP: [RDP.2, DS1.dp]
+  DIG1: [U1.GP10, RQ1.1]
+  DIG2: [U1.GP11, RQ2.1]
+  DIG3: [U1.GP12, RQ3.1]
+  DIG4: [U1.GP13, RQ4.1]
+  B1: [RQ1.2, Q1.b]
+  B2: [RQ2.2, Q2.b]
+  B3: [RQ3.2, Q3.b]
+  B4: [RQ4.2, Q4.b]
+  K1: [Q1.c, DS1.d1]
+  K2: [Q2.c, DS1.d2]
+  K3: [Q3.c, DS1.d3]
+  K4: [Q4.c, DS1.d4]
+  BUTTON: [U1.GP14, SW1.1]
+  GND: [J1.-, U1.GND, Q1.e, Q2.e, Q3.e, Q4.e, SW1.2]

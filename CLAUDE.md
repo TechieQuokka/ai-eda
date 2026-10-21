@@ -54,6 +54,7 @@ The CLI never makes design decisions; it only reports.
 - Per-test part parameters: `parts: { SW1: { state: pressed }, RV1: { position: 25% } }`.
 - Events during a `tran` test: `events: [{ at: 1.1s, part: SW1, set: { state: pressed } }, { at: 300ms, serial: UART_RX, send: "rate 100\n" }]`. Part events can change R/C/L values (switches, pots, resistors, an LDR's `light`) and a DC source's `voltage`; serial events need `firmware: true`. Event times are marked on the waveform plots.
 - Time range of a tran measure: `{ measure: "period(current(D1), 3mA)", from: 1.6s, to: 2s, ... }` (either bound may be left out).
+- Display expectations: `{ display: DS1, match: '^  1\.2$', at: 1.25s }` searches the text on a display part's screen (rows joined by newlines; `at` defaults to the end of the run); with `min`/`max` the value is the number in the capture group, or the count of matches. See §9.
 - **Quote any measure that contains a comma** inside `{ ... }`.
 - Units: `V A ohm F H s Hz dB deg V/us % lx`, prefixes `p n u m k M G T` (case-sensitive).
 - Limits: tran ≤ 1e6 points (stop/step), ac ≤ 1e5 frequencies, firmware tests ≤ 1e5 steps (`too_many_points`). A `singular_matrix` error means the circuit has no unique solution (e.g. a `dc_loop` of sources and inductors): fix the circuit, the numbers are not judged.
@@ -97,3 +98,9 @@ The CLI never makes design decisions; it only reports.
 - **Firmware in the loop**: a `tran` test with `firmware: true` runs the compiled firmware in the RP2040 emulator against the circuit (`DESIGN_DECISIONS.md` §15). The firmware drives GPIO/PWM pins, reads inputs and ADC channels from node voltages, and its UART output is captured. Check it with `period(...)`/`at(...)` measures and serial expectations: `{ serial: UART_TX, match: 'pot=(\d+)', min: 1900, max: 2200 }` (number in the last match; without a group, the number of matches). The output is in `data.sim.tests.<name>.firmware.serial` and `out/sim/<test>.uart.txt`. Values are exchanged every `step`, so pick `step` well below the timing you test; `pins:` overrides do not apply.
 - Firmware faults: `firmware_fault` (unmapped memory access, a HardFault on the chip) fails the test; `firmware_halted` warns that the firmware stopped (main returned, panic). UART output is paced at the baud rate, as on the chip.
 - Emulator setup: `npm --prefix tools/rp2040 ci` and `tools/rp2040/fetch-bootrom.sh`; co-simulation also needs libngspice.
+
+## 9. Displays
+
+- Display parts carry a `display:` section; the simulation decodes what each one shows. Every op/tran test that contains one writes `out/display/<test>.<ref>.png` (last frame) and `.json` (frames over the run), and reports `data.sim.tests.<name>.displays.<ref>` (`text`, `changes`). The viewer shows the screens and replays them in Playback.
+- `seven_segment_4` (CC56-12, 4 digits, common cathode, multiplexed): every segment LED is measured. A segment reads as lit when its mean current over the last 20 ms reaches 100 uA **and** 30 % of the brightest segment's (dimmer ones are ghosting). Text is one character per digit (`8.` with its decimal point, `?` for a shape that is no character). Works in op tests (static drive) and tran tests (multiplexed by firmware: use `step` ≤ 1/10 of a digit's on-time).
+- Example: `projects/seg_counter/` (stopwatch: segments straight from GPIOs, digit cathodes through 2N3904s).

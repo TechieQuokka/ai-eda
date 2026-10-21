@@ -8,6 +8,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from eda.model import GROUND, Ac, Analysis, Dc, Op, ResolvedCircuit, ResolvedPart
+from eda.schema.part import SegmentDisplaySpec
 
 _PLACEHOLDER = re.compile(r"<(name|model|pin:[^>]+|param:[^>]+|choice:[^>]+)>")
 
@@ -54,6 +55,10 @@ def element_lines(
     lines: list[str] = []
     sensed = sensed_pins(part)
     nodes: dict[str, str] = {}
+    template = part.spec.spice.template
+    if isinstance(part.spec.display, SegmentDisplaySpec):
+        connected = {pin for pin in part.spec.pins if circuit.net_of(part.ref, pin) is not None}
+        template = segment_template(part.spec.display, connected)
 
     def pin_node(pin: str) -> str:
         if pin in nodes:  # a pin may appear on several template lines
@@ -83,10 +88,32 @@ def element_lines(
         value = part.values[key]
         return value if isinstance(value, str) else f"{value:.12g}"
 
-    for template in part.spec.spice.template.split("\n"):
-        if template.strip():
-            lines.append(_PLACEHOLDER.sub(substitute, " ".join(template.split())))
+    for line in template.split("\n"):
+        if line.strip():
+            lines.append(_PLACEHOLDER.sub(substitute, " ".join(line.split())))
     return lines
+
+
+def segment_template(display: SegmentDisplaySpec, connected: set[str]) -> str:
+    """One LED per digit and segment, each behind a 0 V sense source, as a part template;
+    LEDs on an unconnected (optional) pin are left out.
+
+    Digit 1's segment a is `<name>_1a`; its current is `segment_vector(part, 1, "a")`."""
+    lines: list[str] = []
+    for index, common in enumerate(display.digits, start=1):
+        for segment, pin in display.segments.items():
+            if pin not in connected or common not in connected:
+                continue
+            anode, cathode = (pin, common) if display.common == "cathode" else (common, pin)
+            tag = f"<name>_{index}{segment}"
+            lines.append(f"V{tag} <pin:{anode}> {tag}n DC 0")
+            lines.append(f"{tag} {tag}n <pin:{cathode}> <model>")
+    return "\n".join(lines)
+
+
+def segment_vector(part: ResolvedPart, digit: int, segment: str) -> str:
+    """Raw-file name of the current through one LED of a segment display (anode → cathode)."""
+    return f"i(v{part.spice_name}_{digit}{segment})".lower()
 
 
 def mcu_lines(part: ResolvedPart, circuit: ResolvedCircuit, drives: dict[str, Drive]) -> list[str]:

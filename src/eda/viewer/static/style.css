@@ -125,3 +125,10 @@ pre.serial {
   color: #111; background: rgba(255, 255, 255, .85); padding: 1px 4px; border-radius: 4px; white-space: nowrap;
 }
 .readouts td:last-child { font-variant-numeric: tabular-nums; text-align: right; }
+
+.screens { display: flex; flex-wrap: wrap; gap: 12px; margin: 8px 0; }
+.screen { margin: 0; }
+.screen img, .screen-svg { display: block; max-width: 420px; width: 100%; height: auto; }
+.screen-live { min-width: 260px; }
+.screen figcaption { font-size: 12px; margin-top: 4px; }
+.screen-text { white-space: pre; background: #f1f5f9; padding: 0 4px; }

@@ -1,0 +1,45 @@
+id: seven_segment_4
+name: 4-digit 7-segment LED display (common cathode)
+category: display
+description: >
+  0.56" four-digit seven-segment display with decimal points, common cathode per digit
+  (Kingbright CC56-12EWA / -12YWA / -12GWA; the common 12-pin "5641AS" pinout). Each segment
+  LED is a Shockley fit at 20 mA: red 2.0 V, yellow 2.1 V, green 2.2 V. Segment pins a-g, dp
+  drive the anodes of that segment in all four digits; d1-d4 are the digits' cathodes, so
+  the digits are multiplexed: one digit's cathode is pulled low at a time. Ratings: 25 mA
+  per segment continuous, 150 mA peak at 1/10 duty. In simulation every LED is measured; a
+  segment counts as lit when its mean current over the last 20 ms reaches 100 uA and 30 %
+  of the brightest segment's. Pin currents: current(DS1.a), current(DS1.d1), ...
+datasheet: https://www.kingbrightusa.com/images/catalog/SPEC/CC56-12EWA.pdf
+pins: [a, b, c, d, e, f, g, dp, d1, d2, d3, d4]
+optional_pins: [dp]
+params:
+  color: { choices: [red, yellow, green], default: red }
+spice:
+  prefix: D
+  template: ""
+  generator: display
+  pin_currents: true
+  model_param: color
+  models:
+    red: "D(IS=4.675e-19 N=2 RS=1 CJO=20p BV=5 IBV=10u)"
+    yellow: "D(IS=6.758e-20 N=2 RS=1 CJO=20p BV=5 IBV=10u)"
+    green: "D(IS=9.769e-21 N=2 RS=1 CJO=20p BV=5 IBV=10u)"
+display:
+  kind: segments
+  common: cathode
+  digits: [d1, d2, d3, d4]
+  segments: { a: a, b: b, c: c, d: d, e: e, f: f, g: g, dp: dp }
+  lit: 100uA
+  ghost: 30%
+  persistence: 20ms
+symbol:
+  cell: x_display
+  ports: { a: a, b: b, c: c, d: d, e: e, f: f, g: g, dp: dp, d1: d1, d2: d2, d3: d3, d4: d4 }
+  label: "4x7seg <param:color>"
+kicad:
+  symbol: Display_Character:CC56-12EWA
+pcb:
+  footprint: Display_7Segment:CA56-12EWA
+  pads: { e: "1", d: "2", dp: "3", c: "4", g: "5", d4: "6", b: "7", d3: "8", d2: "9", f: "10", a: "11", d1: "12" }
+  value: "CC56-12 <param:color>"

@@ -103,7 +103,8 @@ class SpiceSpec(StrictModel):
     include: str | None = None
     compat: Literal["ps"] | None = None
     optran: OptranSpec | None = None
-    generator: Literal["mcu"] | None = None  # netlist written by code, not by `template`
+    # netlist written by code, not by `template`: "mcu" (McuSpec), "display" (DisplaySpec)
+    generator: Literal["mcu", "display"] | None = None
     # `<choice:P>` in the template becomes choice_values[P][value of P], e.g. a switch's
     # resistance for state open / pressed.
     choice_values: dict[str, dict[str, str]] = Field(default_factory=dict[str, dict[str, str]])
@@ -155,6 +156,46 @@ class McuSpec(StrictModel):
     gpio: dict[str, GpioSpec]
 
 
+SEGMENT_NAMES = ("a", "b", "c", "d", "e", "f", "g", "dp")
+
+
+class SegmentDisplaySpec(StrictModel):
+    """An LED segment display: one LED per digit and segment, between the segment's pin and
+    the digit's common pin (cathode or anode). Generated as SPICE with `generator: display`;
+    every LED is measured. The eye averages over `persistence`: a segment counts as lit
+    when its mean current over that time reaches `lit` (visible at all) and `ghost` of the
+    brightest segment's mean (dimmer ones read as dark: ghosting, leakage)."""
+
+    kind: Literal["segments"]
+    common: Literal["cathode", "anode"]
+    digits: Annotated[list[str], Field(min_length=1)]  # common pins, left to right
+    segments: dict[str, str]  # segment (a-g, dp) → pin
+    lit: str = "100uA"
+    ghost: str = "30%"
+    persistence: str = "20ms"
+
+    @model_validator(mode="after")
+    def _segments(self) -> Self:
+        unknown = set(self.segments) - set(SEGMENT_NAMES)
+        if unknown:
+            raise ValueError(f"unknown segments {sorted(unknown)}; use {list(SEGMENT_NAMES)}")
+        missing = set(SEGMENT_NAMES[:7]) - set(self.segments)
+        if missing:
+            raise ValueError(f"segments lack {sorted(missing)}")
+        if parse_quantity(self.lit, "A") <= 0 or parse_quantity(self.persistence, "s") <= 0:
+            raise ValueError("lit and persistence must be greater than zero")
+        if not 0 <= parse_quantity(self.ghost, "%") < 100:
+            raise ValueError("ghost must be at least 0 % and below 100 %")
+        return self
+
+    @property
+    def pins(self) -> list[str]:
+        return [*self.digits, *self.segments.values()]
+
+
+type DisplaySpec = SegmentDisplaySpec
+
+
 class SymbolSpec(StrictModel):
     """netlistsvg cell type, part pin → skin port mapping, and label template."""
 
@@ -177,6 +218,7 @@ class PartSpec(StrictModel):
     pcb: PcbSpec | None = None
     kicad: KicadSymbolSpec | None = None
     mcu: McuSpec | None = None
+    display: DisplaySpec | None = None
     optional_pins: list[str] = Field(default_factory=list[str])  # may stay unconnected
     dc_path: bool = True
     generic: bool = False  # a behavioural model, no real part: the BOM needs an `mpn:`
@@ -202,6 +244,13 @@ class PartSpec(StrictModel):
             raise ValueError("optional_pins must be pins of the part")
         if self.mcu is not None and not set(self.mcu.gpio) <= set(self.pins):
             raise ValueError("mcu.gpio keys must be pins of the part")
+        if self.display is not None:
+            unknown = set(self.display.pins) - set(self.pins)
+            if unknown:
+                raise ValueError(f"display names pins the part lacks: {sorted(unknown)}")
+        segments = isinstance(self.display, SegmentDisplaySpec)
+        if (self.spice.generator == "display") != segments:
+            raise ValueError("spice.generator: display goes with a `display: { kind: segments }`")
         if self.pcb is not None and set(self.pcb.pads) != set(self.pins):
             raise ValueError("pcb.pads must map every pin exactly once")
         self._check_template()

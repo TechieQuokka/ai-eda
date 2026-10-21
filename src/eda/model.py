@@ -152,6 +152,32 @@ class SerialExpectation:
 
 
 @dataclass(frozen=True)
+class DisplayExpectation:
+    """Text on a display part's screen (see schema.testspec.Expectation)."""
+
+    index: int
+    ref: str  # display part
+    pattern: str
+    at: float | None  # s; None = end of the run
+    min: float | None
+    max: float | None
+    location: Location
+
+    @property
+    def text(self) -> str:
+        when = f" @ {format_quantity(self.at, 's')}" if self.at is not None else ""
+        return f"display({self.ref}){when} ~ /{self.pattern}/"
+
+    @property
+    def range_text(self) -> str:
+        if self.min is None and self.max is None:
+            return "match"
+        if self.min is not None and self.max is not None:
+            return f"{self.min:g}..{self.max:g}"
+        return f">= {self.min:g}" if self.min is not None else f"<= {self.max:g}"
+
+
+@dataclass(frozen=True)
 class CompiledEvent:
     """A part parameter change or UART input at `time` during a tran test."""
 
@@ -176,6 +202,7 @@ class CompiledTest:
     pins: dict[str, str] = field(default_factory=lambda: dict[str, str]())  # net → high/low
     firmware: bool = False  # co-simulate the compiled firmware (tran only)
     serial: tuple[SerialExpectation, ...] = ()
+    displays: tuple[DisplayExpectation, ...] = ()
     events: tuple[CompiledEvent, ...] = ()  # sorted by time
     # Per-test part parameters: ref → param → (value, label).
     parts: dict[str, dict[str, tuple[float | str, str]]] = field(

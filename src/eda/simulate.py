@@ -11,6 +11,8 @@ from pydantic import BaseModel, JsonValue
 
 from eda import cosim, firmware
 from eda.adapters import ngspice, picosdk
+from eda.display import Screen
+from eda.display import report as display_report
 from eda.model import (
     GROUND,
     Ac,
@@ -21,6 +23,7 @@ from eda.model import (
     Design,
     Op,
     SerialExpectation,
+    Tran,
     domain_of,
 )
 from eda.netlist.spice import (
@@ -455,7 +458,9 @@ def _evaluate(
     raw_path: Path,
     diag: Diagnostics,
     netlist_path: Path | None,
+    recorded: dict[str, Screen] | None = None,
 ) -> dict[str, JsonValue] | None:
+    """Judge a finished run. `recorded` are screens the co-simulation drove."""
     try:
         plots = ngspice.parse_raw(raw_path.read_text(encoding="utf-8"))
     except (ValueError, KeyError, IndexError) as exc:
@@ -488,6 +493,15 @@ def _evaluate(
         checks.append(check)
     if not isinstance(test.analysis, Ac) and _reversed_supplies(design, test, traces, diag):
         all_passed = False
+    displays: dict[str, JsonValue] | None = None
+    screens: dict[str, Screen] = {}
+    if isinstance(test.analysis, (Op, Tran)):
+        screens = display_report.segment_screens(design, test, x, plot.vectors)
+    screens.update(recorded or {})
+    if screens or test.displays:
+        displays, display_checks, shown_ok = display_report.report(design, test, screens, diag)
+        checks += display_checks
+        all_passed = all_passed and shown_ok
 
     outcome: dict[str, JsonValue] = {
         "analysis": domain_of(test.analysis),
@@ -495,6 +509,8 @@ def _evaluate(
         "expectations": checks,
         "netlist": design.paths.rel(netlist_path) if netlist_path else None,
     }
+    if displays is not None:
+        outcome["displays"] = displays
     if isinstance(test.analysis, Op):
         outcome["operating_point"] = {
             name: {"value": _real(values[-1]), "display": format_quantity(_real(values[-1]), unit)}

@@ -1,0 +1,12 @@
+# The display sits along the top edge, the Pico below it; resistors and transistors are
+# placed automatically next to what they connect to.
+board:
+  spacing: 2mm
+rules:
+  track_width: 0.3mm
+placement:
+  DS1: { x: 10mm, y: 22mm, rotation: 90deg }
+  U1: { x: 32mm, y: 62mm, rotation: 90deg }
+pours:
+  - { net: GND, layer: bottom }
+fab: jlcpcb
