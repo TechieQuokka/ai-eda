@@ -733,7 +733,7 @@ The user asked for a calculator to order and hand-solder. Decided with the user,
 
 ### 27.2 Firmware
 
-- `calc.c` (hardware-free; 41 cases checked with the host's gcc during development), `keypad.c` (scan every 5 ms, a key reported after 3 identical scans), `lcd.c` from `lcd_message` plus `lcd_define_char`, `main.c`. × is CGRAM character 0 written as 0x08 (its mirror, so C strings can hold it), ÷ is the ROM's 0xFD.
+- `calc.c` (hardware-free; 41 cases checked with the host's gcc during development), `keypad.c` (scan every 5 ms, a key reported after 3 identical scans), `lcd.c` from `lcd_message` plus `lcd_define_char`, `main.c`. × is CGRAM character 0 written as 0x08 (its mirror, so C strings can hold it), ÷ CGRAM character 2 (0x0A). ÷ was first the ROM's 0xFD; the user saw it drawn as a box in the viewer (the tool's font has no glyphs above 0x7F), and 0xFD is ÷ only on A00-ROM modules, not on the A02 ones, so a defined glyph shows the same on any module.
 - **Found by the co-simulation, not by the host build**: the pico-sdk's printf keeps the trailing zeros of `%g` ("0.00000000" instead of "0"). Numbers are now formatted by hand (9 significant digits, plain from 1e-5 to 1e9 when it fits in 15 columns, else `1.52415788e+16`).
 
 ### 27.3 Tests (14, all passing)

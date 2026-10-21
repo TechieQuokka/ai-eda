@@ -18,7 +18,8 @@
 
 #define GLYPH_TIMES 0x08    // CGRAM character 0 (0x08 mirrors it, so strings can hold it)
 #define GLYPH_BATTERY 0x09  // CGRAM character 1
-#define GLYPH_DIVIDE 0xFD   // the LCD's ROM has a division sign
+#define GLYPH_DIVIDE 0x0A   // CGRAM character 2: ROM 0xFD is a division sign only on A00
+                            // modules, not on the A02 ones sold just as often
 
 // The battery is read after D1 through RS1/RS2 (half the voltage) on an ADC pin.
 #define BATTERY_CHECK_MS 500
@@ -28,6 +29,7 @@
 
 static const uint8_t times_glyph[8] = {0x00, 0x11, 0x0a, 0x04, 0x0a, 0x11, 0x00, 0x00};
 static const uint8_t battery_glyph[8] = {0x0e, 0x1b, 0x11, 0x11, 0x11, 0x11, 0x1f, 0x00};
+static const uint8_t divide_glyph[8] = {0x00, 0x04, 0x00, 0x1f, 0x00, 0x04, 0x00, 0x00};
 
 static bool battery_low;
 
@@ -47,7 +49,7 @@ static void check_battery(void) {
 // The calculator's ASCII operators as LCD characters.
 static void to_display(const char *text, char *out) {
     for (; *text; text++, out++) {
-        *out = *text == '*' ? GLYPH_TIMES : *text == '/' ? (char)GLYPH_DIVIDE : *text;
+        *out = *text == '*' ? GLYPH_TIMES : *text == '/' ? GLYPH_DIVIDE : *text;
     }
     *out = '\0';
 }
@@ -76,6 +78,7 @@ int main(void) {
     lcd_init();
     lcd_define_char(0, times_glyph);
     lcd_define_char(1, battery_glyph);
+    lcd_define_char(2, divide_glyph);
     calc_reset();
     check_battery();
     show();
