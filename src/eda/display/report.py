@@ -7,8 +7,9 @@ from pathlib import Path
 from pydantic import JsonValue
 
 from eda.adapters import rasterize
-from eda.display import Screen, thin
+from eda.display import Frame, Screen, thin
 from eda.display.segments import SegmentScreen
+from eda.display.ssd1306 import frame_image, lit_in
 from eda.model import CompiledTest, Design, DisplayExpectation, Tran
 from eda.result import Diagnostics
 from eda.schema.part import SegmentDisplaySpec
@@ -91,8 +92,11 @@ def _last_text(changes: list[JsonValue]) -> JsonValue:
 def _judge(
     exp: DisplayExpectation, screen: Screen | None, test: CompiledTest, diag: Diagnostics
 ) -> dict[str, JsonValue]:
-    text = screen.frame_at(exp.at).text if screen is not None else ""
-    pattern = re.compile(exp.pattern, re.MULTILINE)
+    frame = screen.frame_at(exp.at) if screen is not None else None
+    text = frame.text if frame is not None else ""
+    if exp.region is not None:
+        return _judge_region(exp, screen, frame, test, diag)
+    pattern = re.compile(exp.pattern or "", re.MULTILINE)
     matches = list(pattern.finditer(text))
     value: float | None
     if exp.min is None and exp.max is None:
@@ -137,4 +141,49 @@ def _judge(
         "passed": passed,
         "line": exp.location.line,
         "screen": text,
+    }
+
+
+def _judge_region(
+    exp: DisplayExpectation,
+    screen: Screen | None,
+    frame: Frame | None,
+    test: CompiledTest,
+    diag: Diagnostics,
+) -> dict[str, JsonValue]:
+    """Lit pixels in a rectangle of a pixel display."""
+    assert exp.region is not None
+    value: float | None = None
+    if screen is not None and frame is not None:
+        width, height = screen.meta.get("width"), screen.meta.get("height")
+        if isinstance(width, int) and isinstance(height, int):
+            value = float(lit_in(frame_image(frame, width, height), exp.region))
+    passed = (
+        value is not None
+        and (exp.min is None or value >= exp.min)
+        and (exp.max is None or value <= exp.max)
+    )
+    display = f"{value:g}" if value is not None else "n/a"
+    if not passed:
+        why = "the display shows nothing" if value is None else "outside the expected range"
+        diag.error(
+            "expect",
+            f"{test.name}: {exp.text} = {display}, expected {exp.range_text} ({why})",
+            exp.location,
+            test=test.name,
+            measure=exp.text,
+            value=value,
+            min=exp.min,
+            max=exp.max,
+        )
+    return {
+        "measure": exp.text,
+        "value": value,
+        "display": display,
+        "unit": "",
+        "min": exp.min,
+        "max": exp.max,
+        "expected": exp.range_text,
+        "passed": passed,
+        "line": exp.location.line,
     }

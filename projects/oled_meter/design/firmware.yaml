@@ -1,0 +1,9 @@
+# OLED on I2C0 (GP4 SDA, GP5 SCL; the module has the pull-ups), potentiometer on ADC0,
+# debug console on UART0.
+mcu: U1
+signals:
+  OLED_SDA: { function: I2C0_SDA, description: "OLED data (module pull-up to 3.3 V)" }
+  OLED_SCL: { function: I2C0_SCL, description: "OLED clock (module pull-up to 3.3 V)" }
+  POT: { function: ADC0, description: "potentiometer wiper, 0-3.3 V" }
+  UART_TX: { function: UART0_TX, description: debug console out }
+  UART_RX: { function: UART0_RX, description: debug console in }

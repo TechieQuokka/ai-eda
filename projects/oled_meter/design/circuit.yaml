@@ -1,0 +1,18 @@
+description: >
+  OLED meter. Net names become firmware pins (PIN_OLED_SDA, PIN_OLED_SCL, PIN_POT).
+parts:
+  J1: { type: dc_voltage_source, voltage: 5V }       # 5 V power input on VSYS
+  U1: { type: raspberry_pi_pico }
+  OLED1: { type: oled_ssd1306 }                      # plugs into a 1x4 socket: GND VCC SCL SDA
+  RV1: { type: potentiometer, resistance: 10kohm, position: 50% }
+  C1: { type: capacitor, capacitance: 100nF }        # ADC input filter
+  J2: { type: connector_1x03 }                       # UART header: 1 TX, 2 RX, 3 GND
+nets:
+  VSYS: [J1.+, U1.VSYS]
+  V3V3: [U1.3V3, OLED1.vcc, RV1.3]
+  OLED_SDA: [U1.GP4, OLED1.sda]
+  OLED_SCL: [U1.GP5, OLED1.scl]
+  POT: [U1.GP26, RV1.2, C1.1]
+  UART_TX: [U1.GP0, J2.1]
+  UART_RX: [U1.GP1, J2.2]
+  GND: [J1.-, U1.GND, OLED1.gnd, RV1.1, C1.2, J2.3]

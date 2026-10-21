@@ -15,7 +15,7 @@
 
 - All six open decisions from `PROJECT_SUMMARY.md` §11 are settled (Python, YAML, no tscircuit fork, YAML is the PCB source of truth, RP2040/Pico, 2-layer boards).
 - Repository: https://github.com/TechieQuokka/ai-eda (public, `master`); the user approves each push (`git status` shows what is local).
-- Quality gates: `ruff format --check`, `ruff check`, `pyright` (strict), and `pytest` (271 tests) all pass; all nine example projects pass `eda run`.
+- Quality gates: `ruff format --check`, `ruff check`, `pyright` (strict), and `pytest` (313 tests) all pass; all twelve example projects pass `eda run`.
 - Bad-input hardening (`DESIGN_DECISIONS.md` §21): malformed and extreme input answers in JSON with a rule instead of crashing, hanging, or passing; regression tests in `tests/test_bad_input.py`.
 - Checking the examples: `eda run`/`eda render` append to each project's `iterations.jsonl`; for a status check that should leave no trace, call `eda.pipeline.render(Path("projects/<name>"))` from `uv run python` instead.
 
@@ -31,7 +31,7 @@ uv run eda run projects/pico_io           # check → fw (+ build) → sim (+ fi
 uv run eda watch projects/pico_io         # live viewer at http://127.0.0.1:8765/
 ```
 
-Example projects: `led_demo` (op, board), `rc_filter` (tran + op), `opamp_amp` (generic op-amp: op/tran/ac, board), `tl072_amp` (TI TL072 vendor model, board), `pico_io` (RP2040: firmware, sim, board), `led_blink` (Pico firmware blinks an LED 1 s on / 1 s off), `led_blink_bjt` (two-2N3904 astable multivibrator, the cheap blinker), `nightlight` (LDR + Darlington; a `sunset` test dims the light with events, `switching_point` sweeps it), `water_alarm` (probe header + Darlington, the first design meant to be ordered and hand-soldered: board 40 × 30 mm, `fab: jlcpcb`).
+Example projects: `led_demo` (op, board), `rc_filter` (tran + op), `opamp_amp` (generic op-amp: op/tran/ac, board), `tl072_amp` (TI TL072 vendor model, board), `pico_io` (RP2040: firmware, sim, board), `led_blink` (Pico firmware blinks an LED 1 s on / 1 s off), `led_blink_bjt` (two-2N3904 astable multivibrator, the cheap blinker), `nightlight` (LDR + Darlington; a `sunset` test dims the light with events, `switching_point` sweeps it), `water_alarm` (probe header + Darlington, the first design meant to be ordered and hand-soldered: board 40 × 30 mm, `fab: jlcpcb`), `seg_counter` (multiplexed 4-digit 7-segment stopwatch), `lcd_message` (16×2 HD44780 LCD, text from the UART), `oled_meter` (128×64 SSD1306 OLED on I2C: pot reading as text and a bar).
 
 ## 3. Environment
 
@@ -72,7 +72,7 @@ M4 is finished (`DESIGN_DECISIONS.md` §15): `pico_io` blinks its LED in the emu
 9. ~~Ordering a board for hand soldering~~: done (§23: shopping BOM with `mpn:`, `fab: jlcpcb` limits, assembly drawing, `docs/ordering.md`). The user solders by hand; assembly services (LCSC numbers, CPL files, SMD defaults) are out of scope unless they ask.
 10. ~~DC sweep analysis~~: done (§24: `{ type: dc, sweep: PART.param, ... }`; `nightlight` switching point 10.09 lx).
 11. More example designs the user suggested: PWM dimming from a pot (Pico ADC → PWM, check with `duty()`), a button that toggles an LED, an op-amp low-pass filter.
-11a. **Displays (in progress, user asked 2026-10-21 for all three kinds, non-stop)**: seven-segment done (`DESIGN_DECISIONS.md` §26.2, `projects/seg_counter`); 16×2 HD44780 LCD done (§26.3, `projects/lcd_message`); next a 128×64 SSD1306 OLED on I2C (virtual device on rp2040js's I2C).
+11a. ~~Displays~~ (user asked 2026-10-21 for all three kinds, non-stop): done (`DESIGN_DECISIONS.md` §26): seven-segment (`projects/seg_counter`), 16×2 HD44780 LCD (`projects/lcd_message`), 128×64 SSD1306 OLED on I2C (`projects/oled_meter`), each with firmware in the loop and a DRC-clean board. Follow-ups if wanted: SPI displays, an I2C sensor on the same device framework, a combined project using a display (e.g. a thermometer or a clock), and the not-done list of §26.5.
 12. `water_alarm` follow-ups (§25; the user wrapped the project up on 2026-10-21, none started): a breadboard trial with real water before ordering (the user's step), a tolerance/temperature (corner or Monte Carlo) analysis (a new tool feature), checking the footprints' pinouts against the 2N3904/LED datasheets, protection parts (reverse-polarity diode, a base filter capacitor against mains hum on long probe wires), and, if the user wants finished boards instead of soldering, an assembly (PCBA) path: LCSC part numbers, the house's BOM/CPL formats.
 13. Exploration without editing `test.yaml` (proposed, not agreed): `eda try PROJECT --set J1.water=100k` for one operating point, `--tran 3s --at 1s J1.water=100k` for an ad-hoc scenario. The user does **not** want controls in the viewer.
 
@@ -96,6 +96,8 @@ User decisions of 2026-10-21 (later): the viewer stays view-only (no sliders or 
 | Design | A pulse `width` longer than its `period` is not flagged (needs a cross-parameter rule) | §21 |
 | Simulation | DC sweeps solve each point separately: no hysteresis branches of bistable circuits | §24 |
 | Simulation | Parts are simulated at nominal values only: no tolerance, temperature, or worst-case analysis | §25 |
+| Displays | Text reader knows the 5x8 font only (no scaled fonts); LCD/OLED reads (busy flag, status) not modelled; I2C has no clock stretching or bus waveforms | §26.5 |
+| Schematic | Power symbols on adjacent connector pins point sideways; their value text can overlap labels | §26.5 |
 | Simulation | Waveform JSON is large (4–8 MB per firmware test; full float precision) | — |
 | Schematic | netlistsvg layout is automatic only; crowded for op-amp/MCU circuits (the wired KiCad view, §20, reads better and could replace it) | §12.4 |
 

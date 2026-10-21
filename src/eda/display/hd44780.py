@@ -17,6 +17,7 @@ from html import escape
 
 from pydantic import JsonValue
 
+from eda.adapters.rp2040 import I2cTransfer
 from eda.display import Frame, Recorded
 from eda.display.digital import Edge, Inputs, Segments
 from eda.display.font5x8 import character, glyph
@@ -219,8 +220,14 @@ class Hd44780Device:
     # --- co-simulation ---------------------------------------------------------------
 
     def window(
-        self, start: float, end: float, gpio: dict[str, Segments], volts: dict[str, float]
+        self,
+        start: float,
+        end: float,
+        gpio: dict[str, Segments],
+        volts: dict[str, float],
+        transfers: tuple[I2cTransfer, ...] = (),
     ) -> None:
+        del transfers  # a parallel bus: only pin levels matter
         vdd, vss, v0 = (volts.get(net, 0.0) if net else 0.0 for net in self.supply)
         supply = vdd - vss
         self.vlcd = vdd - v0

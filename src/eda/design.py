@@ -45,7 +45,7 @@ from eda.schema.board import BoardFile, FabSpec
 from eda.schema.circuit import Circuit
 from eda.schema.common import Scalar
 from eda.schema.firmware import FirmwareFile
-from eda.schema.part import ParamSpec, PartSpec, SegmentDisplaySpec
+from eda.schema.part import ParamSpec, PartSpec, SegmentDisplaySpec, Ssd1306DisplaySpec
 from eda.schema.project import Project
 from eda.schema.testspec import (
     AcAnalysis,
@@ -926,9 +926,8 @@ def _match_bounds(
 ) -> tuple[float | None, float | None] | None:
     """Checks `match` (a regular expression with at most one group) and returns the numeric
     (min, max) of a serial or display expectation."""
-    assert raw.match is not None
     try:
-        pattern = re.compile(raw.match)
+        pattern = re.compile(raw.match or "")
     except re.error as exc:
         diag.error("invalid_match", f"match: {exc}", src.at(*base, "match"))
         return None
@@ -962,7 +961,7 @@ def _compile_display(
 ) -> DisplayExpectation | None:
     base = ("tests", name, "expect", index)
     at = src.at(*base)
-    assert raw.display is not None and raw.match is not None
+    assert raw.display is not None
     if circuit is None or analysis is None:
         return None
     part = circuit.parts.get(raw.display)
@@ -982,14 +981,6 @@ def _compile_display(
             at,
         )
         return None
-    if not isinstance(part.spec.display, SegmentDisplaySpec) and not runs_firmware:
-        diag.error(
-            "display_needs_firmware",
-            f"{name}: {raw.display} shows what the firmware writes to it; "
-            "read it in a test with firmware: true",
-            at,
-        )
-        return None
     when: float | None = None
     if raw.at is not None:
         if not isinstance(analysis, Tran):
@@ -1005,6 +996,37 @@ def _compile_display(
                 "display_time", f"{name}: at {raw.at} is outside the run", src.at(*base, "at")
             )
             return None
+    region: tuple[int, int, int, int] | None = None
+    if raw.region is not None:
+        spec = part.spec.display
+        if not isinstance(spec, Ssd1306DisplaySpec):
+            diag.error(
+                "display_region",
+                f"{name}: region counts pixels; {raw.display} is not a pixel display",
+                src.at(*base, "region"),
+            )
+            return None
+        x0, y0, x1, y1 = raw.region
+        if not (0 <= x0 <= x1 < spec.width and 0 <= y0 <= y1 < spec.height):
+            diag.error(
+                "display_region",
+                f"{name}: region {raw.region} must satisfy 0 <= x0 <= x1 < {spec.width} and "
+                f"0 <= y0 <= y1 < {spec.height}",
+                src.at(*base, "region"),
+            )
+            return None
+        if raw.min is None and raw.max is None:
+            diag.error("missing_bound", f"{name}: region: give min, max, or both", at)
+            return None
+        region = (x0, y0, x1, y1)
+    if not isinstance(part.spec.display, SegmentDisplaySpec) and not runs_firmware:
+        diag.error(
+            "display_needs_firmware",
+            f"{name}: {raw.display} shows what the firmware writes to it; "
+            "read it in a test with firmware: true",
+            at,
+        )
+        return None
     bounds = _match_bounds(raw, base, src, diag)
     if bounds is None:
         return None
@@ -1012,6 +1034,7 @@ def _compile_display(
         index=index,
         ref=raw.display,
         pattern=raw.match,
+        region=region,
         at=when,
         min=bounds[0],
         max=bounds[1],

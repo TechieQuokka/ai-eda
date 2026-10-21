@@ -1,0 +1,10 @@
+# Build with the Raspberry Pi pico-sdk:  cmake -B build -DPICO_SDK_PATH=<sdk> && cmake --build build
+cmake_minimum_required(VERSION 3.13)
+include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
+project(oled_meter C CXX ASM)
+pico_sdk_init()
+add_executable(oled_meter main.c oled.c)
+target_link_libraries(oled_meter pico_stdlib hardware_i2c hardware_adc)
+pico_enable_stdio_uart(oled_meter 1)
+pico_add_extra_outputs(oled_meter)
+target_compile_options(oled_meter PRIVATE -Wall -Wextra)

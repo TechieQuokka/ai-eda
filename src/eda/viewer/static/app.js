@@ -593,7 +593,26 @@ function drawLcd(file, frame, t) {
   return root;
 }
 
-const DRAWERS = { segments: drawSegments, hd44780: drawLcd };
+// SSD1306 OLED: the frame's pixels (row-major bits as hex) on a canvas.
+function drawOled(file, frame) {
+  const { width, height } = file.meta;
+  const canvas = el("canvas", { width: width * 4 + 16, height: height * 4 + 16, class: "screen-svg" });
+  const g = canvas.getContext("2d");
+  g.fillStyle = "#05070a";
+  g.fillRect(0, 0, canvas.width, canvas.height);
+  const hex = frame.state.pixels;
+  if (hex) {
+    g.fillStyle = "#bfe8ff";
+    g.globalAlpha = 0.45 + 0.55 * ((frame.state.contrast ?? 128) / 255);
+    for (let i = 0; i < width * height; i++) {
+      const byte = parseInt(hex.substr((i >> 3) * 2, 2), 16);
+      if (byte & (0x80 >> (i & 7))) g.fillRect(8 + (i % width) * 4, 8 + Math.floor(i / width) * 4, 4, 4);
+    }
+  }
+  return canvas;
+}
+
+const DRAWERS = { segments: drawSegments, hd44780: drawLcd, ssd1306: drawOled };
 
 // One screen in the playback: shows the frame at time t, redrawn only when it changes.
 function screenView(ref, path, version) {

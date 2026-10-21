@@ -1,0 +1,30 @@
+tests:
+  bus_idle:
+    description: >
+      The module's 4.7 kohm pull-ups hold SDA and SCL at 3.3 V (above the SSD1306's 2.64 V
+      input threshold) and the pot puts half of 3.3 V on ADC0.
+    analysis: { type: op }
+    expect:
+      - { measure: voltage(OLED_SDA), min: 3.2V }
+      - { measure: voltage(OLED_SCL), min: 3.2V }
+      - { measure: voltage(POT), min: 1.6V, max: 1.7V }
+  meter:
+    description: >
+      Firmware in the loop with the pot at 50 %: the OLED shows the title, about 2048 of
+      4095, 1.65 V, and a bar filled about halfway (116 x 8 pixels at full scale).
+    analysis: { type: tran, step: 1ms, stop: 300ms }
+    firmware: true
+    expect:
+      - { display: OLED1, match: '^eda OLED meter$' }
+      - { display: OLED1, match: 'Pot: +(\d+)', min: 2000, max: 2100 }
+      - { display: OLED1, match: '^1\.6[4-6] V$' }
+      - { display: OLED1, region: [6, 50, 121, 57], min: 430, max: 500 }
+      - { serial: UART_TX, match: 'oled: no answer', max: 0 }
+  meter_low:
+    description: "The pot at 10 %: about 410 counts, 0.33 V, a short bar."
+    analysis: { type: tran, step: 1ms, stop: 300ms }
+    firmware: true
+    parts: { RV1: { position: 10% } }
+    expect:
+      - { display: OLED1, match: 'Pot: +(\d+)', min: 380, max: 440 }
+      - { display: OLED1, region: [6, 50, 121, 57], min: 70, max: 110 }

@@ -2,13 +2,14 @@
 //
 // Usage: node rp2040_driver.mjs <rp2040js package dir>
 // Protocol: one JSON request per stdin line, one JSON reply per stdout line.
-//   {"cmd":"init","bootrom":PATH,"image":PATH.uf2,"pins":[15,...],"uarts":[0,...]}
+//   {"cmd":"init","bootrom":PATH,"image":PATH.uf2,"pins":[15,...],"uarts":[0,...],
+//    "i2c":{"0":[60]}}
 //     -> {"ok":true}
 //   {"cmd":"run","until":NANOS,"inputs":{"14":true},"adc":{"0":2048},"break_on_mode":true,
-//    "send":{"0":"text"}}
+//    "send":{"0":"text"},"i2c_ok":{"0":true}}
 //     -> {"ok":true,"t":NANOS,"pins":{"15":[[NANOS,"high"],...]},"uart":{"0":"text"},
 //         "halted":null|CODE,"halted_at":null|NANOS,"faults":[[NANOS,"message"],...],
-//         "early":false}
+//         "early":false,"i2c":[[NANOS,BUS,ADDRESS,"w"|"r",[BYTES],ACKED,STOP_NANOS],...]}
 //   Each pin's list starts with its state at the start of the window, followed by changes.
 //   With break_on_mode the run returns early ("early": true) right after a watched pin
 //   changes mode (anything but a high<->low output toggle), so the circuit can respond.
@@ -20,6 +21,13 @@
 //   `faults` lists accesses to unmapped memory during the window (a HardFault on the real
 //   chip; rp2040js carries on). `halted_at` is when the core stopped on a BKPT.
 //   States: high, low, hiz, pullup, pulldown, keeper.
+//   `i2c` at init lists the 7-bit addresses of the devices on each I2C bus: they acknowledge
+//   their address and every byte written to them (reads return 0x00); other addresses are
+//   not acknowledged. `i2c_ok` says whether a bus works in this window (its SDA and SCL
+//   are pulled high); a dead bus acknowledges nothing. Every byte takes nine SCL periods
+//   at the rate the firmware set, START and STOP one each. Finished transfers are
+//   reported at their STOP: start time, bus, address, direction, the bytes, and whether
+//   the address was acknowledged.
 import { readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
@@ -65,6 +73,8 @@ let halted = null;
 let haltedAt = null;
 let faults = [];
 let modeChanged = false;
+let i2cDone = []; // transfers finished during the window
+const i2cOk = {}; // bus -> whether SDA/SCL are pulled high
 const rxQueue = {}; // UART index -> bytes still to arrive
 let nextRx = 0; // nanos at which the next queued byte arrives
 const DRIVEN = new Set(['high', 'low']);
@@ -105,6 +115,9 @@ function init(request) {
     };
     paceTransmit(mcu.uart[index]);
   }
+  for (const [bus, addresses] of Object.entries(request.i2c ?? {})) {
+    attachI2C(Number(bus), new Set(addresses));
+  }
   mcu.onBreak = (code) => {
     if (halted === null) haltedAt = clock.nanos;
     halted = code;
@@ -120,6 +133,7 @@ function run(request) {
   for (const [channel, code] of Object.entries(request.adc ?? {})) {
     mcu.adc.channelValues[Number(channel)] = code;
   }
+  for (const [bus, ok] of Object.entries(request.i2c_ok ?? {})) i2cOk[bus] = Boolean(ok);
   for (const [index, text] of Object.entries(request.send ?? {})) {
     const queue = (rxQueue[index] ??= []);
     if (queue.length === 0) nextRx = Math.max(nextRx, clock.nanos);
@@ -129,6 +143,7 @@ function run(request) {
   for (const index of watched) segments[index] = [[clock.nanos, STATE[mcu.gpio[index].value]]];
   uart = {};
   faults = [];
+  i2cDone = [];
   modeChanged = false;
   const until = request.until;
   const breakOnMode = Boolean(request.break_on_mode);
@@ -145,10 +160,11 @@ function run(request) {
   }
   const early = breakOnMode && modeChanged && clock.nanos < until;
   const t = Math.min(clock.nanos, until);
-  return { ok: true, t, pins: segments, uart, halted, halted_at: haltedAt, faults, early };
+  return { ok: true, t, pins: segments, uart, halted, halted_at: haltedAt, faults, early, i2c: i2cDone };
 }
 
 const UARTDR = 0x0;
+const TX_EMPTY_INTR = 1 << 4; // I2C raw interrupt TX_EMPTY
 const TXFF = 1 << 5;
 const TXFE = 1 << 7;
 const BUSY = 1 << 3;
@@ -180,6 +196,49 @@ function paceTransmit(port) {
   port.writeUint32 = (offset, value) => {
     if (offset === UARTDR) idleAt = Math.max(idleAt, clock.nanos) + charNanos();
     write(offset, value);
+  };
+}
+
+// I2C devices on a bus: answer the controller after the time the bits take on the wire.
+function attachI2C(bus, addresses) {
+  const port = mcu.i2c[bus];
+  let transfer = null;
+  const bitNanos = () => {
+    const fast = port.speed !== 1; // 1 = standard mode registers
+    const high = fast ? port.fsClockHighPeriod : port.ssClockHighPeriod;
+    const low = fast ? port.fsClockLowPeriod : port.ssClockLowPeriod;
+    const cycles = high + low;
+    return cycles > 0 ? cycles * CYCLE_NANOS : 2500; // 400 kHz if unset
+  };
+  const later = (bits, done) => {
+    const alarm = clock.createAlarm(done);
+    alarm.schedule(Math.max(1, Math.round(bits * bitNanos())));
+  };
+  port.onStart = () => later(1, () => port.completeStart());
+  // On an abort the chip flushes the TX FIFO, which raises TX_EMPTY; rp2040js flushes it
+  // without raising the flag, and the pico-sdk's i2c_write_blocking would wait forever.
+  const flushed = () => port.setInterrupts(TX_EMPTY_INTR);
+  port.onConnect = (address, mode) => {
+    const ack = (i2cOk[bus] ?? true) && addresses.has(address);
+    transfer = [clock.nanos, bus, address, mode === 1 ? 'r' : 'w', [], ack];
+    later(9, () => {
+      port.completeConnect(ack);
+      if (!ack) flushed();
+    });
+  };
+  port.onWriteByte = (value) => {
+    if (transfer) transfer[4].push(value);
+    const ack = Boolean(transfer?.[5]);
+    later(9, () => {
+      port.completeWrite(ack);
+      if (!ack) flushed();
+    });
+  };
+  port.onReadByte = () => later(9, () => port.completeRead(0x00));
+  port.onStop = () => {
+    if (transfer) i2cDone.push([...transfer, clock.nanos]);
+    transfer = null;
+    later(1, () => port.completeStop());
   };
 }
 

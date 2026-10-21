@@ -1,0 +1,12 @@
+# The OLED module plugs into a 1x4 socket at the top edge (it sits over the board); the
+# Pico lies below, the pot and capacitor next to what they connect to.
+board:
+  spacing: 2mm
+rules:
+  track_width: 0.3mm
+placement:
+  OLED1: { x: 25mm, y: 4mm, rotation: 90deg }
+  U1: { x: 30mm, y: 30mm, rotation: 90deg }
+pours:
+  - { net: GND, layer: bottom }
+fab: jlcpcb

@@ -253,7 +253,47 @@ class Hd44780DisplaySpec(StrictModel):
         return parse_quantity(getattr(self, name), "V")
 
 
-type DisplaySpec = Annotated[SegmentDisplaySpec | Hd44780DisplaySpec, Field(discriminator="kind")]
+SSD1306_ROLES = ("scl", "sda", "vcc", "gnd")
+
+
+class Ssd1306DisplaySpec(StrictModel):
+    """A monochrome OLED module with an SSD1306 controller on I2C (write only). In a
+    firmware test its controller is an I2C device on the bus the SDA/SCL nets reach: it
+    acknowledges `address` (or the part's `address` parameter) while both lines idle above
+    its input threshold (0.8 x `logic`, the module's regulated controller supply), decodes
+    commands and display RAM writes, and shows the panel as the commands map it.
+
+    `charge_pump`: the module makes the panel voltage with the controller's charge pump,
+    so the image appears only after `8D 14`. `com_alternative`: the panel's rows are wired
+    for the alternative COM configuration (`DA 12`, 128x64 panels); a different setting
+    interleaves the rows, as on the real module."""
+
+    kind: Literal["ssd1306"]
+    width: Annotated[int, Field(ge=8, le=128)] = 128
+    height: Literal[16, 32, 48, 64] = 64
+    pins: dict[str, str]
+    address: Annotated[int, Field(ge=0x08, le=0x77)] = 0x3C
+    logic: str = "3.3V"
+    supply_min: str = "3.0V"
+    supply_max: str = "5.5V"
+    charge_pump: bool = True
+    com_alternative: bool = True
+
+    @model_validator(mode="after")
+    def _roles(self) -> Self:
+        if set(self.pins) != set(SSD1306_ROLES):
+            raise ValueError(f"pins must map exactly the roles {list(SSD1306_ROLES)}")
+        for name in ("logic", "supply_min", "supply_max"):
+            parse_quantity(getattr(self, name), "V")
+        return self
+
+    def volts(self, name: str) -> float:
+        return parse_quantity(getattr(self, name), "V")
+
+
+type DisplaySpec = Annotated[
+    SegmentDisplaySpec | Hd44780DisplaySpec | Ssd1306DisplaySpec, Field(discriminator="kind")
+]
 
 
 class SymbolSpec(StrictModel):

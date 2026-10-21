@@ -333,6 +333,15 @@ def build(request: Request) -> Request:
         else:
             unplaced.append(footprint)
 
+    for i, (footprint, box) in enumerate(placed):
+        for other, other_box in placed[:i]:
+            if _overlaps(box, [other_box], 0.0):
+                raise DesignProblem(
+                    f"hand-placed {footprint.GetReference()} overlaps {other.GetReference()} "
+                    "(courtyards)",
+                    footprint.GetReference(),
+                )
+
     gap = request["board"]["spacing"]
     if request["board"].get("placer", "connected") == "shelf":
         width = request["board"].get("width") or _target_width(unplaced, gap)

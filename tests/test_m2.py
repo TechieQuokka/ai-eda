@@ -272,3 +272,16 @@ def test_fixed_board_too_small(make_project: MakeProject) -> None:
     assert [e.rule for e in result.errors] == ["no_room"]
     assert "no room for" in result.errors[0].message
     assert result.errors[0].file == "design/board.yaml"
+
+
+@requires_kicad
+def test_overlapping_hand_placements(make_project: MakeProject) -> None:
+    root = _board(
+        make_project,
+        "board: {}\nplacement:\n  R1: { x: 10mm, y: 10mm }\n  D1: { x: 11mm, y: 10mm }\n",
+    )
+    result = pipeline.pcb(root)
+    assert not result.tool_error
+    assert [e.rule for e in result.errors] == ["placement_overlap"]
+    assert "overlaps" in result.errors[0].message
+    assert result.errors[0].path == "placement.D1"

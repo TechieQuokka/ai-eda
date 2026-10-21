@@ -49,6 +49,8 @@ class Expectation(StrictModel):
     Display: `match` is searched in the text on the display part's screen at time `at`
     (default: the end of the run), rows joined by newlines. Without min/max the text must
     match; with them the value is the number in the capture group, or the count of matches.
+    On a pixel display, `region` [x0, y0, x1, y1] (inclusive) counts the lit pixels there
+    instead, judged by min/max.
     """
 
     measure: str | None = None
@@ -56,6 +58,7 @@ class Expectation(StrictModel):
     display: Ident | None = None  # display part reference
     match: str | None = None
     at: str | None = None  # display: when to look at the screen
+    region: list[int] | None = None  # pixel display: count lit pixels in [x0, y0, x1, y1]
     min: str | float | None = None
     max: str | float | None = None
     # tran only: evaluate the measure over this part of the run, e.g. from: 1s
@@ -71,8 +74,10 @@ class Expectation(StrictModel):
             raise ValueError("`match` goes with `serial` or `display`, not `measure`")
         if self.serial is not None and self.match is None:
             raise ValueError("`serial` and `match` go together")
-        if self.display is not None and self.match is None:
-            raise ValueError("`display` needs `match`")
+        if self.display is not None and (self.match is None) == (self.region is None):
+            raise ValueError("`display` needs either `match` or `region`")
+        if self.region is not None and (self.display is None or len(self.region) != 4):
+            raise ValueError("`region` is [x0, y0, x1, y1] on a `display`")
         if self.at is not None and self.display is None:
             raise ValueError("`at` goes with `display`; a measure uses at(trace, TIME)")
         return self

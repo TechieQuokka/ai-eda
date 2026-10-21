@@ -21,6 +21,7 @@ pins (UART, SPI, I2C) keep their static model from firmware.yaml, and UART outpu
 captured as text.
 """
 
+import re
 from contextlib import ExitStack
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -28,6 +29,7 @@ from pathlib import Path
 from eda.adapters import ngspice_shared, rp2040
 from eda.display import Screen
 from eda.display.hd44780 import Hd44780Device
+from eda.display.ssd1306 import Ssd1306Device
 from eda.model import GROUND, CompiledTest, Design, ResolvedCircuit, Tran
 from eda.netlist.spice import (
     alter_commands,
@@ -37,7 +39,8 @@ from eda.netlist.spice import (
     optran_command,
     voltage_vector,
 )
-from eda.schema.part import Hd44780DisplaySpec, McuSpec
+from eda.schema.part import Hd44780DisplaySpec, McuSpec, Ssd1306DisplaySpec
+from eda.units import format_quantity
 
 HIZ_OHM = 1e8
 # RP2040 input thresholds at IOVDD = 3.3 V: VIH 2.0 V, VIL 0.8 V (datasheet §5.5.3).
@@ -80,7 +83,14 @@ def run(design: Design, test: CompiledTest, image: Path | None, raw_path: Path) 
     analysis = test.analysis
     assert isinstance(analysis, Tran)
     circuit = test.circuit(design.circuit)
-    mcu_ref, drives, pins, adc, uarts = _firmware_pins(design) if test.firmware else _NO_MCU
+    setup = _firmware_pins(design) if test.firmware else _McuSetup()
+    mcu_ref, drives, pins, adc, uarts = setup.mcu, setup.drives, setup.pins, setup.adc, setup.uarts
+    mcu = design.circuit.parts[mcu_ref].spec.mcu if mcu_ref else None
+    devices = _devices(circuit, setup) if mcu else []
+    i2c_devices: dict[int, list[int]] = {}
+    for device in devices:
+        if isinstance(device, Ssd1306Device) and device.bus is not None:
+            i2c_devices.setdefault(device.bus, []).append(device.address)
     netlist = build_netlist(
         f"{design.project.name} / {test.name} (stepped)",
         circuit,
@@ -114,12 +124,11 @@ def run(design: Design, test: CompiledTest, image: Path | None, raw_path: Path) 
                 assert image is not None
                 log = raw_path.with_suffix(".emulator.log")
                 emulator = stack.enter_context(
-                    rp2040.Emulator(image, [p.gpio for p in pins.values()], uarts, log)
+                    rp2040.Emulator(image, [p.gpio for p in pins.values()], uarts, log, i2c_devices)
                 )
-            mcu = design.circuit.parts[mcu_ref].spec.mcu if mcu_ref else None
             thevenin = _Thevenin(mcu) if mcu else None
-            devices = _devices(circuit, pins, mcu.vio) if mcu and emulator else []
             sampled = sorted({net for device in devices for net in device.nets})
+            bus = _BusWatch(setup, devices, mcu.vio) if mcu else None
             applied: dict[str, tuple[float, float]] = {}
 
             def apply(pin: _Pin, volts: float, ohms: float) -> None:
@@ -173,7 +182,11 @@ def run(design: Design, test: CompiledTest, image: Path | None, raw_path: Path) 
                     for p in pins.values()
                 }
                 codes = {ch: _adc_code(_volts(sim, net), mcu.vio) for ch, net in adc.items()}
-                result = emulator.run(target, inputs, codes, break_on_mode=True, send=send)
+                assert bus is not None
+                healthy = bus.healthy({net: _volts(sim, net) for net in bus.nets})
+                result = emulator.run(
+                    target, inputs, codes, break_on_mode=True, send=send, i2c_ok=healthy
+                )
                 send = {}
                 for index, text in result.uart.items():
                     uart[index] = uart.get(index, "") + text
@@ -187,11 +200,13 @@ def run(design: Design, test: CompiledTest, image: Path | None, raw_path: Path) 
                 window_start = now
                 if result.end > now:
                     now = advance(result.end)
+                bus.transfers(result.i2c)
+                bus.check_pins({p.net: _volts(sim, p.net) for p in pins.values()}, now)
                 if devices:
                     volts = {net: _volts(sim, net) for net in sampled}
                     gpio = {p.net: result.pins.get(p.gpio, []) for p in pins.values()}
                     for device in devices:
-                        device.window(window_start, now, gpio, volts)
+                        device.window(window_start, now, gpio, volts, result.i2c)
                 if result.early:
                     # A pin changed mode: let the circuit settle on the new state before the
                     # firmware reads its inputs again.
@@ -206,6 +221,7 @@ def run(design: Design, test: CompiledTest, image: Path | None, raw_path: Path) 
             via_transient = sim.op_via_transient
             screens: dict[str, Screen] = {d.ref: d.screen(analysis.stop) for d in devices}
             issues = [issue for device in devices for issue in device.issues()]
+            issues += bus.issues() if bus else []
     except (ngspice_shared.SharedSpiceError, rp2040.EmulatorError, ValueError) as exc:
         raise CosimError(str(exc)) from exc
     return CosimResult(
@@ -221,41 +237,140 @@ def run(design: Design, test: CompiledTest, image: Path | None, raw_path: Path) 
     )
 
 
-type _McuSetup = tuple[str | None, dict[str, str], dict[str, _Pin], dict[int, str], list[int]]
-_NO_MCU: _McuSetup = (None, {}, {}, {}, [])
+@dataclass
+class _McuSetup:
+    mcu: str | None = None  # part reference
+    drives: dict[str, str] = field(default_factory=lambda: dict[str, str]())
+    pins: dict[str, _Pin] = field(default_factory=lambda: dict[str, _Pin]())  # firmware-driven
+    adc: dict[int, str] = field(default_factory=lambda: dict[int, str]())  # channel → net
+    uarts: list[int] = field(default_factory=lambda: list[int]())  # UART TX indexes
+    i2c: dict[int, dict[str, str]] = field(  # bus → {"sda": net, "scl": net}
+        default_factory=lambda: dict[int, dict[str, str]]()
+    )
 
 
 def _firmware_pins(design: Design) -> _McuSetup:
-    """(MCU ref, pin drives, firmware-driven pins, ADC channel → net, UART TX indexes)."""
+    """What the firmware drives and reads. GPIO (`mode:`), PWM, and I2C pins follow the
+    emulated pin states (I2C pins only pull: the transfers themselves are not drawn as
+    waveforms); ADC channels and UART TX are exchanged as values and text."""
     firmware = design.firmware
     assert firmware is not None
     part = design.circuit.parts[firmware.mcu]
     connected = [p for p in part.spec.pins if design.circuit.net_of(part.ref, p) is not None]
-    drives = firmware.drives()
-    pins: dict[str, _Pin] = {}
-    adc: dict[int, str] = {}
-    uarts: list[int] = []
+    setup = _McuSetup(mcu=firmware.mcu, drives=firmware.drives())
     for signal in firmware.signals.values():
         function = signal.function or ""
-        if signal.mode is not None or function.startswith("PWM"):
-            drives[signal.pin] = "fw"
+        i2c = re.fullmatch(r"I2C(\d)_(SDA|SCL)", function)
+        if signal.mode is not None or function.startswith("PWM") or i2c:
+            setup.drives[signal.pin] = "fw"
             source, resistor = fw_driver(part, signal.pin, connected)
-            pins[signal.pin] = _Pin(signal.net, signal.gpio, source, resistor)
+            setup.pins[signal.pin] = _Pin(signal.net, signal.gpio, source, resistor)
+        if i2c:
+            setup.i2c.setdefault(int(i2c[1]), {})[i2c[2].lower()] = signal.net
         elif function.startswith("ADC"):
-            adc[int(function.removeprefix("ADC"))] = signal.net
+            setup.adc[int(function.removeprefix("ADC"))] = signal.net
         elif function.startswith("UART") and function.endswith("_TX"):
-            uarts.append(int(function[4]))
-    return firmware.mcu, drives, pins, adc, uarts
+            setup.uarts.append(int(function[4]))
+    return setup
 
 
-def _devices(circuit: ResolvedCircuit, pins: dict[str, _Pin], vio: float) -> list[Hd44780Device]:
+type _Device = Hd44780Device | Ssd1306Device
+
+
+def _devices(circuit: ResolvedCircuit, setup: _McuSetup) -> list[_Device]:
     """The display controllers the firmware writes to, fed after every window."""
-    driven = {p.net for p in pins.values()}
-    return [
-        Hd44780Device(part, circuit, vio, driven)
-        for part in circuit.parts.values()
-        if isinstance(part.spec.display, Hd44780DisplaySpec)
-    ]
+    assert setup.mcu is not None
+    mcu = circuit.parts[setup.mcu].spec.mcu
+    assert mcu is not None
+    vio = mcu.vio
+    driven = {p.net for p in setup.pins.values()}
+    found: list[_Device] = []
+    for part in circuit.parts.values():
+        spec = part.spec.display
+        if isinstance(spec, Hd44780DisplaySpec):
+            found.append(Hd44780Device(part, circuit, vio, driven))
+        elif isinstance(spec, Ssd1306DisplaySpec):
+            sda = circuit.net_of(part.ref, spec.pins["sda"])
+            scl = circuit.net_of(part.ref, spec.pins["scl"])
+            bus = next(
+                (
+                    n
+                    for n, nets in setup.i2c.items()
+                    if nets.get("sda") == sda and nets.get("scl") == scl
+                ),
+                None,
+            )
+            found.append(Ssd1306Device(part, circuit, bus))
+    return found
+
+
+OVERVOLTAGE_V = 0.3  # above the I/O supply: the pin's protection diode conducts
+
+
+class _BusWatch:
+    """I2C bus health and MCU pin voltages during a co-simulation."""
+
+    def __init__(self, setup: _McuSetup, devices: list[_Device], vio: float) -> None:
+        self.setup = setup
+        self.vio = vio
+        self.addresses: dict[int, dict[int, str]] = {}  # bus → address → device
+        self.threshold: dict[int, float] = {}
+        for device in devices:
+            if isinstance(device, Ssd1306Device) and device.bus is not None:
+                self.addresses.setdefault(device.bus, {})[device.address] = device.ref
+                self.threshold[device.bus] = max(self.threshold.get(device.bus, 0.0), device.vih)
+        self.nets = sorted({net for nets in setup.i2c.values() for net in nets.values()})
+        self.idle: dict[int, tuple[float, float]] = {}
+        self.notes: dict[str, str] = {}
+
+    def healthy(self, volts: dict[str, float]) -> dict[int, bool]:
+        """Per bus: SDA and SCL idle high enough for the MCU and every device on it."""
+        found: dict[int, bool] = {}
+        for bus, nets in self.setup.i2c.items():
+            sda, scl = (volts.get(nets.get(line, ""), 0.0) for line in ("sda", "scl"))
+            self.idle[bus] = (sda, scl)
+            need = max(VIH_FRACTION * self.vio, self.threshold.get(bus, 0.0))
+            found[bus] = min(sda, scl) >= need
+        return found
+
+    def transfers(self, transfers: tuple[rp2040.I2cTransfer, ...]) -> None:
+        for transfer in transfers:
+            if transfer.acked:
+                continue
+            here = self.addresses.get(transfer.bus, {})
+            sda, scl = self.idle.get(transfer.bus, (0.0, 0.0))
+            when = format_quantity(transfer.time, "s")
+            if transfer.address in here:
+                need = max(VIH_FRACTION * self.vio, self.threshold.get(transfer.bus, 0.0))
+                self.notes.setdefault(
+                    "i2c_bus",
+                    f"at {when} the firmware addressed {here[transfer.address]} "
+                    f"(0x{transfer.address:02X}) on I2C{transfer.bus}, but the bus idles at "
+                    f"SDA {format_quantity(sda, 'V')} / SCL {format_quantity(scl, 'V')} "
+                    f"(needs {format_quantity(need, 'V')}): pull-ups missing or too weak, so "
+                    "nothing answers",
+                )
+            else:
+                there = ", ".join(f"{ref} at 0x{a:02X}" for a, ref in here.items()) or "none"
+                self.notes.setdefault(
+                    "i2c_nack",
+                    f"at {when} the firmware addressed 0x{transfer.address:02X} on "
+                    f"I2C{transfer.bus}; no device answers there (devices: {there})",
+                )
+
+    def check_pins(self, volts: dict[str, float], time: float) -> None:
+        for net, value in volts.items():
+            if value > self.vio + OVERVOLTAGE_V:
+                self.notes.setdefault(
+                    f"mcu_pin_overvoltage:{net}",
+                    f"{net} reached {format_quantity(value, 'V')} at "
+                    f"{format_quantity(time, 's')}, above the MCU's I/O supply "
+                    f"{format_quantity(self.vio, 'V')} + {OVERVOLTAGE_V} V (its GPIOs are "
+                    "not 5 V tolerant)",
+                )
+
+    def issues(self) -> list[tuple[str, str]]:
+        return [(rule.split(":")[0], message) for rule, message in self.notes.items()]
 
 
 def _volts(sim: ngspice_shared.Session, net: str) -> float:

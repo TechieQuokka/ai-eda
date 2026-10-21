@@ -157,7 +157,8 @@ class DisplayExpectation:
 
     index: int
     ref: str  # display part
-    pattern: str
+    pattern: str | None  # text to find, or
+    region: tuple[int, int, int, int] | None  # count lit pixels in x0, y0, x1, y1
     at: float | None  # s; None = end of the run
     min: float | None
     max: float | None
@@ -166,6 +167,8 @@ class DisplayExpectation:
     @property
     def text(self) -> str:
         when = f" @ {format_quantity(self.at, 's')}" if self.at is not None else ""
+        if self.region is not None:
+            return f"lit({self.ref}, {', '.join(map(str, self.region))}){when}"
         return f"display({self.ref}){when} ~ /{self.pattern}/"
 
     @property

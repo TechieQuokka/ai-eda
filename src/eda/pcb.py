@@ -48,6 +48,15 @@ def build(design: Design, diag: Diagnostics) -> dict[str, JsonValue]:
     try:
         layout = kicad.pcbnew(_build_request(board, pcb, dsn))
     except kicad.KicadDesignError as exc:
+        if "overlaps" in str(exc):
+            diag.error(
+                "placement_overlap",
+                f"{exc}: move one of them in design/board.yaml (placement x/y is the "
+                "footprint's origin, usually pin 1)",
+                board.source.at("placement", exc.ref),
+                part=exc.ref,
+            )
+            return {}
         diag.error(
             "no_room",
             f"{exc}: give board.width / board.height more room, move hand-placed parts, "

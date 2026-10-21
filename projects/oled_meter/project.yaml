@@ -1,0 +1,6 @@
+name: oled_meter
+description: >
+  Raspberry Pi Pico (RP2040) reading a potentiometer on ADC0 and showing it on a 0.96"
+  128x64 OLED (SSD1306) over I2C: a title, the ADC count, the voltage, and a bar graph,
+  redrawn ten times a second. The OLED module runs from the Pico's 3.3 V output and brings
+  its own SDA/SCL pull-ups. Powered from 5 V on VSYS.

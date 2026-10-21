@@ -25,6 +25,19 @@ TIMEOUT_S = 60  # longest one request may take
 type Segments = list[tuple[float, str]]  # (start time in s, pin state), first at window start
 
 
+@dataclass(frozen=True)
+class I2cTransfer:
+    """One I2C transfer from START to STOP, as the bus devices saw it."""
+
+    time: float  # s, when the address went out
+    bus: int
+    address: int  # 7-bit
+    read: bool
+    data: tuple[int, ...]  # bytes written (or read)
+    acked: bool  # a device acknowledged the address
+    end: float = 0.0  # s, at the STOP
+
+
 class EmulatorError(RuntimeError):
     pass
 
@@ -38,6 +51,7 @@ class Window:
     halted_at: float | None  # s, when it stopped
     faults: list[tuple[float, str]]  # (s, message): accesses to unmapped memory
     early: bool  # stopped before `until` because a pin changed mode (see run)
+    i2c: tuple[I2cTransfer, ...] = ()
 
 
 def bootrom() -> Path:
@@ -52,7 +66,15 @@ def bootrom() -> Path:
 class Emulator:
     """One running firmware image. Use as a context manager."""
 
-    def __init__(self, image: Path, pins: list[int], uarts: list[int], log: Path) -> None:
+    def __init__(
+        self,
+        image: Path,
+        pins: list[int],
+        uarts: list[int],
+        log: Path,
+        i2c: dict[int, list[int]] | None = None,
+    ) -> None:
+        """`i2c` maps an I2C bus to the 7-bit addresses of the devices on it."""
         node = shutil.which("node")
         if node is None:
             raise EmulatorError("node not found on PATH (needed for the RP2040 emulator)")
@@ -69,7 +91,14 @@ class Emulator:
             text=True,
         )
         self._request(
-            {"cmd": "init", "bootrom": str(rom), "image": str(image), "pins": pins, "uarts": uarts}
+            {
+                "cmd": "init",
+                "bootrom": str(rom),
+                "image": str(image),
+                "pins": pins,
+                "uarts": uarts,
+                "i2c": {str(bus): addresses for bus, addresses in (i2c or {}).items()},
+            }
         )
 
     def __enter__(self) -> Self:
@@ -95,12 +124,14 @@ class Emulator:
         adc: dict[int, int],
         break_on_mode: bool,
         send: dict[int, str] | None = None,
+        i2c_ok: dict[int, bool] | None = None,
     ) -> Window:
         """Run to `until` seconds with these GPIO input levels and ADC channel codes.
 
         With `break_on_mode`, return early right after a pin changes mode (pull-up enabled,
         output enabled, ...): such a change can move the pin's own input level. `send`
-        queues text for UART receivers (paced at the firmware's baud rate)."""
+        queues text for UART receivers (paced at the firmware's baud rate). `i2c_ok` says
+        per bus whether SDA and SCL are pulled high (a dead bus acknowledges nothing)."""
         reply = self._request(
             {
                 "cmd": "run",
@@ -109,6 +140,7 @@ class Emulator:
                 "adc": {str(k): v for k, v in adc.items()},
                 "break_on_mode": break_on_mode,
                 "send": {str(k): v for k, v in (send or {}).items()},
+                "i2c_ok": {str(k): v for k, v in (i2c_ok or {}).items()},
             }
         )
         pins: dict[int, Segments] = {
@@ -126,6 +158,18 @@ class Emulator:
             halted_at=float(halted_at) * 1e-9 if halted_at is not None else None,
             faults=[(float(t) * 1e-9, str(m)) for t, m in reply.get("faults", [])],
             early=bool(reply.get("early")),
+            i2c=tuple(
+                I2cTransfer(
+                    time=float(t) * 1e-9,
+                    bus=int(bus),
+                    address=int(address),
+                    read=direction == "r",
+                    data=tuple(int(b) for b in data),
+                    acked=bool(acked),
+                    end=float(stop) * 1e-9,
+                )
+                for t, bus, address, direction, data, acked, stop in reply.get("i2c", [])
+            ),
         )
 
     def _request(self, request: dict[str, Any]) -> dict[str, Any]:

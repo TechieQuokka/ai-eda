@@ -1,0 +1,48 @@
+id: oled_ssd1306
+name: 0.96" 128x64 OLED module (SSD1306, I2C)
+category: display
+description: >
+  The common 4-pin 0.96" monochrome OLED module: SSD1306 controller on I2C (address 0x3C,
+  0x3D with the address resistor moved), pins GND, VCC (3.3-5 V; an on-board regulator makes
+  3.3 V for the controller), SCL, SDA. Modelled: the regulator (3.3 V or less), the module's
+  SDA/SCL pull-ups to that 3.3 V rail (4.7 kohm on most modules; `pullups: none` for one
+  without), and about 10 mA of supply current. In firmware tests the controller is an I2C
+  device on the bus SDA/SCL reach: it acknowledges its address while both lines idle above
+  2.64 V (0.8 x 3.3 V), takes commands and display RAM writes, and shows the panel as the
+  commands map it (A1 + C8 is upright; the internal charge pump must be on: 8D 14; COM
+  pins alternative: DA 12). Text drawn in the 5x8 font is read back from the pixels.
+datasheet: https://cdn-shop.adafruit.com/datasheets/SSD1306.pdf
+pins: [gnd, vcc, scl, sda]
+params:
+  address: { choices: ["0x3C", "0x3D"], default: "0x3C", description: I2C address (7-bit) }
+  pullups: { choices: ["4.7k", "10k", none], default: "4.7k", description: on-board SDA/SCL pull-ups }
+spice:
+  prefix: R
+  template: |
+    <name>_icc <pin:vcc> <pin:gnd> 330
+    B<name>_reg <name>_v3 <pin:gnd> V = min(V(<pin:vcc>, <pin:gnd>), 3.3)
+    <name>_scl <name>_v3 <pin:scl> <choice:pullups>
+    <name>_sda <name>_v3 <pin:sda> <choice:pullups>
+  choice_values: { pullups: { "4.7k": "4.7k", "10k": "10k", none: "1e12" } }
+  pin_currents: true
+display:
+  kind: ssd1306
+  width: 128
+  height: 64
+  pins: { gnd: gnd, vcc: vcc, scl: scl, sda: sda }
+  address: 0x3C
+  logic: 3.3V
+  supply_min: 3.0V
+  supply_max: 5.5V
+  charge_pump: true
+  com_alternative: true
+symbol:
+  cell: x_display
+  ports: { gnd: gnd, vcc: vcc, scl: scl, sda: sda }
+  label: "OLED 128x64"
+kicad:
+  symbol: Connector_Generic:Conn_01x04
+pcb:
+  footprint: Connector_PinSocket_2.54mm:PinSocket_1x04_P2.54mm_Vertical
+  pads: { gnd: "1", vcc: "2", scl: "3", sda: "4" }
+  value: SSD1306 OLED

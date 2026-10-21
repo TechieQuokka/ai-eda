@@ -376,23 +376,26 @@ class _Power:
     box: Box  # wire, symbol and value
 
 
-def _power(net: str, sign: int, point: Point, d: Dir) -> _Power:
+def _power(net: str, sign: int, point: Point, d: Dir, turn: bool = True) -> _Power:
     """The wire runs outward, turning down (ground, negative rails) or up (positive rails)
-    when the pin points sideways, so the symbols stand the usual way up."""
+    when the pin points sideways, so the symbols stand the usual way up. With `turn` off
+    (a neighbouring pin's wire is in the way) the symbol points straight out instead."""
     px, py = point
     ex, ey = px + d[0] * STUB, py + d[1] * STUB
     down = net == GROUND or sign < 0
     path = [(px, py), (ex, ey)]
-    if d[1] == 0:
+    if d[1] == 0 and turn:
         ey += STUB if down else -STUB
         path.append((ex, ey))
         facing = 0 if down else 180
+    elif d[1] == 0:
+        facing = 90 if d[0] > 0 else 270  # rotation that turns "down" into d
     else:
         facing = 0 if d[1] > 0 else 180
     if net == GROUND:
         lib_id, rotation = "power:GND", facing
     else:  # power symbols point up at rotation 0, ground symbols down
-        lib_id, rotation = ("power:VCC" if sign > 0 else "power:VEE"), 180 - facing
+        lib_id, rotation = ("power:VCC" if sign > 0 else "power:VEE"), (180 - facing) % 360
     sym = load_symbol(lib_id)
     value = _library_field(sym, "Value", net, ex, ey, rotation)
     xs, ys = [q[0] for q in path], [q[1] for q in path]
@@ -471,13 +474,29 @@ class _Item:
         return texts
 
     def powers(self) -> list[tuple[str, _Power]]:
-        """Ground and rail symbols on the pins, with the key of the pin."""
+        """Ground and rail symbols on the pins, with the key of the pin. A sideways pin's
+        symbol turns up or down unless another wired pin on that side lies within two
+        grid steps that way (adjacent connector pins: the wires would overlap)."""
+        pins = self.pins()
+
+        def turn(point: Point, d: Dir, net: str) -> bool:
+            if d[1] != 0:
+                return True
+            way = 1 if net == GROUND or self.power[net] < 0 else -1
+            return not any(
+                other is not None
+                and od == d
+                and abs(q[0] - point[0]) < 1e-6
+                and 0 < (q[1] - point[1]) * way <= 2 * STUB + 1e-6
+                for q, od, other in pins
+            )
+
         return [
             (
                 f"{self.part.ref}:{_mm(point[0])}:{_mm(point[1])}",
-                _power(net, self.power[net], point, d),
+                _power(net, self.power[net], point, d, turn(point, d, net)),
             )
-            for point, d, net in self.pins()
+            for point, d, net in pins
             if net is not None and net in self.power
         ]
 
