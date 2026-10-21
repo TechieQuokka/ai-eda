@@ -515,7 +515,7 @@ Verified before choosing (HANDOFF §4.2 criteria: runs the pico-sdk image unmodi
 Tests could only hold inputs fixed for a whole run, so firmware behaviour over time (reacting to a press, parsing a command) could not be tested.
 
 - **`events:`** in a `tran` test, each at a time `at`:
-  - `part` + `set`: change part parameters mid-run (`{ at: 1.1s, part: SW1, set: { state: pressed } }`). Implemented with ngspice `alter` on the element values; `netlist.spice.alter_commands` re-renders the part's template with the new values and accepts only lines whose R/C/L value changed (values may be `{...}` expressions, evaluated by a small AST evaluator: numbers, + − × ÷, max/min/abs). Anything else (a source voltage, a model change) is `event_unsupported` at check time.
+  - `part` + `set`: change part parameters mid-run (`{ at: 1.1s, part: SW1, set: { state: pressed } }`). Implemented with ngspice `alter` on the element values; `netlist.spice.alter_commands` re-renders the part's template with the new values and accepts only lines whose R/C/L value changed (values may be `{...}` expressions, evaluated by a small AST evaluator: numbers, + − × ÷, max/min/abs). Anything else (a model change) is `event_unsupported` at check time; since §24 a DC source's value can change too (`alter V1 dc = 3`).
   - `serial` + `send`: text into a firmware UART RX (`UARTn_RX` net). The emulator queues the bytes and feeds them one character time apart at the baud rate the firmware set (8N1; 115200 before it sets one), so the 32-byte RX FIFO does not overflow.
 - Tests with events but no firmware run through the same stepped runner (`cosim.run` without an emulator); ngspice lands exactly on each event time.
 - **Measure time ranges**: `from:` / `to:` on a tran expectation evaluate it over part of the run; the label shows the range (`period(current(D1), 3mA) [1.6s..end]`).
@@ -634,7 +634,7 @@ Small designs requested by the user (an LED blinker three ways, a night light) w
 
 Measured lessons: the astable's half period was 0.53·RB·C at 5 V, not the textbook 0.69 (0.76 with the 5 V correction), so values came from simulation; a white LED (3.0 V) plus a Darlington (0.75 V) leaves little headroom on 5 V.
 
-Not done: a DC sweep analysis, which would find the night light's switching point directly.
+Not done: a DC sweep analysis, which would find the night light's switching point directly (done in §24).
 
 ## 23. Ordering a board for hand soldering (2026-10-21)
 
@@ -646,3 +646,15 @@ The user solders the parts themselves, so the target is a bare two-layer board f
 - **Assembly drawing** (`out/assembly.svg` / `.png`, shown in the viewer's Board card): board outline plus each part's body, reference, and value from the F.Fab layer, black on white, with pad outlines and numbers. The SVG is at true size (mm) for printing at 100 %. A footprint's F.Fab reference that would cover its pads (small connectors) is moved to where the library puts the silkscreen reference. Polarity follows the footprints: pad 1 is the square pad (a source's `+`, an LED's cathode). A generic part with an `mpn` shows the chip (`UA741`) instead of the model's figures. KiCad's PDF export places the board by its sheet position and cut part of it off, so there is no PDF.
 - **Fields of `fab:`**: `base`, `name`, and the limits `min_track`, `min_clearance`, `min_drill`, `min_via_ring`, `min_pad_ring`, `min_npth_drill`, `min_size`, `max_width`, `max_height` (lengths with units).
 - **Guide**: `docs/ordering.md` walks from a passing design to an ordered board, the parts to buy, soldering order and polarity, and a first power-up checked against the simulated operating point.
+
+## 24. DC sweep (2026-10-21)
+
+`{ type: dc, sweep: PART.param, start, stop, step }` solves the operating point at each value of one part quantity, from `start` up to `stop` (always included), at most 10,000 points.
+
+- **Any quantity that can change in place.** ngspice's `.dc` sweeps only sources (and resistors), not an LDR's `light` or a pot's `position`, whose templates compute resistances from the parameter. The batch control block therefore runs, per point, the `alter` commands that turn the part into its value at that point (the same mechanism as tran events, §15.6), then `op` and `write` with `appendwrite`; each point is one plot in the raw file. `alter` now also changes an independent source's DC value (`alter V1 dc = 3`), so supply voltages sweep too. A parameter that changes a part's structure (a sine source's amplitude, an op-amp's `gbw`) is `sweep_unsupported`. Each point alters from the previous one: a point equal to the part's own value used to be skipped and kept the previous value.
+- **Speed.** 501 points of the night light take 0.6 s in one ngspice process.
+- **Measures.** The x axis is the swept parameter in its unit: `at(trace, 20lx)`, `cross(trace, LEVEL)` (the swept value of the first crossing), `max min initial final pp`. `avg`/`rms` (means over time), the pulse measures, and `db/mag/phase` are refused. A bare probe needs a reduction (`missing_reduction`).
+- **Output.** `out/sim/<test>.json` has `axis: sweep`, `x_label` (`LDR1.light`), `x_unit`; the PNG and the viewer plot against it. On the plot only `cross()` bounds are vertical lines, since a sweep's unit may also be a y unit (sweeping V1.voltage and measuring a voltage).
+- **Agreement.** Each point equals a plain `op` with the parameter set to that value (checked in `tests/test_dc.py`, and at 3 lx and 9 lx for the night light). Operating points still come one by one: a bistable circuit is not traced along a hysteresis branch.
+- **Example.** `nightlight` gains `switching_point`: the LED passes 1 mA at 10.09 lx (the stepped `sunset` test only showed 9–12 lx).
+- **Events gain supply steps.** The same `alter` lets a tran event change a DC source (`{ at: 10ms, part: V1, set: { voltage: 3V } }`; checked: an LED's current follows the new supply).

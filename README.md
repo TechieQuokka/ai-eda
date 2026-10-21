@@ -94,7 +94,7 @@ Every run is written to the project's `iterations.jsonl` with the note, the chan
 |---|---|
 | **Design files** | Strict YAML 1.2 (no `no` → `false` surprises, duplicate keys are errors), validated with pydantic; every error has file, line, column, and path |
 | **ERC** | Unconnected pins, single-pin nets, missing ground, nets with no DC path, loops of voltage sources and inductors, shorts between nets, shorted sources, names that collide in case-insensitive SPICE; parameter ranges (no 0 Ω resistor, no negative capacitor) |
-| **Simulation** | ngspice batch runs: operating point (`op`), transient (`tran`), and frequency response (`ac`) |
+| **Simulation** | ngspice batch runs: operating point (`op`), transient (`tran`), frequency response (`ac`), and DC sweeps of any part quantity (`dc`: a supply voltage, a resistance, an LDR's light) |
 | **Measures** | `voltage(N)`, `voltage(A, B)`, `current(R1)`, `current(U1.out)` inside `max min avg rms pp initial final`, `at(…, 1kHz)`, `cross(…, -3dB)`, `period(…, 3mA)`, `width` / `gap` / `duty(…, 3mA)` for pulse trains, and `db mag phase` — type-checked per analysis, with units |
 | **Parts** | One YAML file per part type: pins, typed parameters, SPICE template, schematic symbol. Built in: DC, pulse, and sine sources; R, C, L; diodes (1N4148, 1N4007); LEDs in five colors; NPN transistors (2N3904, PN2222A); a photoresistor (LDR, light in lx); a push button and a potentiometer; a generic op-amp macromodel (gain, GBW, slew rate, swing) |
 | **Vendor models** | `eda model inspect` / `eda model import` turn a manufacturer `.subckt` (e.g. TI TL072, TLV9002) into a part, detecting PSpice-compatibility mode automatically |
@@ -117,6 +117,21 @@ Every run is written to the project's `iterations.jsonl` with the note, the chan
 
 <p align="center">
   <img src="docs/images/opamp_frequency_response.png" alt="Bode plot of a gain-of-11 amplifier with test bounds" width="720">
+</p>
+
+### Thresholds, directly
+
+A `dc` sweep steps one part quantity and solves the operating point at each value, so a switching point is one measure:
+
+```yaml
+  switching_point:   # the night light turns on as the light falls
+    analysis: { type: dc, sweep: LDR1.light, start: 0lx, stop: 50lx, step: 0.1lx }
+    expect:
+      - { measure: "cross(current(D1), 1mA)", min: 5lx, max: 20lx }    # 10.09 lx
+```
+
+<p align="center">
+  <img src="docs/images/nightlight_switching_point.png" alt="LED current against light level, with the crossing bound" width="720">
 </p>
 
 ### From netlist to board

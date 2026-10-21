@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel
 
-from eda.model import Design, Op
+from eda.model import Design, domain_of
 
 
 class PartSummary(BaseModel):
@@ -32,7 +32,7 @@ def summarize(design: Design) -> DesignSummary:
         },
         tests={
             name: CaseSummary(
-                analysis="op" if isinstance(test.analysis, Op) else "tran",
+                analysis=domain_of(test.analysis),
                 expectations=[f"{e.measure.text}: {e.range_text}" for e in test.expectations],
             )
             for name, test in design.tests.items()

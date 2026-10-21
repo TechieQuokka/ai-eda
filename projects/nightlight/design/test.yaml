@@ -34,6 +34,15 @@ tests:
     expect:
       - { measure: current(D1), min: 8mA, max: 15mA }
       - { measure: current(Q1.b), max: 200uA }
+  switching_point:
+    description: >
+      Sweeping the light from 0 to 50 lx finds where the LED turns on directly: it passes
+      1 mA between 5 lx and 20 lx and is dark at 20 lx and above.
+    analysis: { type: dc, sweep: LDR1.light, start: 0lx, stop: 50lx, step: 0.1lx }
+    expect:
+      - { measure: "cross(current(D1), 1mA)", min: 5lx, max: 20lx }
+      - { measure: "at(current(D1), 20lx)", max: 0.5mA }
+      - { measure: max(current(D1)), max: 15mA }
   sunset:
     description: >
       The light falls step by step (one step per second, 50 lx to 1 lx). The LED stays

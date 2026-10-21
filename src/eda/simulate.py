@@ -17,6 +17,7 @@ from eda.model import (
     CompiledEvent,
     CompiledExpectation,
     CompiledTest,
+    Dc,
     Design,
     Op,
     SerialExpectation,
@@ -53,12 +54,18 @@ class Signal(BaseModel):
         return [complex(re, im) for re, im in zip(self.values, self.imag, strict=True)]
 
 
-class WaveformData(BaseModel):
-    """`out/sim/<test>.json` for tran (x = time) and ac (x = frequency) tests."""
+type Axis = Literal["time", "frequency", "sweep"]
 
-    axis: Literal["time", "frequency"]
+
+class WaveformData(BaseModel):
+    """`out/sim/<test>.json` for tran (x = time), ac (x = frequency), and dc tests (x = the
+    swept parameter, named by `x_label` in `x_unit`)."""
+
+    axis: Axis
     x: list[float]
     signals: dict[str, Signal]
+    x_label: str | None = None  # dc: PART.param
+    x_unit: str | None = None  # dc: the parameter's unit
 
     def as_signals(self) -> Signals:
         return {name: (s.unit, s.data()) for name, s in self.signals.items()}
@@ -460,6 +467,16 @@ def _evaluate(
     plot = plots[-1]
     x = plot.vectors.get("frequency" if isinstance(test.analysis, Ac) else "time")
     vectors: dict[str, Values] = {**plot.vectors, **plot.complex_vectors}
+    if isinstance(test.analysis, Dc):
+        if len(plots) != len(test.analysis.values):
+            diag.fail_tool(
+                "raw_parse",
+                f"{test.name}: ngspice reported {len(plots)} of "
+                f"{len(test.analysis.values)} operating points",
+            )
+            return None
+        x = list(test.analysis.values)
+        vectors = {name: [p.vectors[name][-1] for p in plots] for name in plot.vectors}
     points = len(next(iter(vectors.values())))
     traces = Traces(x=x, signals=_named_signals(design, vectors, points), points=points)
 
@@ -485,10 +502,12 @@ def _evaluate(
         }
     else:
         wave_path = sim_dir / f"{test.name}.json"
-        axis: Literal["time", "frequency"] = (
-            "frequency" if isinstance(test.analysis, Ac) else "time"
-        )
-        wave_path.write_text(_waveform_json(axis, traces), encoding="utf-8")
+        analysis = test.analysis
+        axis: Axis = "frequency" if isinstance(analysis, Ac) else "time"
+        label = unit = None
+        if isinstance(analysis, Dc):
+            axis, label, unit = "sweep", analysis.sweep, analysis.unit
+        wave_path.write_text(_waveform_json(axis, traces, label, unit), encoding="utf-8")
         outcome["waveform"] = design.paths.rel(wave_path)
     return outcome
 
@@ -657,7 +676,9 @@ def _window(
     return lo, hi
 
 
-def _waveform_json(axis: Literal["time", "frequency"], traces: Traces) -> str:
+def _waveform_json(
+    axis: Axis, traces: Traces, x_label: str | None = None, x_unit: str | None = None
+) -> str:
     signals: dict[str, Signal] = {}
     for name, (unit, values) in traces.signals.items():
         if axis == "frequency":
@@ -667,5 +688,7 @@ def _waveform_json(axis: Literal["time", "frequency"], traces: Traces) -> str:
             )
         else:
             signals[name] = Signal(unit=unit, values=[_real(v) for v in values])
-    data = WaveformData(axis=axis, x=list(traces.x or []), signals=signals)
+    data = WaveformData(
+        axis=axis, x=list(traces.x or []), signals=signals, x_label=x_label, x_unit=x_unit
+    )
     return data.model_dump_json()

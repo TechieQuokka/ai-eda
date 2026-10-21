@@ -136,7 +136,8 @@ def _plot_series(
     """Traces for every probe the test measures, plus its bounds as reference lines."""
     signals = data.as_signals()
     frequency = data.axis == "frequency"
-    x_unit = "Hz" if frequency else "s"
+    sweep = data.axis == "sweep"
+    x_unit = data.x_unit if sweep else ("Hz" if frequency else "s")
     traces: list[waveform.Trace] = []
     bounds: list[waveform.Bound] = []
 
@@ -158,7 +159,10 @@ def _plot_series(
         if exp.measure.reduction == "period":
             continue  # a duration, not a position on either axis
         unit = exp.measure.unit
-        axis: Literal["x", "y"] = "x" if unit == x_unit else "y"
+        # a sweep's x unit may also be a y unit (V1.voltage → voltage(OUT)): only cross()
+        # gives a position on the x axis there
+        on_x = exp.measure.reduction == "cross" if sweep else unit == x_unit
+        axis: Literal["x", "y"] = "x" if on_x else "y"
         label = f"{exp.measure.text}: {exp.range_text}"
         # One label per expectation, on its upper bound (or its only bound).
         if exp.min is not None:
@@ -220,15 +224,12 @@ def _render(design: Design, diag: Diagnostics) -> dict[str, JsonValue]:
         waves_dir.mkdir(exist_ok=True)
         wave_svg = waves_dir / f"{test.name}.svg"
         frequency = data.axis == "frequency"
+        x_unit = (data.x_unit or "") if data.axis == "sweep" else ("Hz" if frequency else "s")
+        title = f"{design.project.name} / {test.name}"
+        if data.x_label:
+            title += f" (sweep {data.x_label})"
         wave_svg.write_text(
-            waveform.plot(
-                f"{design.project.name} / {test.name}",
-                data.x,
-                traces,
-                bounds,
-                x_unit="Hz" if frequency else "s",
-                log_x=frequency,
-            ),
+            waveform.plot(title, data.x, traces, bounds, x_unit=x_unit, log_x=frequency),
             encoding="utf-8",
         )
         waves[test.name] = rel(wave_svg)

@@ -23,7 +23,19 @@ class AcAnalysis(StrictModel):
     points_per_decade: Annotated[int, Field(ge=1, le=1000)] = 20
 
 
-Analysis = Annotated[OpAnalysis | TranAnalysis | AcAnalysis, Field(discriminator="type")]
+class DcAnalysis(StrictModel):
+    """Operating points while one part parameter steps from `start` to `stop`."""
+
+    type: Literal["dc"]
+    sweep: str  # PART.param, e.g. V1.voltage or LDR1.light
+    start: str
+    stop: str
+    step: str
+
+
+Analysis = Annotated[
+    OpAnalysis | TranAnalysis | AcAnalysis | DcAnalysis, Field(discriminator="type")
+]
 
 
 class Expectation(StrictModel):

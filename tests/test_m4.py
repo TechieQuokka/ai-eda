@@ -243,8 +243,11 @@ def test_alter_commands(make_project: MakeProject) -> None:
     assert alter_commands(sw1, pressed, circuit) == ["alter R_SW1 = 0.1"]
     quarter = replace(rv1, values={**rv1.values, "position": 25.0})
     assert alter_commands(rv1, quarter, circuit) == ["alter RV1a = 2500", "alter RV1b = 7500"]
-    with pytest.raises(ValueError, match="only R, C, and L"):
-        alter_commands(v1, replace(v1, values={**v1.values, "voltage": 3.0}), circuit)
+    raised = replace(v1, values={**v1.values, "voltage": 3.0})
+    assert alter_commands(v1, raised, circuit) == ["alter V1 dc = 3"]
+    d1 = circuit.parts["D1"]
+    with pytest.raises(ValueError, match="only R, C, and L values"):
+        alter_commands(d1, replace(d1, values={**d1.values, "color": "green"}), circuit)
 
 
 @pytest.mark.skipif(ngspice_shared.library_path() is None, reason="needs libngspice")
@@ -280,7 +283,7 @@ def test_event_rules(pico: Path) -> None:
     analysis: { type: tran, step: 1ms, stop: 10ms }
     events:
       - { at: 5ms, part: NOPE, set: { state: pressed } }
-      - { at: 5ms, part: J1, set: { voltage: 3V } }
+      - { at: 5ms, part: D1, set: { color: red } }
       - { at: 20ms, part: SW1, set: { state: pressed } }
       - { at: 1ms, serial: UART_RX, send: "x" }
     expect:

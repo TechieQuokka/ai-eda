@@ -7,11 +7,14 @@ Grammar (whitespace is free):
 
 Functions by analysis:
 
-    reductions  max min initial final           op, tran, ac   trace → value
-                avg rms pp                      op, tran       trace → value
-    sampling    at(trace, X)                    tran, ac       value at time / frequency X
-                cross(trace, LEVEL)             tran, ac       first time / frequency the
-                                                               trace crosses LEVEL
+    reductions  max min initial final           op, tran, ac, dc   trace → value
+                avg rms                         op, tran           trace → value
+                pp                              op, tran, dc       trace → value
+    sampling    at(trace, X)                    tran, ac, dc   value at time / frequency /
+                                                               swept value X
+                cross(trace, LEVEL)             tran, ac, dc   first time / frequency /
+                                                               swept value where the trace
+                                                               crosses LEVEL
                 period(trace, LEVEL)            tran           mean time between rising
                                                                crossings of LEVEL
                 width(trace, LEVEL)             tran           mean time above LEVEL per
@@ -23,7 +26,8 @@ Functions by analysis:
     transforms  db mag phase                    ac             complex trace → real trace
 
 A `tran` measure must end in a value; an `ac` probe must pass through db(), mag(), or
-phase(). In `op`, a bare probe is its value.
+phase(). In `op`, a bare probe is its value. A `dc` sweep's x axis is the swept
+parameter, in its unit (V, ohm, lx, ...).
 """
 
 import cmath
@@ -36,14 +40,15 @@ from typing import Final, Literal
 
 from eda.units import QuantityError, parse_any_quantity
 
-type Domain = Literal["op", "tran", "ac"]
+type Domain = Literal["op", "tran", "ac", "dc"]
 
 REDUCTIONS: Final = ("max", "min", "initial", "final", "avg", "rms", "pp")
-TIME_ONLY: Final = frozenset({"avg", "rms", "pp"})
+TIME_ONLY: Final = frozenset({"avg", "rms", "pp"})  # not over frequency
+TIME_MEAN: Final = frozenset({"avg", "rms"})  # means over time, not over a dc sweep
 TRANSFORMS: Final = {"db": "dB", "mag": None, "phase": "deg"}
 SAMPLERS: Final = ("at", "cross", "period", "width", "gap", "duty")
 PULSE: Final = frozenset({"period", "width", "gap", "duty"})  # tran only, LEVEL crossings
-X_UNIT: Final[dict[Domain, str | None]] = {"op": None, "tran": "s", "ac": "Hz"}
+X_UNIT: Final[dict[Domain, str | None]] = {"op": None, "tran": "s", "ac": "Hz", "dc": None}
 
 _TOKEN: Final = re.compile(r"\s*(?:(?P<open>\()|(?P<close>\))|(?P<comma>,)|(?P<atom>[^\s(),]+))")
 _IDENT: Final = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -232,9 +237,10 @@ class _Type:
     complex: bool = False
 
 
-def check(node: Node, domain: Domain) -> Measure:
-    """Validate a parsed measure for an analysis and return it with its result unit."""
-    result = _check(node, domain)
+def check(node: Node, domain: Domain, x_unit: str | None = None) -> Measure:
+    """Validate a parsed measure for an analysis and return it with its result unit.
+    `x_unit` is the unit of a dc sweep's swept parameter."""
+    result = _check(node, domain, x_unit if domain == "dc" else X_UNIT[domain])
     if result.shape == "trace":
         if domain == "tran":
             raise MeasureTypeError(
@@ -247,13 +253,18 @@ def check(node: Node, domain: Domain) -> Measure:
                 f"{node.text}: an ac analysis gives a frequency response; use e.g. "
                 f"at(db({node.text}), 1kHz), max(db(...)), or cross(db(...), -3dB)"
             )
+        if domain == "dc":
+            raise MeasureTypeError(
+                f"{node.text}: a dc sweep gives a curve; reduce it with max(), min(), pp(), "
+                "initial(), final(), at(..., VALUE), or cross(..., LEVEL)"
+            )
     return Measure(node, result.unit)
 
 
-def _check(node: Node, domain: Domain) -> _Type:
+def _check(node: Node, domain: Domain, x_unit: str | None) -> _Type:
     if isinstance(node, Probe):
         return _Type("trace", node.unit, complex=domain == "ac")
-    inner = _check(node.arg, domain)
+    inner = _check(node.arg, domain, x_unit)
     fn = node.fn
     if fn in TRANSFORMS:
         if domain != "ac":
@@ -269,8 +280,9 @@ def _check(node: Node, domain: Domain) -> _Type:
         )
     if fn in TIME_ONLY and domain == "ac":
         raise MeasureTypeError(f"{node.text}: {fn}() is not meaningful over frequency")
+    if fn in TIME_MEAN and domain == "dc":
+        raise MeasureTypeError(f"{node.text}: {fn}() is not meaningful over a dc sweep")
     if fn in SAMPLERS:
-        x_unit = X_UNIT[domain]
         if x_unit is None:
             raise MeasureTypeError(f"{node.text}: {fn}() needs a tran or ac analysis")
         if fn in PULSE and domain != "tran":

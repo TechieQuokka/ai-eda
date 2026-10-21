@@ -67,13 +67,36 @@ class Ac:
     points_per_decade: int
 
 
-type Analysis = Op | Tran | Ac
+@dataclass(frozen=True)
+class Dc:
+    """An operating point at each value of one part parameter (`ref`.`param`)."""
+
+    ref: str
+    param: str
+    unit: str
+    values: tuple[float, ...]  # ascending, start..stop
+
+    @property
+    def sweep(self) -> str:
+        return f"{self.ref}.{self.param}"
+
+
+type Analysis = Op | Tran | Ac | Dc
 
 
 def domain_of(analysis: Analysis) -> Domain:
     if isinstance(analysis, Op):
         return "op"
+    if isinstance(analysis, Dc):
+        return "dc"
     return "tran" if isinstance(analysis, Tran) else "ac"
+
+
+def x_unit_of(analysis: Analysis) -> str | None:
+    """Unit of the analysis's x axis: time, frequency, or the swept parameter."""
+    if isinstance(analysis, Dc):
+        return analysis.unit
+    return {"tran": "s", "ac": "Hz"}.get(domain_of(analysis))
 
 
 @dataclass(frozen=True)

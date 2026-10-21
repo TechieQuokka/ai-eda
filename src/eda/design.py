@@ -24,6 +24,7 @@ from eda.model import (
     CompiledEvent,
     CompiledExpectation,
     CompiledTest,
+    Dc,
     Design,
     Op,
     PinKey,
@@ -34,6 +35,7 @@ from eda.model import (
     SerialExpectation,
     Tran,
     domain_of,
+    x_unit_of,
 )
 from eda.netlist.spice import alter_commands
 from eda.project import ProjectPaths, load_parts
@@ -46,6 +48,7 @@ from eda.schema.part import ParamSpec, PartSpec
 from eda.schema.project import Project
 from eda.schema.testspec import (
     AcAnalysis,
+    DcAnalysis,
     Expectation,
     OpAnalysis,
     SimEvent,
@@ -69,6 +72,7 @@ from eda.verify.measure import (
 # 10 s) asks for billions of points, which ngspice would try to compute and store.
 MAX_TRAN_POINTS = 1_000_000
 MAX_AC_POINTS = 100_000
+MAX_DC_POINTS = 10_000  # one operating point each
 MAX_COSIM_WINDOWS = 100_000  # firmware co-simulation exchanges values once per step
 MAX_BOARD_MM = 1000.0  # no board dimension, rule, or placement coordinate goes beyond 1 m
 
@@ -618,7 +622,7 @@ def _compile_tests(
             src.at("tests"),
         )
     for name, case in raw.tests.items():
-        analysis = _compile_analysis(name, case.analysis, src, diag)
+        analysis = _compile_analysis(name, case.analysis, src, circuit, diag)
         for net in case.pins:
             if firmware is None or net not in firmware.signals:
                 declared = ", ".join(firmware.signals) if firmware else "none loaded"
@@ -928,10 +932,16 @@ def _has_ac_source(circuit: ResolvedCircuit) -> bool:
 
 
 def _compile_analysis(
-    name: str, raw: OpAnalysis | TranAnalysis | AcAnalysis, src: SourceMap, diag: Diagnostics
+    name: str,
+    raw: OpAnalysis | TranAnalysis | AcAnalysis | DcAnalysis,
+    src: SourceMap,
+    circuit: ResolvedCircuit | None,
+    diag: Diagnostics,
 ) -> Analysis | None:
     if isinstance(raw, OpAnalysis):
         return Op()
+    if isinstance(raw, DcAnalysis):
+        return _compile_dc(name, raw, src, circuit, diag)
     unit = "s" if isinstance(raw, TranAnalysis) else "Hz"
     fields = ("step", "stop", "start") if isinstance(raw, TranAnalysis) else ("start", "stop")
     values: dict[str, float | None] = {}
@@ -987,6 +997,81 @@ def _compile_analysis(
     return Tran(step=step, stop=stop, start=start)
 
 
+def _compile_dc(
+    name: str,
+    raw: DcAnalysis,
+    src: SourceMap,
+    circuit: ResolvedCircuit | None,
+    diag: Diagnostics,
+) -> Dc | None:
+    """`{ type: dc, sweep: PART.param, start, stop, step }`: the values the parameter takes."""
+    ref, dot, param_name = raw.sweep.partition(".")
+    if not dot or not ref or not param_name:
+        diag.error(
+            "invalid_analysis",
+            f"{name}: sweep is PART.param, e.g. V1.voltage, got {raw.sweep!r}",
+            _at(src, name, "sweep"),
+        )
+        return None
+    if circuit is None:
+        return None
+    part = circuit.parts.get(ref)
+    if part is None:
+        diag.error("unknown_part", f"{name}: no part named {ref!r}", _at(src, name, "sweep"))
+        return None
+    param = part.spec.params.get(param_name)
+    if param is None or param.unit is None:
+        quantities = [p for p, spec in part.spec.params.items() if spec.unit is not None]
+        diag.error(
+            "unknown_param",
+            f"{name}: {ref} ({part.spec.id}) has no quantity {param_name!r} to sweep; "
+            f"quantities: {', '.join(quantities) or 'none'}",
+            _at(src, name, "sweep"),
+        )
+        return None
+    unit = param.unit
+    bounds: dict[str, float] = {}
+    for field in ("start", "stop"):
+        parsed = _param_value(
+            ref, param_name, param, getattr(raw, field), _at(src, name, field), diag
+        )
+        if parsed is None:
+            return None
+        bounds[field] = float(parsed[0])
+    try:
+        step = parse_quantity(raw.step, unit)
+    except QuantityError as exc:
+        diag.error("invalid_value", f"{name}.analysis.step: {exc}", _at(src, name, "step"))
+        return None
+    start, stop = bounds["start"], bounds["stop"]
+    if not start < stop or step <= 0:
+        diag.error(
+            "invalid_analysis", f"{name}: dc needs start < stop and step > 0", _at(src, name)
+        )
+        return None
+    count = math.floor((stop - start) / step * (1 + 1e-9)) + 1
+    if count > MAX_DC_POINTS:
+        diag.error(
+            "too_many_points",
+            f"{name}: dc would compute {count:.3g} operating points (limit {MAX_DC_POINTS}); "
+            "raise step or narrow start..stop",
+            _at(src, name, "step"),
+        )
+        return None
+    values = [float(f"{start + i * step:.12g}") for i in range(count)]
+    if stop - values[-1] > step * 1e-6:
+        values.append(stop)  # always end on `stop`
+    try:
+        for value in (start, stop):  # one of them differs from the part's own value
+            alter_commands(part, replace(part, values={**part.values, param_name: value}), circuit)
+    except ValueError as exc:
+        diag.error(
+            "sweep_unsupported", f"{name}: cannot sweep {raw.sweep}: {exc}", _at(src, name, "sweep")
+        )
+        return None
+    return Dc(ref=ref, param=param_name, unit=unit, values=tuple(values))
+
+
 def _at(src: SourceMap, name: str, field: str | None = None) -> Location:
     return src.at("tests", name, "analysis", field) if field else src.at("tests", name, "analysis")
 
@@ -1014,7 +1099,7 @@ def _compile_expectation(
     measure: Measure | None = None
     if analysis is not None:
         try:
-            measure = check(node, domain_of(analysis))
+            measure = check(node, domain_of(analysis), x_unit_of(analysis))
         except MeasureTypeError as exc:
             rule = "missing_reduction" if "reduce it" in str(exc) else "invalid_measure"
             diag.error(rule, str(exc), at_measure)

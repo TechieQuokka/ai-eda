@@ -312,6 +312,7 @@ function buildChart(name, test, data) {
   }
   const container = el("div", { class: "chart" });
   const head = el("div", { class: "chart-head" }, el("strong", {}, name));
+  if (data.x_label) head.append(el("span", { class: "muted" }, `sweep ${data.x_label}`));
   // Signals the test measures stay in view; the rest sit in a collapsible list.
   const more = el("div", { class: "chart-head" });
   const initial = new Set(st.enabled);
@@ -333,13 +334,14 @@ function buildChart(name, test, data) {
   const plot = svg("svg");
   container.append(head, plot);
 
-  // Internal x axis: time, or log10(frequency) for AC so zoom and pan work in decades.
+  // Internal x axis: time, the swept value (dc), or log10(frequency) for AC so zoom and
+  // pan work in decades.
   const time = freq ? data.x.map(Math.log10) : data.x;
-  const xUnit = freq ? "Hz" : "s";
+  const xUnit = freq ? "Hz" : data.axis === "sweep" ? data.x_unit : "s";
   const xValue = (v) => (freq ? 10 ** v : v);
   const W = 900, PANEL = 200, L = 70, R = 16, T = 10, GAP = 34;
   let placePlayhead = () => {};
-  if (!freq) {
+  if (data.axis === "time") {
     playheads.set(name, (t) => {
       st.play = t;
       placePlayhead();

@@ -4,9 +4,10 @@ import ast
 import math
 import re
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 
-from eda.model import GROUND, Ac, Analysis, Op, ResolvedCircuit, ResolvedPart
+from eda.model import GROUND, Ac, Analysis, Dc, Op, ResolvedCircuit, ResolvedPart
 
 _PLACEHOLDER = re.compile(r"<(name|model|pin:[^>]+|param:[^>]+|choice:[^>]+)>")
 
@@ -231,6 +232,8 @@ def build_netlist(
 
     if isinstance(analysis, Op):
         command = "op"
+    elif isinstance(analysis, Dc):
+        command = ""  # one operating point per value, below
     elif isinstance(analysis, Ac):
         command = f"ac dec {analysis.points_per_decade} {analysis.start:.12g} {analysis.stop:.12g}"
     else:
@@ -239,17 +242,34 @@ def build_netlist(
             command += f" {analysis.start:.12g}"
     if batch:
         optran_line = optran_command(circuit, optran)
+        if isinstance(analysis, Dc):
+            # every point appends its own plot to the raw file
+            runs = ["set appendwrite", *sweep_commands(circuit, analysis, raw_path)]
+        else:
+            runs = [command, f"write {raw_path.as_posix()} all"]
         lines += [
             ".control",
             "set filetype=ascii",
             *([optran_line] if optran_line else []),
-            command,
-            f"write {raw_path.as_posix()} all",
+            *runs,
             "quit",
             ".endc",
         ]
     lines.append(".end")
     return "\n".join(lines) + "\n"
+
+
+def sweep_commands(circuit: ResolvedCircuit, sweep: Dc, raw_path: Path) -> list[str]:
+    """Set the swept parameter to each value in turn, solve the operating point, and write it."""
+    part = circuit.parts[sweep.ref]
+    current = part  # what the elements hold now: alter from the previous point
+    commands: list[str] = []
+    for value in sweep.values:
+        changed = replace(part, values={**part.values, sweep.param: value})
+        commands += [*alter_commands(current, changed, circuit), "op"]
+        commands.append(f"write {raw_path.as_posix()} all")
+        current = changed
+    return commands
 
 
 # --- changing a part during a run ----------------------------------------------------------
@@ -303,9 +323,9 @@ _FUNCTIONS: dict[str, Callable[..., float]] = {
 def alter_commands(old: ResolvedPart, new: ResolvedPart, circuit: ResolvedCircuit) -> list[str]:
     """ngspice `alter` commands that turn `old`'s elements into `new`'s mid-simulation.
 
-    Only R, C, and L values can change (`R1 a b VALUE`); a value may be a `{...}`
-    expression of numbers, + - * /, max, min, abs, pow, exp, and sqrt. Raises ValueError
-    otherwise.
+    Only R, C, and L values (`R1 a b VALUE`) and the DC value of independent sources
+    (`V1 a b DC VALUE ...`) can change; a value may be a `{...}` expression of numbers,
+    + - * /, max, min, abs, pow, exp, and sqrt. Raises ValueError otherwise.
     """
     before = element_lines(old, circuit)
     after = element_lines(new, circuit)
@@ -315,12 +335,29 @@ def alter_commands(old: ResolvedPart, new: ResolvedPart, circuit: ResolvedCircui
     for a, b in zip(before, after, strict=True):
         if a == b:
             continue
+        source = _source_dc_change(a, b)
+        if source is not None:
+            commands.append(source)
+            continue
         tokens_a, tokens_b = a.split(maxsplit=3), b.split(maxsplit=3)
         name = tokens_b[0]
         if len(tokens_b) != 4 or name[0].upper() not in _ALTERABLE or tokens_a[:3] != tokens_b[:3]:
-            raise ValueError(f"only R, C, and L values can change during a run, not {b!r}")
+            raise ValueError(
+                f"only R, C, and L values and source DC values can change during a run, not {b!r}"
+            )
         commands.append(f"alter {name} = {_spice_number(tokens_b[3]):.12g}")
     return commands
+
+
+def _source_dc_change(before: str, after: str) -> str | None:
+    """`alter V1 dc = VALUE` when two source lines differ only in the value after DC."""
+    tokens_a, tokens_b = before.split(), after.split()
+    if tokens_b[0][0].upper() not in "VI" or len(tokens_a) != len(tokens_b):
+        return None
+    changed = [i for i, (x, y) in enumerate(zip(tokens_a, tokens_b, strict=True)) if x != y]
+    if len(changed) != 1 or changed[0] < 1 or tokens_b[changed[0] - 1].upper() != "DC":
+        return None
+    return f"alter {tokens_b[0]} dc = {_spice_number(tokens_b[changed[0]]):.12g}"
 
 
 def _spice_number(text: str) -> float:
