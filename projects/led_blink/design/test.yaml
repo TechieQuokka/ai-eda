@@ -1,0 +1,26 @@
+tests:
+  led_on:
+    description: With the LED pin high the LED runs at about 8 mA (GPIO drive limit 12 mA).
+    analysis: { type: op }
+    pins: { LED: high }
+    expect:
+      - { measure: current(D1), min: 6mA, max: 10mA }
+      - { measure: current(U1.GP15), min: -12mA, max: 0mA }
+  led_off:
+    description: With the LED pin low the LED is dark.
+    analysis: { type: op }
+    pins: { LED: low }
+    expect:
+      - { measure: current(D1), max: 10uA }
+  blink:
+    description: >
+      Firmware in the loop: the LED is on for 1 s, then off for 1 s, repeating
+      (period 2 s).
+    analysis: { type: tran, step: 1ms, stop: 5s }
+    firmware: true
+    expect:
+      - { measure: "period(current(D1), 3mA)", min: 1.98s, max: 2.02s }
+      - { measure: "at(current(D1), 0.5s)", min: 6mA }
+      - { measure: "at(current(D1), 1.5s)", max: 10uA }
+      - { measure: "at(current(D1), 2.5s)", min: 6mA }
+      - { measure: "at(current(D1), 3.5s)", max: 10uA }

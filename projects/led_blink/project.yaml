@@ -1,0 +1,4 @@
+name: led_blink
+description: >
+  Raspberry Pi Pico (RP2040) blinking a green LED: on for 1 s, off for 1 s (period 2 s);
+  powered from 5 V on VSYS.

@@ -1,0 +1,11 @@
+description: Pico drives a green LED on GP15 through a series resistor.
+parts:
+  J1: { type: dc_voltage_source, voltage: 5V }   # 5 V power input on VSYS
+  U1: { type: raspberry_pi_pico }
+  R1: { type: resistor, resistance: 150ohm }
+  D1: { type: led, color: green }
+nets:
+  VSYS: [J1.+, U1.VSYS]
+  LED: [U1.GP15, R1.1]
+  LED_A: [R1.2, D1.anode]
+  GND: [J1.-, U1.GND, D1.cathode]

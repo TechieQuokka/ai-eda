@@ -1,0 +1,2 @@
+{"time": "2026-10-21T11:13:04+09:00", "kind": "note", "message": "Goal: blink a green LED from a Pico, 1 s on / 1 s off (period 2 s); verify with firmware-in-the-loop simulation."}
+{"time": "2026-10-21T11:13:31+09:00", "kind": "run", "command": "run", "ok": true, "changed": ["design/circuit.yaml", "design/firmware.yaml", "design/test.yaml", "project.yaml"], "errors": [], "error_count": 0, "warning_count": 0, "note": "First design: Pico GP15 -> 150 ohm -> green LED; firmware toggles every 1 s"}

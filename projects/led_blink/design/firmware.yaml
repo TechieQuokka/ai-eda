@@ -1,0 +1,4 @@
+# Net LED reaches GP15; eda fw writes firmware/pins.h (PIN_LED) and pins_init.h.
+mcu: U1
+signals:
+  LED: { mode: output, initial: low, description: "status LED, active high" }
