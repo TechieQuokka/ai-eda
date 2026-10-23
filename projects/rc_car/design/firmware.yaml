@@ -1,0 +1,10 @@
+mcu: U1
+signals:
+  MOT_IN1: { function: PWM1_A, description: "motor driver IN1 (both bridges): high, or PWM for reverse" }
+  MOT_IN2: { function: PWM1_B, description: "motor driver IN2 (both bridges): high, or PWM for forward" }
+  SERVO: { function: PWM7_A, description: "steering servo pulses, 50 Hz, 1.0-2.0 ms" }
+  UART_TX: { function: UART0_TX, description: "to the HC-05: battery reports" }
+  UART_RX: { function: UART0_RX, description: "from the HC-05: drive commands" }
+  BT_STATE: { mode: input, pull: down, description: "HC-05 STATE: high while the link is up" }
+  LED: { mode: output, initial: low, description: "status LED" }
+  BAT_SENSE: { function: ADC2, description: "battery voltage / 3" }

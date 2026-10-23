@@ -1,0 +1,21 @@
+# Car board, 70 x 64 mm. The Pico runs down the right edge with its USB socket on the top
+# edge (programming). The battery wires (BT1) and the motor wires (M1) enter at the left
+# edge, the motor driver U3 between them, so the high-current tracks (1 mm) stay short and
+# away from the logic; the rest is placed next to what it connects to. Ground plane on both
+# layers.
+board:
+  width: 70mm
+  height: 64mm
+  spacing: 2.5mm
+rules:
+  track_width: 0.25mm
+  track_widths: { VBAT: 1mm, MOT_A: 1mm, MOT_B: 1mm, GND: 1mm, VREG: 0.6mm, V5: 0.6mm }
+placement:
+  U1: { x: 47mm, y: 3mm }   # USB socket at the top edge
+  BT1: { x: 4mm, y: 12mm, rotation: 90deg }
+  M1: { x: 4mm, y: 56mm, rotation: 90deg }
+routing:
+  passes: 60
+pours:
+  - { net: GND, layer: both }
+fab: jlcpcb

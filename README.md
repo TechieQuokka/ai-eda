@@ -264,6 +264,31 @@ $ eda try projects/calculator --keys "250*4%="
 
 Along the way the simulation caught what a desk check would not: the pico-sdk's `printf` printing `0.00000000` for `%g`, the RP2040's reset pull-downs left on inputs declared without a pull, and an LCD division sign that only some modules have in their ROM.
 
+### Two devices that talk: an RC car and its remote
+
+`projects/rc_car` and `projects/rc_remote` are a Bluetooth RC car and a handheld remote, two boards that work together through a pair of HC-05 modules. The remote reads a thumb joystick (centre calibrated at power-up, dead zone, throttle locked until the stick has been centred, slow mode on a stick press) and sends `D,<throttle>,<steer>` twenty times a second; the car drives its rear motor through a DRV8833 (ramped, with a pause at standstill before reversing), steers with a servo, brakes when the commands stop or the link drops, and reports its battery back. Each side is tested with its compiled firmware against its circuit: 12 tests for the car, 17 for the remote. Build guide: [`docs/rc_car.md`](docs/rc_car.md).
+
+```yaml
+# rc_car/design/test.yaml: the remote's commands, every 50 ms, then the other way
+events:
+  - { at: 100ms, serial: UART_RX, send: "D,100,0\n", every: 50ms, until: 900ms }
+  - { at: 900ms, serial: UART_RX, send: "D,-100,0\n", every: 50ms }
+```
+
+<table>
+<tr>
+<td align="center"><img src="docs/images/rc_car_reversing.png" alt="Motor current and voltage: ramp up, brake to standstill, pause, reverse" height="300"><br><sub>Full ahead, then full reverse: the motor current stays below 1 A</sub></td>
+</tr>
+</table>
+<table>
+<tr>
+<td align="center"><img src="docs/images/rc_car_assembly.png" alt="Assembly drawing of the car board" height="330"><br><sub>Car: 70 × 64 mm, 1 mm tracks for the motor current</sub></td>
+<td align="center"><img src="docs/images/rc_remote_assembly.png" alt="Assembly drawing of the remote board" height="330"><br><sub>Remote: 70 × 64 mm</sub></td>
+</tr>
+</table>
+
+The simulation corrected the first guesses here too: with the wheels blocked the cells sag to 4 V and the motor draws 1.4 A, not its rated 2.2 A; and a battery measured while driving reads a volt or two low, so the car measures it at standstill.
+
 ### Vendor models
 
 Manufacturer SPICE models are imported locally and are **not** part of this repository, because their licenses usually forbid redistribution:
@@ -326,7 +351,7 @@ The repository's [`CLAUDE.md`](CLAUDE.md) is the working contract for an agent s
 | **M3** | Firmware integration: generated `pins.h`, schematic/firmware cross-checks | ✅ Done |
 | **M4** | Firmware build, MCU emulation co-simulated with the analog circuit | ✅ Done |
 
-Since M4: hardening against malformed and extreme input (every answer is JSON with a rule; limits on runaway runs; no simulator commands from part or model files), the playback viewer, and small example designs built and verified with the CLI only: `led_blink` (Pico firmware), `led_blink_bjt` (two-transistor astable), `nightlight` (LDR + Darlington), and `water_alarm` (a water detector taken all the way to an orderable board). Then displays, each with firmware in the loop and a board: `seg_counter` (7-segment stopwatch), `lcd_message` (16×2 LCD), and `oled_meter` (I2C OLED). And `calculator`: a battery-powered pocket calculator (20-key matrix, 16×2 LCD, 2×AA with a 5 V boost module) taken to an orderable board.
+Since M4: hardening against malformed and extreme input (every answer is JSON with a rule; limits on runaway runs; no simulator commands from part or model files), the playback viewer, and small example designs built and verified with the CLI only: `led_blink` (Pico firmware), `led_blink_bjt` (two-transistor astable), `nightlight` (LDR + Darlington), and `water_alarm` (a water detector taken all the way to an orderable board). Then displays, each with firmware in the loop and a board: `seg_counter` (7-segment stopwatch), `lcd_message` (16×2 LCD), and `oled_meter` (I2C OLED). And `calculator`: a battery-powered pocket calculator (20-key matrix, 16×2 LCD, 2×AA with a 5 V boost module) taken to an orderable board. And `rc_car` with `rc_remote`: a Bluetooth RC car and its joystick remote, two boards that talk to each other.
 
 Background and decisions: [`PROJECT_SUMMARY.md`](PROJECT_SUMMARY.md), [`DESIGN_DECISIONS.md`](DESIGN_DECISIONS.md). Releases: [`CHANGELOG.md`](CHANGELOG.md) (semantic versioning, starting at 1.0.0).
 

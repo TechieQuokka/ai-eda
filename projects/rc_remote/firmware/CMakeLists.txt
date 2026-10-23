@@ -1,0 +1,10 @@
+# Build with the Raspberry Pi pico-sdk:  cmake -B build -DPICO_SDK_PATH=<sdk> && cmake --build build
+cmake_minimum_required(VERSION 3.13)
+include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
+project(rc_remote C CXX ASM)
+pico_sdk_init()
+add_executable(rc_remote main.c)
+target_link_libraries(rc_remote pico_stdlib hardware_uart hardware_adc)
+pico_enable_stdio_uart(rc_remote 0)
+pico_add_extra_outputs(rc_remote)
+target_compile_options(rc_remote PRIVATE -Wall -Wextra)

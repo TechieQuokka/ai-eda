@@ -1,0 +1,47 @@
+description: >
+  RC car. Power: four AA cells in a box with its own switch (BT1, off the board) feed the
+  motor driver U3 directly (the carrier has its own reverse protection) and, through the
+  Schottky D1 (reverse polarity), the buck-boost U2, whose 5 V (V5) runs the steering
+  servo, the HC-05 (U4), and, through D2, the Pico's VSYS (so the Pico's USB can power
+  the logic without back-feeding U2). CB is the bulk capacitor for the motor supply, C5
+  the 5 V rail's reservoir against the servo's current steps. Motor: U3's two bridges in
+  parallel (2.4 A continuous) drive M1; CM across the motor pads against brush noise.
+  The Pico drives both bridge inputs with PWM (MOT_IN1/MOT_IN2) and the servo with 50 Hz
+  pulses (SERVO); it talks to the HC-05 on UART0 and reads the link state (BT_STATE).
+  RS1/RS2 scale the battery voltage by 1/3 for the ADC. LED1 shows the state (on: driving
+  under commands, blinking: waiting for commands, fast blinking: battery low).
+parts:
+  BT1: { type: battery, voltage: 6V, rint: 0.8ohm, mpn: "4xAA battery box with switch and leads" }
+  D1: { type: diode, model: 1N5822, footprint: "Diode_THT:D_DO-201AD_P15.24mm_Horizontal", mpn: 1N5822 }
+  U2: { type: pololu_s7v8f5, mpn: "Pololu 2123" }
+  C5: { type: capacitor, capacitance: 220uF, footprint: "Capacitor_THT:CP_Radial_D6.3mm_P2.50mm", mpn: "220uF 16V electrolytic" }
+  D2: { type: diode, model: 1N5817, footprint: "Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal", mpn: 1N5817 }
+  U1: { type: raspberry_pi_pico }
+  U3: { type: drv8833_carrier, mpn: "Pololu 2130" }
+  CB: { type: capacitor, capacitance: 470uF, footprint: "Capacitor_THT:CP_Radial_D8.0mm_P3.50mm", mpn: "470uF 16V electrolytic" }
+  M1: { type: dc_motor, time_constant: 100ms, mpn: "130-size DC motor, 6 V (from the chassis)" }  # with the car's inertia
+  CM: { type: capacitor, capacitance: 100nF }
+  S1: { type: servo_sg90, mpn: "SG90 micro servo" }
+  U4: { type: hc05, mpn: "HC-05 module (6-pin breakout)" }
+  RS1: { type: resistor, resistance: 200kohm }   # battery sense divider (1/3)
+  RS2: { type: resistor, resistance: 100kohm }
+  CS: { type: capacitor, capacitance: 100nF }     # ADC input filter
+  LED1: { type: led, color: green }
+  RL1: { type: resistor, resistance: 330ohm }
+nets:
+  VBAT: [BT1.+, U3.vin, CB.1, D1.anode, RS1.1]
+  VREG: [D1.cathode, U2.vin]
+  V5: [U2.vout, C5.1, D2.anode, S1.vplus, U4.vcc]
+  VSYS: [D2.cathode, U1.VSYS]
+  MOT_IN1: [U1.GP2, U3.ain1, U3.bin1]
+  MOT_IN2: [U1.GP3, U3.ain2, U3.bin2]
+  MOT_A: [U3.aout1, U3.bout1, M1.+, CM.1]
+  MOT_B: [U3.aout2, U3.bout2, M1.-, CM.2]
+  SERVO: [U1.GP14, S1.signal]
+  UART_TX: [U1.GP0, U4.rxd]
+  UART_RX: [U1.GP1, U4.txd]
+  BT_STATE: [U1.GP4, U4.state]
+  LED: [U1.GP5, RL1.1]
+  LED_A: [RL1.2, LED1.anode]
+  BAT_SENSE: [RS1.2, RS2.1, CS.1, U1.GP28]
+  GND: [BT1.-, U3.gnd, CB.2, U2.gnd, C5.2, U1.GND, S1.gnd, U4.gnd, RS2.2, CS.2, LED1.cathode]

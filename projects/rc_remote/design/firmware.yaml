@@ -1,0 +1,12 @@
+mcu: U1
+signals:
+  STEER_IN: { function: ADC0, description: "joystick x: steering (0 V full left, 3.3 V full right)" }
+  THROTTLE_IN: { function: ADC1, description: "joystick y: throttle (0 V full back, 3.3 V full ahead)" }
+  STICK_SW: { mode: input, pull: up, description: "joystick push button, low while pressed: slow mode" }
+  UART_TX: { function: UART0_TX, description: "to the HC-05: drive commands" }
+  UART_RX: { function: UART0_RX, description: "from the HC-05: the car's battery reports" }
+  BT_STATE: { mode: input, pull: down, description: "HC-05 STATE: high while the link is up" }
+  LED_LINK: { mode: output, initial: low, description: "LINK LED: on while linked, blinking while searching" }
+  LED_SLOW: { mode: output, initial: low, description: "SLOW LED: slow mode on" }
+  LED_BATT: { mode: output, initial: low, description: "BATT LED: on = remote low, blinking = car low" }
+  BAT_SENSE: { function: ADC2, description: "half the battery voltage (after D1)" }

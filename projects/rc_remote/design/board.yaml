@@ -1,0 +1,25 @@
+# Remote board, 70 x 64 mm. The Pico runs down the left edge with its USB socket on the
+# top edge (programming), so its right-hand pins (ADC, LED outputs, 3V3, VSYS) face the
+# board. The three LEDs sit in a row along the top edge (LINK, SLOW, BATT, left to right),
+# the joystick module's header in the middle of the right half (the module plugs on, its
+# stick under the right thumb), the battery wires enter at the bottom right; the rest is
+# placed next to what it connects to. Ground plane on both layers.
+board:
+  width: 70mm
+  height: 64mm
+  spacing: 2.5mm
+rules:
+  track_width: 0.25mm
+  track_widths: { VBAT: 0.5mm, BAT: 0.5mm, V5: 0.5mm, GND: 0.5mm }
+placement:
+  U1: { x: 5mm, y: 3mm }   # USB socket at the top edge
+  LED1: { x: 40mm, y: 6mm }
+  LED2: { x: 50mm, y: 6mm }
+  LED3: { x: 60mm, y: 6mm }
+  J1: { x: 42mm, y: 34mm }
+  BT1: { x: 66mm, y: 58mm, rotation: 90deg }
+routing:
+  passes: 60
+pours:
+  - { net: GND, layer: both }
+fab: jlcpcb

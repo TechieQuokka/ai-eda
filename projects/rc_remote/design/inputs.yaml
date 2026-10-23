@@ -1,0 +1,12 @@
+# How a person uses the remote: each key of a key string is one stick move (held, then
+# let go back to the centre). Used by `keys` events in test.yaml and by `eda try --keys`.
+keys:
+  f: { part: J1, press: { y: 100% }, release: { y: 50% } }   # full ahead
+  b: { part: J1, press: { y: 0% }, release: { y: 50% } }     # full back
+  l: { part: J1, press: { x: 0% }, release: { x: 50% } }     # full left
+  r: { part: J1, press: { x: 100% }, release: { x: 50% } }   # full right
+  s: { part: J1, press: { button: pressed }, release: { button: open } }  # stick press: slow mode
+hold: 200ms   # four commands go out while a move is held
+gap: 100ms
+start: 100ms  # the centre is calibrated about 20 ms after power-up
+settle: 100ms

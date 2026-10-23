@@ -1,0 +1,9 @@
+name: rc_car
+description: >
+  Small Bluetooth RC car with car-style steering: a Raspberry Pi Pico (RP2040) takes
+  commands from an HC-05 module (sent by the rc_remote handheld), drives the rear motor
+  through a DRV8833 H-bridge (speed by PWM, forward and reverse, ramped) and the front
+  steering servo (SG90 class, 50 Hz pulses). Stops and centres the steering when the
+  commands stop or the link drops. Power: four AA cells; a Pololu S7V8F5 buck-boost
+  makes 5 V for the Pico, the HC-05, and the servo, so they keep running while the motor
+  pulls the cells down. Reports its battery voltage back over the link.

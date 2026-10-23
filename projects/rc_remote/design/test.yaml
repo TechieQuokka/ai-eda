@@ -1,0 +1,185 @@
+# Requirements of the remote, one test each. Commands go out as "D,<throttle>,<steer>";
+# a `serial` expectation with a group checks the number in the last command sent.
+tests:
+  power:
+    description: >
+      Two fresh-ish AA cells (3 V): the boost module makes 5 V for the HC-05, VSYS sits a
+      Schottky drop below it, the joystick runs from the Pico's 3V3, and the stick at rest
+      gives half of it on both ADC inputs.
+    analysis: { type: op }
+    expect:
+      - { measure: voltage(V5), min: 4.9V, max: 5.1V }
+      - { measure: voltage(VSYS), min: 4.5V, max: 5V }
+      - { measure: voltage(STEER_IN), min: 1.6V, max: 1.7V }
+      - { measure: voltage(THROTTLE_IN), min: 1.6V, max: 1.7V }
+      - { measure: voltage(BAT_SENSE), min: 1.3V, max: 1.5V }
+      - { measure: current(BT1), min: -150mA, max: 0A }
+
+  stick_range:
+    description: The throttle input follows the stick from 0 V to 3.3 V and never exceeds the ADC's limit.
+    analysis: { type: dc, sweep: J1.y, start: 0%, stop: 100%, step: 5% }
+    expect:
+      - { measure: min(voltage(THROTTLE_IN)), max: 10mV }
+      - { measure: max(voltage(THROTTLE_IN)), min: 3.2V, max: 3.4V }
+
+  centre:
+    description: >
+      The stick at rest: "D,0,0" goes out every 50 ms (20 a second), with the link LED on
+      and the other LEDs off.
+    analysis: { type: tran, step: 50us, stop: 1s }
+    firmware: true
+    expect:
+      - { serial: UART_TX, match: 'D,0,0\n', min: 19, max: 21 }
+      - { serial: UART_TX, match: 'D,', min: 19, max: 21 }
+      - { measure: "min(current(LED1))", from: 50ms, min: 2mA }
+      - { measure: "max(current(LED2))", max: 10uA }
+      - { measure: "max(current(LED3))", max: 10uA }
+
+  forward:
+    description: Full ahead, straight.
+    analysis: { type: tran, step: 50us, stop: 400ms }
+    firmware: true
+    events:
+      - { at: 100ms, part: J1, set: { y: 100% } }
+    expect:
+      - { serial: UART_TX, match: 'D,(-?\d+),', min: 100, max: 100 }
+      - { serial: UART_TX, match: 'D,-?\d+,(-?\d+)', min: 0, max: 0 }
+
+  reverse:
+    description: Full back, straight.
+    analysis: { type: tran, step: 50us, stop: 400ms }
+    firmware: true
+    events:
+      - { at: 100ms, part: J1, set: { y: 0% } }
+    expect:
+      - { serial: UART_TX, match: 'D,(-?\d+),', min: -100, max: -100 }
+      - { serial: UART_TX, match: 'D,-?\d+,(-?\d+)', min: 0, max: 0 }
+
+  left:
+    description: Full left, no throttle.
+    analysis: { type: tran, step: 50us, stop: 400ms }
+    firmware: true
+    events:
+      - { at: 100ms, part: J1, set: { x: 0% } }
+    expect:
+      - { serial: UART_TX, match: 'D,(-?\d+),', min: 0, max: 0 }
+      - { serial: UART_TX, match: 'D,-?\d+,(-?\d+)', min: -100, max: -100 }
+
+  right:
+    description: Full right, no throttle.
+    analysis: { type: tran, step: 50us, stop: 400ms }
+    firmware: true
+    events:
+      - { at: 100ms, part: J1, set: { x: 100% } }
+    expect:
+      - { serial: UART_TX, match: 'D,(-?\d+),', min: 0, max: 0 }
+      - { serial: UART_TX, match: 'D,-?\d+,(-?\d+)', min: 100, max: 100 }
+
+  dead_zone:
+    description: >
+      A stick resting a little off its centre (4 % on both axes, the centre calibrated at
+      power-up) sends nothing; 10 % past the centre gives a small throttle.
+    analysis: { type: tran, step: 50us, stop: 400ms }
+    firmware: true
+    parts: { J1: { x: 46%, y: 54% } }
+    events:
+      - { at: 100ms, part: J1, set: { x: 50%, y: 50% } }
+      - { at: 200ms, part: J1, set: { y: 64% } }
+    expect:
+      - { serial: UART_TX, match: 'D,-?\d+,(-?\d+)', min: 0, max: 0 }
+      - { serial: UART_TX, match: 'D,(-?\d+),', min: 8, max: 18 }
+      - { serial: UART_TX, match: 'D,-?[1-9]\d*,', max: 5 }
+
+  slow_mode:
+    description: >
+      Pressing the stick turns slow mode on: full ahead sends half throttle, the SLOW LED
+      lights; steering is not halved.
+    analysis: { type: tran, step: 50us, stop: 700ms }
+    firmware: true
+    events:
+      - { at: 100ms, keys: s }
+      - { at: 450ms, part: J1, set: { y: 100%, x: 100% } }
+    expect:
+      - { serial: UART_TX, match: 'D,(-?\d+),', min: 50, max: 50 }
+      - { serial: UART_TX, match: 'D,-?\d+,(-?\d+)', min: 100, max: 100 }
+      - { measure: "min(current(LED2))", from: 200ms, min: 2mA }
+
+  slow_mode_off:
+    description: A second press turns slow mode off again.
+    analysis: { type: tran, step: 50us, stop: 1s }
+    firmware: true
+    events:
+      - { at: 100ms, keys: ss }
+      - { at: 750ms, part: J1, set: { y: 100% } }
+    expect:
+      - { serial: UART_TX, match: 'D,(-?\d+),', min: 100, max: 100 }
+      - { measure: "max(current(LED2))", from: 600ms, max: 10uA }
+
+  locked_at_power_up:
+    description: >
+      Switched on with the stick pushed ahead: no throttle goes out (and that position is
+      not taken as the centre).
+    analysis: { type: tran, step: 50us, stop: 500ms }
+    firmware: true
+    parts: { J1: { y: 100% } }
+    expect:
+      - { serial: UART_TX, match: 'D,0,0\n', min: 9 }
+      - { serial: UART_TX, match: 'D,-?[1-9]', max: 0 }
+
+  unlocked_after_centre:
+    description: Once the stick has been back to the centre, the throttle works.
+    analysis: { type: tran, step: 50us, stop: 600ms }
+    firmware: true
+    parts: { J1: { y: 100% } }
+    events:
+      - { at: 200ms, part: J1, set: { y: 50% } }
+      - { at: 400ms, part: J1, set: { y: 100% } }
+    expect:
+      - { serial: UART_TX, match: 'D,(-?\d+),', min: 100, max: 100 }
+
+  link_waiting:
+    description: "No link yet (the car is off): the LINK LED blinks once a second."
+    analysis: { type: tran, step: 50us, stop: 2.2s }
+    firmware: true
+    parts: { U4: { link: waiting } }
+    expect:
+      - { measure: "period(current(LED1), 1mA)", from: 0.2s, min: 990ms, max: 1010ms }
+
+  car_low:
+    description: "The car reports low cells (B,4200): the BATT LED blinks fast; the remote's own cells are fine."
+    analysis: { type: tran, step: 50us, stop: 1.2s }
+    firmware: true
+    events:
+      - { at: 100ms, serial: UART_RX, send: "B,4200\n", every: 500ms }
+    expect:
+      - { measure: "period(current(LED3), 1mA)", from: 300ms, min: 240ms, max: 260ms }
+
+  car_ok:
+    description: "The car's cells recover (B,5900 after B,4200): the BATT LED goes out."
+    analysis: { type: tran, step: 50us, stop: 1.2s }
+    firmware: true
+    events:
+      - { at: 100ms, serial: UART_RX, send: "B,4200\n" }
+      - { at: 600ms, serial: UART_RX, send: "B,5900\n" }
+    expect:
+      - { measure: "max(current(LED3))", from: 700ms, max: 10uA }
+      - { measure: "max(current(LED3))", from: 200ms, to: 600ms, min: 2mA }
+
+  remote_low:
+    description: >
+      The remote's cells are nearly empty (1.0 V each): the BATT LED is on steadily; the
+      boost module still makes 5 V and the remote still sends.
+    analysis: { type: tran, step: 50us, stop: 500ms }
+    firmware: true
+    parts: { BT1: { voltage: 2V, rint: 0.6ohm } }
+    expect:
+      - { measure: "min(current(LED3))", from: 100ms, min: 2mA }
+      - { measure: min(voltage(V5)), from: 50ms, min: 4.8V }
+      - { serial: UART_TX, match: 'D,0,0\n', min: 9 }
+
+  reversed_cells:
+    description: The battery box wired the wrong way round. Nothing conducts more than a trickle.
+    analysis: { type: op }
+    parts: { BT1: { voltage: -3V } }
+    expect:
+      - { measure: current(BT1), min: 0A, max: 1mA }

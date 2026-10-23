@@ -1,0 +1,48 @@
+description: >
+  RC car remote. Power: two AA cells in a box with its own switch (BT1, off the board)
+  through the Schottky D1 (reverse polarity) into the Pololu U1V11F5 boost module U2; its
+  5 V (V5) runs the HC-05 (U4) and, through D2, the Pico's VSYS (so the Pico's USB can
+  power the remote without back-feeding U2). The joystick module J1 is fed from the
+  Pico's 3V3, not 5 V: its wipers go straight to ADC0 / ADC1, which are not 5 V
+  tolerant, and the readings are then ratiometric to the ADC reference. Its push button
+  pulls STICK_SW low (the Pico's pull-up). The Pico talks to the HC-05 on UART0 and reads
+  the link state (BT_STATE). RS1/RS2 halve the battery voltage for ADC2. LEDs: LINK
+  (green), SLOW (yellow), BATT (red), each from a GPIO through its resistor. All signals
+  are on the Pico's GP16-GP28 side, which faces the rest of the board.
+parts:
+  BT1: { type: battery, voltage: 3V, rint: 0.3ohm, mpn: "2xAA battery box with switch and leads" }
+  D1: { type: diode, model: 1N5817, footprint: "Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal", mpn: 1N5817 }
+  U2: { type: pololu_u1v11f5, mpn: "Pololu 2562" }
+  D2: { type: diode, model: 1N5817, footprint: "Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal", mpn: 1N5817 }
+  U1: { type: raspberry_pi_pico }
+  U4: { type: hc05, mpn: "HC-05 module (6-pin breakout)" }
+  J1: { type: joystick_2axis, mpn: "KY-023 joystick module" }
+  RS1: { type: resistor, resistance: 100kohm }   # battery sense divider (1/2)
+  RS2: { type: resistor, resistance: 100kohm }
+  CS: { type: capacitor, capacitance: 100nF }    # ADC input filter
+  LED1: { type: led, color: green }              # LINK
+  RL1: { type: resistor, resistance: 330ohm }
+  LED2: { type: led, color: yellow }             # SLOW
+  RL2: { type: resistor, resistance: 330ohm }
+  LED3: { type: led, color: red }                # BATT
+  RL3: { type: resistor, resistance: 330ohm }
+nets:
+  BAT: [BT1.+, D1.anode]
+  VBAT: [D1.cathode, U2.vin, RS1.1]
+  V5: [U2.vout, D2.anode, U4.vcc]
+  VSYS: [D2.cathode, U1.VSYS]
+  V3V3: [U1.3V3, J1.vcc]
+  STEER_IN: [U1.GP26, J1.vrx]
+  THROTTLE_IN: [U1.GP27, J1.vry]
+  STICK_SW: [U1.GP22, J1.sw]
+  UART_TX: [U1.GP16, U4.rxd]
+  UART_RX: [U1.GP17, U4.txd]
+  BT_STATE: [U1.GP21, U4.state]
+  LED_LINK: [U1.GP18, RL1.1]
+  LED_LINK_A: [RL1.2, LED1.anode]
+  LED_SLOW: [U1.GP19, RL2.1]
+  LED_SLOW_A: [RL2.2, LED2.anode]
+  LED_BATT: [U1.GP20, RL3.1]
+  LED_BATT_A: [RL3.2, LED3.anode]
+  BAT_SENSE: [RS1.2, RS2.1, CS.1, U1.GP28]
+  GND: [BT1.-, U2.gnd, U1.GND, U4.gnd, J1.gnd, RS2.2, CS.2, LED1.cathode, LED2.cathode, LED3.cathode]

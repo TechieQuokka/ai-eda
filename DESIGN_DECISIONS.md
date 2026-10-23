@@ -352,6 +352,7 @@ rules:
   track_width: 0.4mm
   via_diameter: 0.8mm
   via_drill: 0.4mm
+  track_widths: { VBAT: 1mm }   # per net, wider than track_width (§30)
 placement:             # parts not listed are packed automatically
   V1: { x: 5mm, y: 6mm, rotation: 90deg, side: top }
 routing:
@@ -780,3 +781,41 @@ After the calculator's warnings were cleared, the only warning left among the ex
 
 - **`board_pads: { PAD: NET }`** on a part instance in circuit.yaml connects footprint pads the part's model has no pin for. It exists on the board only: the simulation, the schematics, and ERC do not see it. A pad must exist in the footprint and must not belong to a pin (`invalid_pads`); a net that is not in the circuit must join two or more pads (`board_net`), so a typo cannot leave a pad on a net of its own. Tied pads count as used for `unused_pads`.
 - **`tl072_amp`**: channel B is a follower of GND (mid-supply with ±15 V): `{ "5": GND, "6": UB_OUT, "7": UB_OUT }`. Routed, DRC clean; every example now runs without warnings.
+
+## 30. Example: Bluetooth RC car and its remote (2026-10-22 – 2026-10-23)
+
+The user asked for an RC car with a remote of its own, and decided: Bluetooth with two HC-05 modules (UART on both sides), car-style steering (one rear DC motor, a front steering servo), small parts (130-size motor, SG90, DRV8833-class driver), four AA cells in the car, a handheld remote rather than a phone app; everything else followed the recommendations below. Build guide and shopping list: `docs/rc_car.md`; module setup: `docs/hc05_pairing.md`.
+
+### 30.1 Car (`projects/rc_car`)
+
+- **Power**: the cells feed the Pololu DRV8833 carrier (#2130, both bridges in parallel: 2.4 A continuous) directly, and through a 1N5822 (reverse polarity; the carrier protects itself) a Pololu S7V8F5 buck-boost, whose 5 V runs the servo, the HC-05, and (through a 1N5817) the Pico's VSYS. The buck-boost keeps 5 V while the motor pulls the cells down to about 4 V. The battery box has its own switch: the OS102011 slide switch is rated 100 mA.
+- **Firmware**: commands `D,<throttle>,<steer>` (-100..100 each) at 9600 baud. The motor follows through a ramp (0 to full in 250 ms) and stops for 500 ms at standstill before reversing (driving against a turning motor would draw up to twice the stall current). Failsafe: no valid command for 300 ms, or HC-05 STATE low, brakes and centres the steering; commands are ignored while STATE is low, so stray bytes cannot restart the car. Battery reports `B,<millivolts>` every second, **measured while the motor stands still**: under load the cells' internal resistance pulls the voltage down by up to 2 V, which would read as empty cells (the last reading at rest is repeated while driving). Status LED: on under commands, 1 Hz waiting, 4 Hz low battery (4.4 V, back above 4.6 V).
+- **Findings**: with the wheels blocked and the servo stalled, the cells (0.8 ohm for four) deliver 2.5 A, VBAT drops to 4.0 V, and the motor gets 1.37 A rather than its 2.2 A rated stall current; the first expectation (1.5-2.2 A) assumed 6 V at the motor. Peak motor current while reversing is 0.85 A.
+- 12 tests (power, forward, half reverse, steering pulse widths and period, silence, link lost, garbled commands, reversing, stall, low battery, battery report, reversed cells), all passing; a full `eda run` takes about 6 minutes (firmware tests of 0.6-2.5 s at 10-50 us steps).
+
+### 30.2 Remote (`projects/rc_remote`)
+
+- **Power** as in the calculator: two AA cells, 1N5817, Pololu U1V11F5 boost, 1N5817 to VSYS. The joystick module is fed from the Pico's 3V3, not 5 V: its wipers go straight to ADC0/ADC1, which are not 5 V tolerant.
+- **Firmware**: `D,<throttle>,<steer>` every 50 ms. The centre is taken at power-up only if it is within 15 % of mid-scale (a stick held over is not a centre); dead zone 8 % of the travel to each side; full output from 90 % of the travel (real sticks do not reach the ends); the throttle stays at 0 until the stick has been centred once; a stick press (debounced, 20 ms) toggles slow mode (throttle / 2). LEDs: LINK (on while linked, 1 Hz while searching), SLOW, BATT (steady: the remote's cells below 1.8 V after the diode; 4 Hz: the car reported below 4.4 V).
+- All signals are on the Pico's GP16-GP28 row (UART0 on GP16/GP17), the row that faces the board: on the first board, LED and button tracks from the other row could not all be routed.
+- 17 tests (power, stick range sweep, 20 commands a second, the four full deflections, dead zone, slow mode on and off, locked throttle at power-up and its release, link LED, car low and recovered, remote low, reversed cells), all passing on the first run. `design/inputs.yaml` maps keys to stick moves (`f b l r` full deflections, `s` stick press) for `eda try`.
+
+### 30.3 Tool changes made for it
+
+- **Parts**: `dc_motor` (R, L, back-EMF node, inertia as a capacitor C = tm/R, friction from the no-load current; `shaft: stalled`), `drv8833_carrier` (Pololu pinout in a DIP-16 footprint; the bridge averaged per output as drive fraction x duty, exact for slow decay, with body diodes and UVLO), `pololu_s7v8f5` (`eda_boost` with an output current limit fitted to Pololu's maximum-current curve), `servo_sg90` (`load: idle|moving|stalled`), `hc05` (`link` drives STATE), `joystick_2axis`, and `1N5822` for `diode` (fitted to Vishay's maximum VF). `eda_boost` gained the optional current limit (`islope`, `iv0`, `imax`); its defaults change nothing for the U1V11F5.
+- **Repeated events**: `every` / `until` on a test event (expanded when the design is loaded; reported and plotted once).
+- **Co-simulation fixes**: the halt condition had a 1e-9 tolerance, so with steps of 50 us or less ngspice stopped 1e-15 s short of a window's end and could not resume ("timestep too small"); the loop then never ended and memory grew past 10 GB. The condition is exact now, and an aborted run raises `cosim_failed`. ngspice lands a few ULPs short of a breakpoint, though, so with the breakpoint at the window's end an exact condition missed it about one time in four and ran on for a whole maximum step; the emulator's pin timing then fell out of step with the circuit, and the calculator's LCD reported 0 ns enable pulses (`display_timing`). The breakpoint now sits 1e-13 past the window's end, so the landing is at or past it with nothing left before it (`test_halts_land_on_window_ends`). Stepped runs save only the nets' voltages and the top-level sources' currents, on the window grid: the raw file for 150 ms of the car went from 96 MB to 4.7 MB (the first full car run had been killed by the OOM killer at a 20 GB peak).
+- **Per-net track widths**: `rules.track_widths: { NET: WIDTH }` in board.yaml. Each distinct width becomes a KiCad net class (`track_<w>mm`, clearance and vias from the default class), assigned by net name; the Specctra export carries the classes, so Freerouting routes those nets at that width. Checked: the net has pads on the board (`board_net`), the value is a length, and with `fab:` the width against `min_track`. The car uses 1 mm for VBAT, MOT_A, MOT_B, GND and 0.6 mm for VREG and V5; the remote 0.5 mm for its supply nets.
+
+### 30.4 Boards
+
+| Project | Board | Routing | DRC |
+|---|---|---|---|
+| `rc_car` | 70 x 64 mm; Pico on the right edge (USB at the top), battery and motor wire pads on the left edge, the driver between them; GND poured on both layers | fully routed, 1 via | 0 errors, 0 warnings |
+| `rc_remote` | 70 x 64 mm; Pico on the left edge (USB at the top), LEDs along the top, joystick header in the right half, battery pads bottom right; GND on both layers | fully routed, 3 vias | 0 errors, 0 warnings |
+
+### 30.5 Not covered
+
+- The radio link itself (range, latency, the HC-05's own pairing) and the HC-05's supply current while searching; the protocol is checked on each side with `serial` events and expectations, not end to end in one simulation.
+- Mechanics: the chassis, the steering linkage's end stops (`STEER_RANGE_US` must be set on the real car), the motor's real load (the time constant includes a guessed vehicle inertia), brush noise.
+- The DRV8833's overcurrent and thermal shutdown (peaks are checked against 2 A per bridge in the tests instead).

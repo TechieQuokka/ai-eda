@@ -6,9 +6,29 @@ features that keep them working, PATCH for fixes. Each release is tagged `vX.Y.Z
 
 ## [Unreleased]
 
+### Added
+- `projects/rc_car` and `projects/rc_remote`: a Bluetooth RC car (DC motor through a
+  DRV8833, steering servo, 4 x AA with a buck-boost) and its joystick remote (2 x AA with a
+  boost module), each with firmware in the loop and a DRC-clean board.
+- Parts: `dc_motor`, `drv8833_carrier`, `pololu_s7v8f5`, `servo_sg90`, `hc05`,
+  `joystick_2axis`; `diode` model `1N5822`. `eda_boost` takes an optional output current
+  limit.
+- Repeated test events: `every` and `until` on an event (e.g. a command line every 50 ms).
+- `rules.track_widths` in board.yaml: wider tracks per net (a net class each in KiCad and
+  the router), checked against the PCB house's minimum.
+- Docs: `docs/rc_car.md` (shopping list, assembly, first power-up), `docs/hc05_pairing.md`.
+
+### Fixed
+- Co-simulation with steps of 50 us or less could stop just short of a window's end and
+  loop forever while memory grew; it now stops exactly there, and an aborted ngspice run
+  is a `cosim_failed` error. The halt now lands on the window's end even though ngspice
+  stops a few ULPs short of a breakpoint (the breakpoint sits 1e-13 past it).
+- Co-simulation output: stepped runs save only net voltages and source currents on the
+  window grid (the car's raw file went from 96 MB to 4.7 MB for 150 ms).
+
 ### Docs
 - README: the calculator, with its board, schematic, screens, battery sweep, and an
-  `eda try` example.
+  `eda try` example; the RC car and remote.
 
 ## [1.3.0] - 2026-10-21
 

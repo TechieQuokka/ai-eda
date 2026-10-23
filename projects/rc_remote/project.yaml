@@ -1,0 +1,10 @@
+name: rc_remote
+description: >
+  Handheld remote for the rc_car: a Raspberry Pi Pico (RP2040) reads a two-axis thumb
+  joystick (throttle and steering) and sends drive commands 20 times a second over an
+  HC-05 Bluetooth module (set as master, bound to the car's HC-05). The stick's centre is
+  calibrated at power-up, with a dead zone around it; the throttle stays at zero until
+  the stick has been centred once. Pressing the stick toggles slow mode (half throttle).
+  LEDs: link up, slow mode, battery (on: the remote's cells are low; blinking: the car
+  reports low cells). Power: two AA cells, reverse-polarity protection, and a Pololu
+  U1V11F5 5 V boost module; the Pico's USB can power it too.
