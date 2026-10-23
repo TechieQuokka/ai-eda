@@ -4,13 +4,16 @@ category: semiconductor
 description: >
   Silicon diode with vendor-style SPICE models: 1N4148 (small signal), 1N4007 (1 A
   rectifier), 1N5817 (1 A, 20 V Schottky, about 0.3 V at 100 mA; its model is fitted to
-  the onsemi datasheet's maximum forward voltages, 0.32 V at 0.1 A and 0.45 V at 1 A).
+  the onsemi datasheet's maximum forward voltages, 0.32 V at 0.1 A and 0.45 V at 1 A),
+  1N5822 (3 A, 40 V Schottky; fitted to the Vishay datasheet's maximum forward voltages,
+  0.525 V at 3 A and 0.95 V at 9.4 A: about 0.37 V at 1 A).
   The default footprint is DO-35; the 1N4007 and 1N5817 come in DO-41
-  (`footprint: Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal`). Current is positive from
+  (`footprint: Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal`), the 1N5822 in DO-201AD
+  (`footprint: Diode_THT:D_DO-201AD_P15.24mm_Horizontal`). Current is positive from
   anode to cathode.
 pins: [anode, cathode]
 params:
-  model: { choices: [1N4148, 1N4007, 1N5817], default: 1N4148 }
+  model: { choices: [1N4148, 1N4007, 1N5817, 1N5822], default: 1N4148 }
 spice:
   prefix: D
   template: "<name> <pin:anode> <pin:cathode> <model>"
@@ -19,6 +22,7 @@ spice:
     1N4148: "D(IS=2.52n RS=0.568 N=1.752 CJO=4p M=0.4 TT=20n BV=100 IBV=100u)"
     1N4007: "D(IS=7.02767n RS=0.0341512 N=1.80803 EG=1.05743 XTI=5 BV=1000 IBV=0.1 CJO=1e-11 VJ=0.7 M=0.5 FC=0.5 TT=1e-07)"
     1N5817: "D(IS=19.6u RS=0.05 N=1.43 EG=0.69 XTI=2 CJO=110p M=0.35 VJ=0.6 BV=20 IBV=1m)"
+    1N5822: "D(IS=48.5u RS=0.061 N=1.2 EG=0.69 XTI=2 CJO=300p M=0.4 VJ=0.6 BV=40 IBV=2m)"
 symbol:
   cell: d_v
   ports: { anode: "+", cathode: "-" }

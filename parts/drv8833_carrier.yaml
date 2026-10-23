@@ -1,0 +1,53 @@
+id: drv8833_carrier
+name: Pololu DRV8833 dual motor driver carrier
+category: driver
+description: >
+  TI DRV8833 dual H-bridge on Pololu's carrier (#2130, 0.5 x 0.8 in, two rows of 8 pins
+  0.4 in apart, so it sits in a DIP-16 footprint; pad 1 is GND at the top of the left
+  row). Motor supply VIN 2.7-10.8 V, reverse protected on the carrier (VMM is VIN after
+  the protection); inputs 3 V and 5 V compatible with 150 kohm pull-downs; nSLEEP pulled
+  high on the carrier. Per bridge 1.2 A continuous, 2 A peak (Pololu); the two bridges in
+  parallel (AIN1+BIN1, AIN2+BIN2, AOUT1+BOUT1, AOUT2+BOUT2) give 2.4 A continuous, 4 A
+  peak to one motor. Logic per bridge: IN1 IN2 = 00 coast, 10 forward (OUT1 high),
+  01 reverse, 11 brake; for speed control hold one input high and PWM the other (slow
+  decay). The chip shuts a bridge off above 2 A (minimum) for 1.35 ms and retries: keep
+  peaks below that per bridge. Model (parts/models/eda_drv8833.lib): the logic table
+  with on resistances (200 + 160 mohm), body diodes, undervoltage lockout, and inputs
+  read as their averaged duty (`logic` is the driving logic's high level, 3.3 V for the
+  Pico), so co-simulated PWM gives the averaged bridge. Overcurrent and thermal
+  shutdown are not modelled: check currents against the limits above. AISEN/BISEN
+  (pads 10/9) are grounded on the carrier and left open here; nFAULT (open drain, low on
+  a fault) is not modelled.
+datasheet: https://www.pololu.com/product/2130
+pins: [gnd, vmm, bin1, bin2, ain2, ain1, nsleep, nfault, aout1, aout2, bout2, bout1, vin]
+optional_pins: [vmm, bin1, bin2, ain2, ain1, nsleep, nfault, aout1, aout2, bout2, bout1]
+params:
+  logic: { unit: V, default: 3.3V, positive: true, description: high level of the logic driving the inputs }
+spice:
+  prefix: X
+  template: |
+    <name> <pin:vin> <pin:gnd> <name>_vm <name>_slp <name>_ai1 <name>_ai2 <name>_bi1 <name>_bi2 <name>_ao1 <name>_ao2 <name>_bo1 <name>_bo2 eda_drv8833 logic=<param:logic>
+    R<name>_vmm <pin:vmm> <name>_vm 1m
+    R<name>_slp <pin:nsleep> <name>_slp 1
+    R<name>_ai1 <pin:ain1> <name>_ai1 1
+    R<name>_ai2 <pin:ain2> <name>_ai2 1
+    R<name>_bi1 <pin:bin1> <name>_bi1 1
+    R<name>_bi2 <pin:bin2> <name>_bi2 1
+    R<name>_ao1 <pin:aout1> <name>_ao1 1m
+    R<name>_ao2 <pin:aout2> <name>_ao2 1m
+    R<name>_bo1 <pin:bout1> <name>_bo1 1m
+    R<name>_bo2 <pin:bout2> <name>_bo2 1m
+    R<name>_flt <pin:nfault> <pin:gnd> 1e9
+  pin_currents: true
+  include: models/eda_drv8833.lib
+symbol:
+  cell: x_drv8833
+  ports: { gnd: GND, vmm: VMM, bin1: BIN1, bin2: BIN2, ain2: AIN2, ain1: AIN1, nsleep: nSLEEP, nfault: nFAULT, aout1: AOUT1, aout2: AOUT2, bout2: BOUT2, bout1: BOUT1, vin: VIN }
+  label: "DRV8833"
+kicad:
+  symbol: Connector_Generic:Conn_02x08_Counter_Clockwise
+pcb:
+  footprint: Package_DIP:DIP-16_W10.16mm
+  pads: { gnd: ["1", "16"], vmm: "2", bin1: "3", bin2: "4", ain2: "5", ain1: "6", nsleep: "7", nfault: "8", aout1: "11", aout2: "12", bout2: "13", bout1: "14", vin: "15" }
+  nc: ["9", "10"]
+  value: DRV8833 carrier

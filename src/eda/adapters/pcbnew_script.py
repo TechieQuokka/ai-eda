@@ -59,7 +59,29 @@ def _apply_rules(board: Any, rules: Request) -> None:
     netclass.SetViaDrill(MM(rules["via_drill"]))
     settings.SetCopperLayerCount(rules.get("layers", 2))
     settings.m_MinClearance = MM(rules["clearance"])
-    settings.m_TrackMinWidth = MM(rules["track_width"])
+    settings.m_TrackMinWidth = MM(
+        min([rules["track_width"], *rules.get("track_widths", {}).values()])
+    )
+
+
+def _assign_track_widths(board: Any, widths: dict[str, float]) -> None:
+    """One net class per extra track width (the router reads the classes from the .dsn);
+    each listed net is assigned to its class by name. Clearance and vias stay the default
+    class's."""
+    net_settings = board.GetDesignSettings().m_NetSettings
+    default = net_settings.GetDefaultNetclass()
+    for net, width in widths.items():
+        name = f"track_{width:g}mm"
+        if not net_settings.HasNetclass(name):
+            netclass = pcbnew.NETCLASS(name)
+            netclass.SetTrackWidth(MM(width))
+            netclass.SetClearance(default.GetClearance())
+            netclass.SetViaDiameter(default.GetViaDiameter())
+            netclass.SetViaDrill(default.GetViaDrill())
+            net_settings.SetNetclass(name, netclass)
+        net_settings.SetNetclassPatternAssignment(net, name)
+    net_settings.RecomputeEffectiveNetclasses()
+    board.SynchronizeNetsAndNetClasses(True)
 
 
 def _courtyard(footprint: Any) -> Box:
@@ -379,6 +401,7 @@ def build(request: Request) -> Request:
     outline.SetEnd(_point(x0 + w, y0 + h))
     outline.SetWidth(MM(0.1))
     board.Add(outline)
+    _assign_track_widths(board, request["rules"].get("track_widths", {}))
 
     board.Save(request["pcb"])
     pcbnew.ExportSpecctraDSN(board, request["dsn"])

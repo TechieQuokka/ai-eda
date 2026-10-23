@@ -569,6 +569,24 @@ def _resolve_board(
             continue
         pours.append(BoardPour(pour.net, layers, pour_clearance, min_width))
 
+    track_widths: list[tuple[str, float]] = []
+    for net, text in raw.rules.track_widths.items():
+        at = src.at("rules", "track_widths", net)
+        if net not in board_nets:
+            diag.error(
+                "board_net",
+                f"rules.track_widths: net {net!r} has no pads on the board; nets: "
+                + ", ".join(sorted(board_nets)),
+                at,
+            )
+            ok = False
+            continue
+        width_mm = mm(text, "rules", "track_widths", net)
+        if width_mm is None:
+            ok = False
+            continue
+        track_widths.append((net, width_mm))
+
     if not ok or margin is None or spacing is None or any(r is None for r in rules):
         return None
     clearance, track, via_d, via_drill = (float(r or 0) for r in rules)
@@ -578,6 +596,10 @@ def _resolve_board(
     if fab is not None:
         checks = [
             ("rules.track_width", track, "min_track", src.at("rules", "track_width")),
+            *(
+                (f"rules.track_widths.{net}", w, "min_track", src.at("rules", "track_widths", net))
+                for net, w in track_widths
+            ),
             ("rules.clearance", clearance, "min_clearance", src.at("rules", "clearance")),
             ("rules.via_drill", via_drill, "min_drill", src.at("rules", "via_drill")),
             (
@@ -614,7 +636,7 @@ def _resolve_board(
         margin=margin,
         spacing=spacing,
         layers=raw.board.layers,
-        rules=BoardRules(clearance, track, via_d, via_drill),
+        rules=BoardRules(clearance, track, via_d, via_drill, tuple(track_widths)),
         parts=tuple(parts),
         passes=raw.routing.passes,
         source=src,
@@ -781,12 +803,67 @@ def _compile_events(
             event = _part_event(name, raw.part, raw.set or {}, time, base, src, circuit, diag)
         else:
             event = _serial_event(name, raw, time, case.firmware, base, src, firmware, diag)
+        if event is not None and raw.every is not None:
+            sends = _repeated(name, raw, event, analysis, base, src, diag)
+            if sends is None:
+                ok = False
+            else:
+                found += sends
+            continue
         if event is None:
             ok = False
         else:
             found.append(event)
     found.sort(key=lambda e: e.time)
     return found if ok else None
+
+
+MAX_REPEATS = 100_000
+
+
+def _repeated(
+    name: str,
+    raw: SimEvent,
+    first: CompiledEvent,
+    analysis: Analysis | None,
+    base: tuple[str | int, ...],
+    src: SourceMap,
+    diag: Diagnostics,
+) -> list[CompiledEvent] | None:
+    """A `send` with `every`: the first event and its repeats up to `until` (exclusive;
+    default: the end of the run)."""
+    assert raw.every is not None
+    stop = analysis.stop if isinstance(analysis, Tran) else None
+    try:
+        every = parse_quantity(raw.every, "s")
+        until = parse_quantity(raw.until, "s") if raw.until is not None else stop
+    except QuantityError as exc:
+        diag.error("invalid_value", f"every / until: {exc}", src.at(*base))
+        return None
+    if every <= 0:
+        diag.error("invalid_value", f"every: {raw.every} must be positive", src.at(*base, "every"))
+        return None
+    if until is None:
+        return None  # no run length to repeat over (reported with the analysis)
+    if raw.until is not None and not first.time < until <= (stop or until):
+        diag.error(
+            "event_time",
+            f"{name}: until {raw.until} must be after `at` and within the run",
+            src.at(*base, "until"),
+        )
+        return None
+    count = math.ceil((until - first.time) / every - 1e-9)
+    if count > MAX_REPEATS:
+        diag.error(
+            "invalid_value",
+            f"{name}: every {raw.every} sends {count} times (at most {MAX_REPEATS})",
+            src.at(*base, "every"),
+        )
+        return None
+    head = replace(first, every=every, repeats=count - 1)
+    return [head] + [
+        replace(first, time=first.time + i * every, repeat=True) for i in range(1, count)
+    ]
 
 
 def _part_event(

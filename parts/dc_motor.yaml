@@ -1,0 +1,42 @@
+id: dc_motor
+name: Brushed DC motor
+category: motor
+description: >
+  Brushed DC motor off the board, its two wires soldered into pads (+ is pad 1, square).
+  Give the datasheet values at the rated `voltage`: `stall_current` (sets the winding
+  resistance, voltage / stall current), `no_load_current` (the friction it has to
+  overcome), and the mechanical time constant `time_constant` (how fast it spins up:
+  about 63 % of full speed after that time; for a motor driving a vehicle, include the
+  vehicle's inertia through the gearing, which makes it several times longer). The
+  defaults are a typical 130-size motor at 6 V (2.2 A stall, 0.2 A no load). The model
+  is the motor's electrical equivalent (parts/models/eda_motor.lib): winding R and L,
+  back-EMF proportional to speed, rotor inertia, and friction; it starts up, reverses,
+  and brakes like the motor. `shaft: stalled` holds the shaft still (blocked wheels: the
+  stall current). current(M1) flows into +; a positive voltage from + to - turns it
+  forward. Not modelled: brush noise, temperature, and a load torque other than
+  friction. Put a 100 nF capacitor across the motor's terminals against brush noise.
+pins: ["+", "-"]
+params:
+  voltage: { unit: V, default: 6V, positive: true, description: rated voltage of the datasheet values }
+  stall_current: { unit: A, default: 2.2A, positive: true, description: current with the shaft held at the rated voltage }
+  no_load_current: { unit: A, default: 0.2A, min: 0A, description: current running free at the rated voltage }
+  inductance: { unit: H, default: 200uH, positive: true, description: winding inductance }
+  time_constant: { unit: s, default: 20ms, positive: true, description: mechanical time constant (spin-up) }
+  shaft: { choices: [free, stalled], default: free }
+spice:
+  prefix: X
+  template: |
+    <name> <pin:+> <pin:-> <name>_emf eda_dc_motor r={<param:voltage>/<param:stall_current>} l=<param:inductance> tm=<param:time_constant> i0=<param:no_load_current>
+    R<name>_lock <name>_emf <pin:-> <choice:shaft>
+  include: models/eda_motor.lib
+  choice_values: { shaft: { free: "1e9", stalled: "1e-3" } }
+symbol:
+  cell: x_motor
+  ports: { "+": "+", "-": "-" }
+  label: "M <param:stall_current> stall"
+kicad:
+  symbol: Motor:Motor_DC
+pcb:
+  footprint: Connector_Wire:SolderWire-0.5sqmm_1x02_P4.6mm_D0.9mm_OD2.1mm
+  pads: { "+": "1", "-": "2" }
+  value: DC motor

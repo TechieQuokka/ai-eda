@@ -217,6 +217,7 @@ def _build_request(board: ResolvedBoard, pcb: Path, dsn: Path) -> dict[str, Any]
             "track_width": board.rules.track_width,
             "via_diameter": board.rules.via_diameter,
             "via_drill": board.rules.via_drill,
+            "track_widths": dict(board.rules.track_widths),
             "layers": board.layers,
         },
         "board": {

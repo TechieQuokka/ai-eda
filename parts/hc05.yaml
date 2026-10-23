@@ -1,0 +1,43 @@
+id: hc05
+name: HC-05 Bluetooth serial module
+category: radio
+description: >
+  HC-05 Bluetooth (classic SPP) serial module on the common 6-pin breakout (ZS-040 and
+  similar), plugged onto a 1x6 header: 1 EN (KEY), 2 VCC, 3 GND, 4 TXD, 5 RXD, 6 STATE.
+  VCC 3.6-6 V (a regulator on the breakout), logic 3.3 V, so it connects straight to the
+  Pico: its TXD to a UART RX pin, its RXD to a UART TX pin. About 30 mA. Data mode
+  9600 baud 8N1 by default; AT mode (38400 baud) when EN is high at power-up. STATE is
+  high while a Bluetooth link is up. Two modules link to each other once one is set as
+  master bound to the other's address (AT+ROLE=1, AT+CMODE=0, AT+BIND=...; see
+  docs/hc05_pairing.md). Simulation: `link` sets STATE (connected: high, waiting: low);
+  the radio link itself is not simulated: bytes received over it are `serial` events on
+  the firmware's UART RX net, bytes sent are checked with `serial` expectations on its
+  TX net. Supply current while searching and during transmit peaks is not modelled.
+pins: [en, vcc, gnd, txd, rxd, state]
+optional_pins: [en, txd, rxd, state]
+params:
+  link: { choices: [connected, waiting], default: connected }
+spice:
+  prefix: X
+  template: |
+    <name> <pin:vcc> <pin:gnd> <name>_io <name>_tx <name>_rx <name>_en eda_hc05
+    R<name>_txd <pin:txd> <name>_tx 1
+    R<name>_rxd <pin:rxd> <name>_rx 1
+    R<name>_key <pin:en> <name>_en 1
+    R<name>_sth <pin:state> <name>_io <choice:link.hi>
+    R<name>_stl <pin:state> <pin:gnd> <choice:link.lo>
+  pin_currents: true
+  include: models/eda_hc05.lib
+  choice_values:
+    link.hi: { connected: "100", waiting: "1e9" }
+    link.lo: { connected: "1e9", waiting: "100" }
+symbol:
+  cell: x_hc05
+  ports: { en: EN, vcc: VCC, gnd: GND, txd: TXD, rxd: RXD, state: STATE }
+  label: "HC-05 <param:link>"
+kicad:
+  symbol: Connector_Generic:Conn_01x06
+pcb:
+  footprint: Connector_PinHeader_2.54mm:PinHeader_1x06_P2.54mm_Vertical
+  pads: { en: "1", vcc: "2", gnd: "3", txd: "4", rxd: "5", state: "6" }
+  value: HC-05 module

@@ -1,0 +1,33 @@
+id: servo_sg90
+name: Micro servo (SG90 class)
+category: motor
+description: >
+  Hobby micro servo (TowerPro SG90 and its clones) plugged onto a 1x3 pin header: pin 1
+  signal (orange wire), pin 2 + (red), pin 3 - (brown). Supply 4.8-6 V. The signal is a
+  pulse every 20 ms (50 Hz): 1.5 ms is the centre, 1.0 / 2.0 ms about 45 degrees either
+  side (many accept 0.5-2.5 ms for 90 degrees). Check the pulses with
+  width(voltage(SIGNAL), 1.65V) and period(...). The servo has no datasheet with
+  currents; `load` sets a typical bench figure at 5 V as a resistance: idle (holding,
+  no force) 6 mA, moving 200 mA, stalled (pushing against its end stop or a blocked
+  wheel) 650 mA. The signal input is about 50 kohm. Not modelled: the position itself
+  and the current's dependence on the pulses (set `load` per test or by an event).
+pins: [signal, vplus, gnd]
+params:
+  load: { choices: [idle, moving, stalled], default: idle }
+spice:
+  prefix: R
+  template: |
+    <name>_sig <pin:signal> <pin:gnd> 50k
+    <name>_load <pin:vplus> <pin:gnd> <choice:load>
+  pin_currents: true
+  choice_values: { load: { idle: "833", moving: "25", stalled: "7.7" } }
+symbol:
+  cell: x_servo
+  ports: { signal: S, vplus: "+", gnd: "-" }
+  label: "servo <param:load>"
+kicad:
+  symbol: Motor:Motor_Servo
+pcb:
+  footprint: Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical
+  pads: { signal: "1", vplus: "2", gnd: "3" }
+  value: SG90 servo header

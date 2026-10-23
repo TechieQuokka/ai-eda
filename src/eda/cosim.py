@@ -55,6 +55,18 @@ class CosimError(RuntimeError):
     pass
 
 
+def _saved_vectors(netlist: str, circuit: ResolvedCircuit) -> list[str]:
+    """v() of every net and i() of every top-level voltage source (the pin sense sources
+    among them)."""
+    nets = [v for v in (voltage_vector(net) for net in circuit.nets) if v is not None]
+    sources = [
+        f"i({line.split()[0].lower()})"
+        for line in netlist.splitlines()
+        if line[:1] in "Vv" and len(line.split()) > 1
+    ]
+    return nets + sources
+
+
 @dataclass
 class CosimResult:
     windows: int
@@ -162,6 +174,9 @@ def run(design: Design, test: CompiledTest, image: Path | None, raw_path: Path) 
             if thevenin is not None:
                 for pin in pins.values():
                     apply(pin, *thevenin.state("pulldown"))  # GPIO reset state
+            # Only the circuit's nets and source currents (measures name nothing else),
+            # not the nodes inside subcircuits.
+            sim.save(_saved_vectors(netlist, circuit))
             first = events[0].time if events and events[0].time > 0 else settle
             optran = optran_command(circuit)
             if optran:
@@ -216,7 +231,10 @@ def run(design: Design, test: CompiledTest, image: Path | None, raw_path: Path) 
                             apply(pin, *thevenin.state(segments[-1][1], inputs[pin.gpio]))
                     now = advance(now + settle)
                 fire_due(now)
-            sim.write_raw(raw_path)
+            # One point per window: the firmware's pins change only at window boundaries,
+            # and ngspice's own points (about ten per window after each halt) would make
+            # long runs gigabytes.
+            sim.write_raw(raw_path, grid=True)
             warnings = sim.warnings()
             via_transient = sim.op_via_transient
             screens: dict[str, Screen] = {d.ref: d.screen(analysis.stop) for d in devices}

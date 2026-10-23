@@ -1,0 +1,84 @@
+* eda_drv8833 - TI DRV8833 dual H-bridge on a carrier board (part of ai-eda, see LICENSE)
+*
+* Pins: vin gnd vm slp ai1 ai2 bi1 bi2 ao1 ao2 bo1 bo2
+* vin -> vm: the carrier's reverse-protection FET (30 mohm, open while VIN is reversed).
+* Each bridge follows the datasheet's logic table: IN1 IN2 = 00 coast (outputs open, the
+* body diodes carry the current), 10 forward (OUT1 high, OUT2 low), 01 reverse, 11 brake
+* (both low). Inputs are read as the fraction of time they are high, their voltage over
+* `logic` (the driving logic's high level), so a PWM input averaged over a co-simulation
+* step gives the averaged bridge: with one input held high or low the result is exact
+* (slow decay: IN1 high, IN2 PWM; fast decay: IN1 PWM, IN2 low, the off time as coast).
+* Time fractions: OUT1 high a(1-b), low b; OUT2 high b(1-a), low a (open for the rest).
+* Enabled while nSLEEP is high (above 1.5 V) and VM is above the undervoltage lockout
+* (2.6 V). On resistance: high side 200 mohm, low side 160 mohm (VM 5 V, 25 C).
+* Not modelled: overcurrent shutdown (2 A minimum per bridge), thermal shutdown, the
+* 1 ms wake-up time, and current chopping (ISEN is grounded on the carrier).
+*
+.subckt eda_drv8833 vin gnd vm slp ai1 ai2 bi1 bi2 ao1 ao2 bo1 bo2
++ params: logic=3.3 rhs=0.2 rls=0.16
+Srp vin vm vin gnd swrp
+.model swrp sw vt=1.5 vh=0.1 ron=0.03 roff=10Meg
+* nSLEEP: pulled up on the carrier, 500 kohm pull-down in the chip.
+Rslp_pu slp vm 47k
+Rslp_pd slp gnd 500k
+* Inputs: 150 kohm pull-downs.
+Rai1 ai1 gnd 150k
+Rai2 ai2 gnd 150k
+Rbi1 bi1 gnd 150k
+Rbi2 bi2 gnd 150k
+Ben en gnd V = 0.5 * (1 + tanh((v(slp, gnd) - 1.5) / 0.1))
++ * 0.5 * (1 + tanh((v(vm, gnd) - 2.65) / 0.02))
+Ren en gnd 1Meg
+Bfa1 fa1 gnd V = min(max(v(ai1, gnd) / {logic}, 0), 1)
+Bfa2 fa2 gnd V = min(max(v(ai2, gnd) / {logic}, 0), 1)
+Bfb1 fb1 gnd V = min(max(v(bi1, gnd) / {logic}, 0), 1)
+Bfb2 fb2 gnd V = min(max(v(bi2, gnd) / {logic}, 0), 1)
+Rfa1 fa1 gnd 1Meg
+Rfa2 fa2 gnd 1Meg
+Rfb1 fb1 gnd 1Meg
+Rfb2 fb2 gnd 1Meg
+* Each output is the switch averaged over the time it is driven (pd = ph + pl): VM for
+* the share d = ph / pd of that time, 0 V for the rest, behind the on resistances (exact
+* for a continuous current); its current comes from VM for d and from ground for 1 - d.
+Bpd_ao1 pd_ao1 gnd V = v(en)*v(fa1)*(1-v(fa2)) + v(en)*v(fa2)
+Bd_ao1 d_ao1 gnd V = min(v(en)*v(fa1)*(1-v(fa2)) / max(v(pd_ao1), 1e-6), 1)
+Rpd_ao1 pd_ao1 gnd 1Meg
+Rd_ao1 d_ao1 gnd 1Meg
+Bh_ao1 vm ao1 I = v(d_ao1) * v(pd_ao1) * (v(d_ao1) * v(vm, gnd) - v(ao1, gnd)) / (v(d_ao1) * {rhs} + (1 - v(d_ao1)) * {rls})
+Bl_ao1 gnd ao1 I = (1 - v(d_ao1)) * v(pd_ao1) * (v(d_ao1) * v(vm, gnd) - v(ao1, gnd)) / (v(d_ao1) * {rhs} + (1 - v(d_ao1)) * {rls})
+Bpd_ao2 pd_ao2 gnd V = v(en)*v(fa2)*(1-v(fa1)) + v(en)*v(fa1)
+Bd_ao2 d_ao2 gnd V = min(v(en)*v(fa2)*(1-v(fa1)) / max(v(pd_ao2), 1e-6), 1)
+Rpd_ao2 pd_ao2 gnd 1Meg
+Rd_ao2 d_ao2 gnd 1Meg
+Bh_ao2 vm ao2 I = v(d_ao2) * v(pd_ao2) * (v(d_ao2) * v(vm, gnd) - v(ao2, gnd)) / (v(d_ao2) * {rhs} + (1 - v(d_ao2)) * {rls})
+Bl_ao2 gnd ao2 I = (1 - v(d_ao2)) * v(pd_ao2) * (v(d_ao2) * v(vm, gnd) - v(ao2, gnd)) / (v(d_ao2) * {rhs} + (1 - v(d_ao2)) * {rls})
+Bpd_bo1 pd_bo1 gnd V = v(en)*v(fb1)*(1-v(fb2)) + v(en)*v(fb2)
+Bd_bo1 d_bo1 gnd V = min(v(en)*v(fb1)*(1-v(fb2)) / max(v(pd_bo1), 1e-6), 1)
+Rpd_bo1 pd_bo1 gnd 1Meg
+Rd_bo1 d_bo1 gnd 1Meg
+Bh_bo1 vm bo1 I = v(d_bo1) * v(pd_bo1) * (v(d_bo1) * v(vm, gnd) - v(bo1, gnd)) / (v(d_bo1) * {rhs} + (1 - v(d_bo1)) * {rls})
+Bl_bo1 gnd bo1 I = (1 - v(d_bo1)) * v(pd_bo1) * (v(d_bo1) * v(vm, gnd) - v(bo1, gnd)) / (v(d_bo1) * {rhs} + (1 - v(d_bo1)) * {rls})
+Bpd_bo2 pd_bo2 gnd V = v(en)*v(fb2)*(1-v(fb1)) + v(en)*v(fb1)
+Bd_bo2 d_bo2 gnd V = min(v(en)*v(fb2)*(1-v(fb1)) / max(v(pd_bo2), 1e-6), 1)
+Rpd_bo2 pd_bo2 gnd 1Meg
+Rd_bo2 d_bo2 gnd 1Meg
+Bh_bo2 vm bo2 I = v(d_bo2) * v(pd_bo2) * (v(d_bo2) * v(vm, gnd) - v(bo2, gnd)) / (v(d_bo2) * {rhs} + (1 - v(d_bo2)) * {rls})
+Bl_bo2 gnd bo2 I = (1 - v(d_bo2)) * v(pd_bo2) * (v(d_bo2) * v(vm, gnd) - v(bo2, gnd)) / (v(d_bo2) * {rhs} + (1 - v(d_bo2)) * {rls})
+* Body diodes of the output FETs
+Dha1 ao1 vm dbody
+Dla1 gnd ao1 dbody
+Dha2 ao2 vm dbody
+Dla2 gnd ao2 dbody
+Dhb1 bo1 vm dbody
+Dlb1 gnd bo1 dbody
+Dhb2 bo2 vm dbody
+Dlb2 gnd bo2 dbody
+.model dbody D(IS=1e-12 N=1.3 RS=0.05)
+Rao1 ao1 gnd 10Meg
+Rao2 ao2 gnd 10Meg
+Rbo1 bo1 gnd 10Meg
+Rbo2 bo2 gnd 10Meg
+* Supply current: 1.7 mA awake, 1.6 uA asleep.
+Biq vm gnd I = 1.7m * v(en) * min(max(v(vm, gnd) / 2, 0), 1)
+Rq vm gnd 3Meg
+.ends eda_drv8833

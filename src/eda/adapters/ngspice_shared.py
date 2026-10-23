@@ -57,6 +57,9 @@ class _Library:
         self.lib.ngSpice_Circ.argtypes = (ctypes.POINTER(ctypes.c_char_p),)
         self.lib.ngSpice_SetBkpt.argtypes = (ctypes.c_double,)
         self.lib.ngSpice_SetBkpt.restype = ctypes.c_bool
+        self.lib.ngSpice_CurPlot.restype = ctypes.c_char_p
+        self.lib.ngSpice_AllVecs.argtypes = (ctypes.c_char_p,)
+        self.lib.ngSpice_AllVecs.restype = ctypes.POINTER(ctypes.c_char_p)
         self.output: list[str] = []
         self.exited = False
         self._callbacks = (_SendChar(self._on_char), _SendStat(self._on_stat), _Exit(self._on_exit))
@@ -152,23 +155,55 @@ class Session:
     def start(self, analysis: str, until: float) -> float:
         """Start `analysis` (a `tran` command) and halt at time `until`."""
         self._halt_at(until)
+        start = len(self._lib.output)
         self.command(analysis)
-        return self.last("time")
+        return self._halted(start, until)
 
     def run_until(self, until: float) -> float:
         """Resume the halted analysis up to time `until` (a time point lands exactly there)."""
         self.command("delete all")
         self._halt_at(until)
+        start = len(self._lib.output)
         self.command("resume")
-        return self.last("time")
+        return self._halted(start, until)
 
     def _halt_at(self, until: float) -> None:
-        # The breakpoint makes the time-step control land on `until`; `stop` halts there.
-        self._lib.lib.ngSpice_SetBkpt(until)
-        self.command(f"stop when time >= {until - max(until * 1e-9, 1e-15):.15g}")
+        # The breakpoint makes the time-step control land on it; `stop` halts there.
+        # ngspice lands a few ULPs short of a breakpoint, so the condition cannot simply
+        # be `time >= until`: the landing would miss it and the run would go on for a
+        # whole maximum step. Nor can it have a tolerance: a halt short of `until` leaves
+        # a gap below ngspice's minimum step, and resuming fails ("timestep too small").
+        # So the breakpoint sits a hair past `until` (1e-13 of it) and the condition is
+        # exact: the landing is at or past `until`, and nothing is left before it.
+        self._lib.lib.ngSpice_SetBkpt(until * (1 + 1e-13))
+        self.command(f"stop when time >= {until:.17g}")
 
-    def write_raw(self, path: Path) -> None:
-        """All vectors of the current plot as an ASCII raw file (see ngspice.parse_raw)."""
+    def _halted(self, start: int, until: float) -> float:
+        """The time the analysis stopped at; an error if ngspice gave up on the way."""
+        for line in self._lib.output[start:]:
+            text = line.removeprefix("stderr ").strip()
+            if "timestep too small" in text.lower() or "simulation aborted" in text.lower():
+                raise SharedSpiceError(f"ngspice stopped before {until:.6g} s: {text}")
+        return self.last("time")
+
+    def save(self, vectors: list[str]) -> None:
+        """Keep only these vectors (and time) of the next analysis, e.g. `v(out)`,
+        `i(v1)`. Sent in several commands: ngspice cuts long command lines."""
+        line: list[str] = []
+        for name in vectors:
+            if line and len(" ".join(line)) + len(name) > 400:
+                self.command("save " + " ".join(line))
+                line = []
+            line.append(name)
+        if line:
+            self.command("save " + " ".join(line))
+
+    def write_raw(self, path: Path, *, grid: bool = False) -> None:
+        """The saved vectors as an ASCII raw file (see ngspice.parse_raw). `grid`
+        interpolates them onto the tran command's step (`linearize`) instead of every
+        time point ngspice took."""
+        if grid:
+            self.command("linearize")
         self.command("set filetype=ascii")
         self.command(f"write {path.as_posix()} all")
 

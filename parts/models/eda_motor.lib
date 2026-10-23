@@ -1,0 +1,15 @@
+* eda_dc_motor - brushed DC motor as its electrical equivalent (part of ai-eda, see LICENSE)
+*
+* Pins: p n emf
+* Armature resistance `r` and inductance `l` lead to the back-EMF node `emf` (its voltage
+* against n is k x speed). The mechanics map onto that node: the rotor's inertia J is the
+* capacitance J / k^2 = `tm` / `r` (`tm`: mechanical time constant R J / k^2), friction
+* (the no-load current `i0`) a current that opposes the motion. A stalled shaft is a
+* short from emf to n, made outside this subcircuit (it changes during a run).
+*
+.subckt eda_dc_motor p n emf params: r=2.5 l=200u tm=20m i0=0.2
+Ra p a {r}
+La a emf {l}
+Cm emf n {tm / r}
+Bf emf n I = {i0} * tanh(v(emf, n) / 0.05)
+.ends eda_dc_motor

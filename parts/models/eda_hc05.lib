@@ -1,0 +1,19 @@
+* eda_hc05 - HC-05 Bluetooth serial module on a ZS-040 style breakout (part of ai-eda, see LICENSE)
+*
+* Pins: vcc gnd io txd rxd en
+* The breakout's regulator makes the module's 3.3 V (`io`, exported for the STATE output
+* outside this subcircuit) from VCC; the module draws about 30 mA while VCC is above
+* 3.4 V. TXD idles high (3.3 V behind 100 ohm); its bytes go straight to the firmware's
+* UART in a co-simulation (`serial` events), not through this circuit. RXD and EN are
+* inputs.
+*
+.subckt eda_hc05 vcc gnd io txd rxd en
+Bon on gnd V = 0.5 * (1 + tanh((v(vcc, gnd) - 3.4) / 0.05))
+Ron on gnd 1Meg
+Bio io gnd V = v(on) * max(min(v(vcc, gnd) - 0.2, 3.3), 0)
+Rtx io txd 100
+Rrx rxd io 100k
+Ren en gnd 100k
+Bsup vcc gnd I = 30m * v(on)
+Rsup vcc gnd 1Meg
+.ends eda_hc05

@@ -319,7 +319,7 @@ def _run_cosim(
     if outcome is None:
         return None
     if test.events:
-        outcome["events"] = [_event_json(event) for event in test.events]
+        outcome["events"] = [_event_json(event) for event in test.events if not event.repeat]
     if not test.firmware or image is None:
         return outcome
     uart_path = sim_dir / f"{test.name}.uart.txt"
@@ -408,6 +408,8 @@ def _event_json(event: CompiledEvent) -> dict[str, JsonValue]:
         )
     else:
         what = f"{event.net} <- {event.text!r}"
+        if event.every is not None:
+            what += f" every {format_quantity(event.every, 's')}, {event.repeats + 1} times"
     if event.key is not None:
         what = f"key {event.key} {'up' if event.release else 'down'} ({what})"
     return {"time": event.time, "display": format_quantity(event.time, "s"), "event": what}

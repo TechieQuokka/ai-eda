@@ -20,6 +20,8 @@ class Rules(StrictModel):
     track_width: str = "0.4mm"
     via_diameter: str = "0.8mm"
     via_drill: str = "0.4mm"
+    # wider tracks for nets that carry current, e.g. { VBAT: 0.8mm, MOT_A: 0.8mm }
+    track_widths: dict[Ident, str] = Field(default_factory=dict[Ident, str])
 
 
 class Placement(StrictModel):

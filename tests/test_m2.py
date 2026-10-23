@@ -221,6 +221,40 @@ def test_pour_rules(make_project: MakeProject) -> None:
     assert errors == ["invalid_value"]
 
 
+def test_track_widths_rules(make_project: MakeProject) -> None:
+    root = _board(make_project, "rules: { track_widths: { VCC: 1mm, N1: 0.5mm } }\n")
+    diag = Diagnostics()
+    design = load_design(root, diag)
+    assert design is not None and design.board is not None, diag.errors
+    assert design.board.rules.track_widths == (("VCC", 1.0), ("N1", 0.5))
+    root = _board(make_project, "rules: { track_widths: { NOPE: 1mm } }\n", name="unknown")
+    assert _issues(root)[0] == ["board_net"]
+    root = _board(make_project, "rules: { track_widths: { VCC: 1V } }\n", name="unit")
+    assert _issues(root)[0] == ["invalid_value"]
+    root = _board(
+        make_project, "fab: jlcpcb\nrules: { track_widths: { VCC: 0.05mm } }\n", name="fab"
+    )
+    assert _issues(root)[0] == ["fab_limit"]
+
+
+@requires_kicad
+def test_track_widths_on_the_board(make_project: MakeProject) -> None:
+    if not freerouting.JAR.is_file():
+        pytest.skip("Freerouting is not downloaded (tools/freerouting/fetch.sh)")
+    root = _board(make_project, "board: {}\nrules: { track_widths: { VCC: 1.2mm } }\n")
+    result = pipeline.pcb(root)
+    assert result.ok, result.errors
+    board = (root / "out" / "pcb" / "demo.kicad_pcb").read_text(encoding="utf-8")
+    widths: dict[str, set[str]] = {}
+    for segment in re.findall(r"\(segment(.*?)\n\t\)", board, re.S):
+        width = re.search(r"\(width ([\d.]+)\)", segment)
+        net = re.search(r'\(net "([^"]*)"\)', segment)
+        assert width is not None and net is not None
+        widths.setdefault(net[1], set()).add(width[1])
+    assert widths["VCC"] == {"1.2"}
+    assert widths["N1"] == {"0.4"}  # the default track width
+
+
 @requires_kicad
 def test_ground_pour(make_project: MakeProject) -> None:
     if not freerouting.JAR.is_file():

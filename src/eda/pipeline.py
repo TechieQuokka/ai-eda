@@ -13,6 +13,7 @@ from eda.model import CompiledTest, Design, Op
 from eda.render import schematic, waveform
 from eda.result import Diagnostics, Result
 from eda.summary import summarize
+from eda.units import format_quantity
 from eda.verify.measure import db_values, phase_values, probes
 
 
@@ -170,6 +171,8 @@ def _plot_series(
         if exp.max is not None:
             bounds.append(waveform.Bound(label, unit, exp.max, axis))
     for event in test.events:
+        if event.repeat:
+            continue  # a repeated send is marked once, at its first time
         if event.key is not None:
             # A key string makes many events: label each press with its key only.
             text = "" if event.release else f"key {event.key}"
@@ -178,6 +181,8 @@ def _plot_series(
             text = f"{event.part}: {what}"
         else:
             text = f"{event.net} <- {event.text.strip()!r}"
+            if event.every is not None:
+                text += f" every {format_quantity(event.every, 's')}"
         bounds.append(waveform.Bound(text, "s", event.time, "x"))
     return traces, bounds
 

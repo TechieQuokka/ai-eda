@@ -87,7 +87,8 @@ class SimEvent(StrictModel):
     """Something that happens during a tran test, at time `at`: a part parameter changes
     (`part` + `set`, e.g. a button is pressed), text arrives on a firmware UART RX net
     (`serial` + `send`), or keys are pressed one after another (`keys`, mapped to parts in
-    design/inputs.yaml; `hold` / `gap` override its timing)."""
+    design/inputs.yaml; `hold` / `gap` override its timing). A `send` repeats `every` so
+    long until `until` (default: the end of the run), like a remote control's commands."""
 
     at: str
     part: Ident | None = None
@@ -97,6 +98,8 @@ class SimEvent(StrictModel):
     keys: str | None = None  # e.g. "12+34=" or "{menu}1"
     hold: str | None = None
     gap: str | None = None
+    every: str | None = None
+    until: str | None = None
 
     @model_validator(mode="after")
     def _one_kind(self) -> Self:
@@ -113,6 +116,10 @@ class SimEvent(StrictModel):
             raise ValueError("`hold` and `gap` go with `keys`")
         if keys and not self.keys:
             raise ValueError("`keys` is empty")
+        if not serial and (self.every is not None or self.until is not None):
+            raise ValueError("`every` and `until` go with `serial`")
+        if self.until is not None and self.every is None:
+            raise ValueError("`until` goes with `every`")
         return self
 
 

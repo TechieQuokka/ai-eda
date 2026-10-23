@@ -1,0 +1,39 @@
+id: pololu_s7v8f5
+name: Pololu 5 V step-up/step-down regulator S7V8F5
+category: power
+description: >
+  Buck-boost regulator module (Pololu #2123, 11 x 17 mm) on a 1x4 header, pins in board
+  order SHDN, VIN, GND, VOUT. Makes 5 V (+5/-3 %) from 2.7-11.8 V in, so the output holds
+  whether the input is above or below 5 V (e.g. four AA cells from 6.4 V new to 3 V
+  empty). Maximum output current (Pololu's typical curve): about 600 mA at 2.5 V in,
+  1.15 A at 4 V, 1.4 A at 4.6 V, 1.75 A from 6 V; Pololu advises no more than about 1 A
+  continuous. Quiescent current under 0.2 mA; no reverse-voltage protection. SHDN is
+  pulled up to VIN on the module (100 kohm) and may stay open; below 0.4 V it turns the
+  regulator off. Behavioural model (parts/models/eda_boost.lib): 5 V behind 10 mohm that
+  can only source current, limited to the typical curve above (0.34 A/V above 0.74 V,
+  at most 1.75 A); input power = output power / `eta` plus 0.2 mA. Not modelled: ripple,
+  soft start, thermal shutdown. Pololu recommends 33 uF or more across VIN near the
+  module for long battery leads.
+datasheet: https://www.pololu.com/product/2123
+pins: [shdn, vin, gnd, vout]
+optional_pins: [shdn]
+params:
+  eta: { unit: "%", default: 88%, min: 1%, max: 100%, description: conversion efficiency }
+spice:
+  prefix: X
+  template: |
+    <name> <pin:vin> <pin:gnd> <pin:vout> <name>_shdn eda_boost vset=5 eta=<param:eta> iq=0.2m von=2.7 voff=2.5 islope=0.34 iv0=0.74 imax=1.75 rout=0.01
+    R<name>_shdn <pin:shdn> <name>_shdn 1
+  pin_currents: true
+  include: models/eda_boost.lib
+symbol:
+  cell: x_boost
+  ports: { shdn: SHDN, vin: VIN, gnd: GND, vout: VOUT }
+  label: "5V buck-boost"
+kicad:
+  symbol: Connector_Generic:Conn_01x04
+  pins: { shdn: "1", vin: "2", gnd: "3", vout: "4" }
+pcb:
+  footprint: Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical
+  pads: { shdn: "1", vin: "2", gnd: "3", vout: "4" }
+  value: S7V8F5

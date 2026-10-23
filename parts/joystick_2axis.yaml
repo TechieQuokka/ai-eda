@@ -1,0 +1,41 @@
+id: joystick_2axis
+name: Two-axis thumb joystick module
+category: input
+description: >
+  Thumb joystick on a small module (KY-023 and similar) plugged onto a 1x5 header:
+  1 GND, 2 +5V (supply of both potentiometers), 3 VRx, 4 VRy, 5 SW. Each axis is a
+  10 kohm potentiometer between GND and +5V with its wiper on VRx / VRy; `x` and `y` are
+  the stick positions (0 % one end, 50 % the centre, 100 % the other: the wiper at +5V).
+  For a 3.3 V ADC feed +5V from 3.3 V. SW is the push button under the stick (pressing
+  the stick down), closed to GND; the module has no pull-up: use the MCU's. Real sticks
+  rest a few percent off the centre and do not reach the ends: firmware should
+  calibrate the centre and leave a dead zone. Pin currents: current(J1.vcc) etc.
+pins: [gnd, vcc, vrx, vry, sw]
+optional_pins: [vrx, vry, sw]
+params:
+  resistance: { unit: ohm, default: 10kohm, positive: true, description: track resistance of each axis }
+  x: { unit: "%", default: 50%, min: 0%, max: 100%, description: stick position on the x axis }
+  y: { unit: "%", default: 50%, min: 0%, max: 100%, description: stick position on the y axis }
+  button: { choices: [open, pressed], default: open }
+spice:
+  prefix: R
+  template: |
+    <name>_xa <pin:gnd> <name>_x {max(<param:resistance>*<param:x>/100, 1e-3)}
+    <name>_xb <name>_x <pin:vcc> {max(<param:resistance>*(1-<param:x>/100), 1e-3)}
+    <name>_xw <pin:vrx> <name>_x 1
+    <name>_ya <pin:gnd> <name>_y {max(<param:resistance>*<param:y>/100, 1e-3)}
+    <name>_yb <name>_y <pin:vcc> {max(<param:resistance>*(1-<param:y>/100), 1e-3)}
+    <name>_yw <pin:vry> <name>_y 1
+    <name>_sw <pin:sw> <pin:gnd> <choice:button>
+  pin_currents: true
+  choice_values: { button: { open: "1e9", pressed: "0.1" } }
+symbol:
+  cell: x_joystick
+  ports: { gnd: GND, vcc: "+5V", vrx: VRx, vry: VRy, sw: SW }
+  label: "x <param:x> y <param:y>"
+kicad:
+  symbol: Connector_Generic:Conn_01x05
+pcb:
+  footprint: Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical
+  pads: { gnd: "1", vcc: "2", vrx: "3", vry: "4", sw: "5" }
+  value: joystick module

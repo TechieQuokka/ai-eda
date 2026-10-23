@@ -195,6 +195,9 @@ class CompiledEvent:
     text: str = ""
     key: str | None = None  # the key of a `keys` event this part change belongs to
     release: bool = False  # the key is let go (True) or pressed (False)
+    every: float | None = None  # a repeated `send`: its period (s), set on the first one
+    repeats: int = 0  # how many more times the first one is sent
+    repeat: bool = False  # one of the repeats (not listed or plotted on its own)
 
 
 @dataclass(frozen=True)
@@ -280,6 +283,7 @@ class BoardRules:
     track_width: float
     via_diameter: float
     via_drill: float
+    track_widths: tuple[tuple[str, float], ...] = ()  # net → track width (mm)
 
 
 @dataclass(frozen=True)
