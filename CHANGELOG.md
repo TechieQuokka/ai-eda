@@ -6,6 +6,8 @@ features that keep them working, PATCH for fixes. Each release is tagged `vX.Y.Z
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-23
+
 ### Added
 - `projects/rc_car` and `projects/rc_remote`: a Bluetooth RC car (DC motor through a
   DRV8833, steering servo, 4 x AA with a buck-boost) and its joystick remote (2 x AA with a
